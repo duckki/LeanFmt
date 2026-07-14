@@ -1,0 +1,26 @@
+def collectSingleTupleArrayExpanded :=
+  [
+    (responseName, [
+      {
+        parentType := parentType,
+        responseName := responseName,
+        fieldName := fieldName,
+        arguments := arguments,
+        selectionSet := selectionSet
+      }
+    ])
+  ]
+-----------------------------------------------------------------------------------------
+-- leanfmt: expected output below (DO NOT EDIT)
+-----------------------------------------------------------------------------------------
+def collectSingleTupleArrayExpanded :=
+  [(
+    responseName,
+    [{
+      parentType := parentType,
+      responseName := responseName,
+      fieldName := fieldName,
+      arguments := arguments,
+      selectionSet := selectionSet
+    }]
+  )]

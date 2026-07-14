@@ -1,0 +1,76 @@
+def ifElseUnderEquationArm : List (Name × List ExecutableField) -> Result
+  | [] => [group]
+  | (responseName, fields) :: rest =>
+      if responseName == group.fst then
+        (responseName, fields ++ group.snd) :: rest
+      else
+        (responseName, fields) :: addExecutableGroup group rest
+
+def wrappedApplicationUnderEquationArm : Selection -> Result
+  | some resolved =>
+      singleFieldResult responseName
+        (completeValue schema resolvers variableValues
+          fuel' fieldDefinition.outputType
+          (field :: fields) resolved)
+
+def nestedIfElseUnderEquationArm : Selection -> Result
+  | .field responseName fieldName arguments directives selectionSet =>
+      if selectionDirectivesAllowBool variableValues directives then
+        [(responseName, [{
+          parentType := parentType,
+          responseName := responseName,
+          fieldName := fieldName,
+          arguments := arguments,
+          selectionSet := selectionSet
+        }])]
+      else
+        []
+  | .inlineFragment (some typeCondition) directives selectionSet =>
+      if selectionDirectivesAllowBool variableValues directives then
+        if doesFragmentTypeApplyBool schema parentType source typeCondition then
+          collectFields schema variableValues parentType source selectionSet
+        else
+          []
+      else
+        []
+-----------------------------------------------------------------------------------------
+-- leanfmt: expected output below (DO NOT EDIT)
+-----------------------------------------------------------------------------------------
+def ifElseUnderEquationArm : List (Name × List ExecutableField) -> Result
+  | [] => [group]
+  | (responseName, fields) :: rest =>
+      if responseName == group.fst then
+        (responseName, fields ++ group.snd) :: rest
+      else
+        (responseName, fields) :: addExecutableGroup group rest
+
+def wrappedApplicationUnderEquationArm : Selection -> Result
+  | some resolved =>
+      singleFieldResult responseName
+        (completeValue schema resolvers variableValues
+          fuel' fieldDefinition.outputType
+          (field :: fields) resolved)
+
+def nestedIfElseUnderEquationArm : Selection -> Result
+  | .field responseName fieldName arguments directives selectionSet =>
+      if selectionDirectivesAllowBool variableValues directives then
+        [(
+          responseName,
+          [{
+            parentType := parentType,
+            responseName := responseName,
+            fieldName := fieldName,
+            arguments := arguments,
+            selectionSet := selectionSet
+          }]
+        )]
+      else
+        []
+  | .inlineFragment (some typeCondition) directives selectionSet =>
+      if selectionDirectivesAllowBool variableValues directives then
+        if doesFragmentTypeApplyBool schema parentType source typeCondition then
+          collectFields schema variableValues parentType source selectionSet
+        else
+          []
+      else
+        []

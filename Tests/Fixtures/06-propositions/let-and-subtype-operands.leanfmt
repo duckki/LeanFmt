@@ -1,0 +1,109 @@
+def implicationLetOperand : Prop :=
+  ResponseMergeReady (.object fields) ->
+  let next :=
+    visitSelection schema resolvers variableValues depth parentType source selection fields
+  ResponseMergeReady next
+
+def implicationParenthesizedLetOperand : Prop :=
+  schema.lookupField parentType fieldName = some fieldDefinition ->
+    (let matching := fieldSelectionsWithResponseNameInScope schema parentType
+      responseName rest
+    result matching)
+
+def letRecordOperand : Prop :=
+  let scopedField : ScopedField :=
+    { parentType := validParent
+      responseName := responseName }
+  body
+
+def ordinaryLetApplicationOperand : Result :=
+  let head :=
+    executeField schema resolvers variableValues fuel source responseName fields extraArgument
+  let tail :=
+    executeCollectedFields schema resolvers variableValues fuel source rest extraArgument
+  Result.combine List.append head tail
+
+def ordinaryLetExistingContinuationOperand : Result :=
+  let restFields :=
+    fieldSelectionsWithResponseNameInScope schema parentType responseName
+        rest
+  restFields
+
+def subtypeImplicationOperand : Prop :=
+  ∀ scopedField,
+    scopedField ∈ sourceFieldsWithEnoughCharactersForLayoutTestingAndMoreText ->
+    { targetField : ScopedField //
+      targetField ∈ targetFields }
+
+def subtypeNestedLogicalOperand : Prop :=
+  ∀ scopedField,
+    scopedField ∈ sourceFieldsWithEnoughCharactersForLayoutTestingAndMoreText ->
+    { targetField : ScopedField //
+      targetField ∈ targetFields
+      ∧ FieldMerge.sameResponseShape schema scopedField.outputType
+        targetField.outputType additionalOutputTypeWitness ∧ (targetField.parentType = scopedField.parentType
+        ∨ ¬ schema.objectType targetField.parentType) }
+
+def subtypeTwoLineLongOperand : Prop :=
+  ∀ scopedField,
+    scopedField ∈ sourceFieldsWithEnoughCharactersForLayoutTestingAndMoreText ->
+    { targetField : ScopedFieldVeryLongTypeNameLikeThis //
+      targetField ∈ targetFieldsWithVeryLongName }
+-----------------------------------------------------------------------------------------
+-- leanfmt: expected output below (DO NOT EDIT)
+-----------------------------------------------------------------------------------------
+def implicationLetOperand : Prop :=
+  ResponseMergeReady (.object fields)
+  ->  let next :=
+        visitSelection schema resolvers variableValues depth parentType source selection
+          fields
+      ResponseMergeReady next
+
+def implicationParenthesizedLetOperand : Prop :=
+  schema.lookupField parentType fieldName = some fieldDefinition
+  -> (let matching :=
+        fieldSelectionsWithResponseNameInScope schema parentType responseName rest
+      result matching)
+
+def letRecordOperand : Prop :=
+  let scopedField : ScopedField :=
+    {
+      parentType := validParent
+      responseName := responseName
+    }
+  body
+
+def ordinaryLetApplicationOperand : Result :=
+  let head :=
+    executeField schema resolvers variableValues fuel source responseName fields
+      extraArgument
+  let tail :=
+    executeCollectedFields schema resolvers variableValues fuel source rest
+      extraArgument
+  Result.combine List.append head tail
+
+def ordinaryLetExistingContinuationOperand : Result :=
+  let restFields :=
+    fieldSelectionsWithResponseNameInScope schema parentType responseName rest
+  restFields
+
+def subtypeImplicationOperand : Prop :=
+  ∀ scopedField,
+    scopedField ∈ sourceFieldsWithEnoughCharactersForLayoutTestingAndMoreText
+    -> { targetField : ScopedField // targetField ∈ targetFields }
+
+def subtypeNestedLogicalOperand : Prop :=
+  ∀ scopedField,
+    scopedField ∈ sourceFieldsWithEnoughCharactersForLayoutTestingAndMoreText
+    -> { targetField : ScopedField
+        // targetField ∈ targetFields
+            ∧ FieldMerge.sameResponseShape schema scopedField.outputType
+                targetField.outputType additionalOutputTypeWitness
+            ∧ (targetField.parentType = scopedField.parentType
+                ∨ ¬ schema.objectType targetField.parentType) }
+
+def subtypeTwoLineLongOperand : Prop :=
+  ∀ scopedField,
+    scopedField ∈ sourceFieldsWithEnoughCharactersForLayoutTestingAndMoreText
+    -> { targetField : ScopedFieldVeryLongTypeNameLikeThis
+        // targetField ∈ targetFieldsWithVeryLongName }

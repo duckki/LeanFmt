@@ -1,0 +1,9 @@
+instance instCoeOptionValueToValue {ObjectRef : Type} :
+    Coe (Option (ResolverValue ObjectRef)) (ResolverValue ObjectRef) where
+  coe := resolvedValueOrNull
+-----------------------------------------------------------------------------------------
+-- leanfmt: expected output below (DO NOT EDIT)
+-----------------------------------------------------------------------------------------
+instance instCoeOptionValueToValue {ObjectRef : Type}
+    : Coe (Option (ResolverValue ObjectRef)) (ResolverValue ObjectRef) where
+  coe := resolvedValueOrNull

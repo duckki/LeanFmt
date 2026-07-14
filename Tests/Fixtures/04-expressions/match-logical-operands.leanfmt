@@ -1,0 +1,33 @@
+def leadingEqualityWrappedMatchArms : Prop :=
+  value
+  = match resultFunction argumentOne argumentTwo with
+    | .error errors => .error errors
+    | .ok (fields, errors) => .ok fields
+
+def logicalMatchOperandAnchor : Bool :=
+  (interfaceName == targetName)
+  || match schema.lookupInterface interfaceName with
+  | some interfaceType =>
+      interfaceType.interfaces.any
+        (fun parentName =>
+          interfaceTypeImplementsInterfaceBoundedBool
+                schema bound parentName targetName)
+  | none => false
+-----------------------------------------------------------------------------------------
+-- leanfmt: expected output below (DO NOT EDIT)
+-----------------------------------------------------------------------------------------
+def leadingEqualityWrappedMatchArms : Prop :=
+  value
+  = match resultFunction argumentOne argumentTwo with
+    | .error errors => .error errors
+    | .ok (fields, errors) => .ok fields
+
+def logicalMatchOperandAnchor : Bool :=
+  (interfaceName == targetName)
+  || match schema.lookupInterface interfaceName with
+      | some interfaceType =>
+          interfaceType.interfaces.any
+            (fun parentName =>
+              interfaceTypeImplementsInterfaceBoundedBool
+                schema bound parentName targetName)
+      | none => false

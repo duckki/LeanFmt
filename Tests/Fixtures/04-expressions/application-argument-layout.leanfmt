@@ -1,0 +1,13 @@
+def wrappedApplicationArgument : Result :=
+  singleFieldResult responseName
+    (completeValue schema resolvers variableValues
+      fuel' fieldDefinition.outputType
+      (field :: fields) resolved)
+-----------------------------------------------------------------------------------------
+-- leanfmt: expected output below (DO NOT EDIT)
+-----------------------------------------------------------------------------------------
+def wrappedApplicationArgument : Result :=
+  singleFieldResult responseName
+    (completeValue schema resolvers variableValues
+      fuel' fieldDefinition.outputType
+      (field :: fields) resolved)

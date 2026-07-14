@@ -1,0 +1,28 @@
+def returnChain : Input
+      -> Middle
+      -> Output
+  | value => value
+
+def nestedReturnChain : A -> VeryLongIntermediateReturnTypeWithEnoughCharactersForLayoutTesting -> VeryLongFinalReturnTypeWithEnoughCharactersForLayoutTesting
+  | value => value
+
+def mixedArrowChain
+    : Name
+    -> ResolverValue ObjectRef
+    -> Selection ->
+      List (Name × List ExecutableField)
+  | value => value
+-----------------------------------------------------------------------------------------
+-- leanfmt: expected output below (DO NOT EDIT)
+-----------------------------------------------------------------------------------------
+def returnChain : Input -> Middle -> Output
+  | value => value
+
+def nestedReturnChain
+    : A -> VeryLongIntermediateReturnTypeWithEnoughCharactersForLayoutTesting
+      -> VeryLongFinalReturnTypeWithEnoughCharactersForLayoutTesting
+  | value => value
+
+def mixedArrowChain
+    : Name -> ResolverValue ObjectRef -> Selection -> List (Name × List ExecutableField)
+  | value => value

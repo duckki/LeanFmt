@@ -1,0 +1,7 @@
+def listNonempty {α : Type} (values : List α) : Prop :=
+  values ≠ []
+-----------------------------------------------------------------------------------------
+-- leanfmt: expected output below (DO NOT EDIT)
+-----------------------------------------------------------------------------------------
+def listNonempty {α : Type} (values : List α) : Prop :=
+  values ≠ []

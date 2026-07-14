@@ -1,0 +1,129 @@
+def splitSomeApplicationAfterEquality : Prop :=
+  schema.lookupField objectTypeName fieldName
+  = some
+    implementation
+  ∧ fieldDefinitionImplements schema implementation expected
+
+def implicationAfterNestedEquality : Prop :=
+  ∀ implementationDefinition, implementationDefinition ∈ implementation
+    -> Schema.lookupArgumentDefinition expected implementationDefinition.name
+       = none
+         -> ¬ implementationDefinition.isRequired
+
+def conjunctionAfterApplicationArgument : Prop :=
+  selectionSetTypeConditionFeasible schema fieldDefinition.outputType.namedType
+    [fieldDefinition.outputType.namedType] .existsField
+      selectionSet ∧ ∀ objectType, objectType ∈ schema.getPossibleTypes fieldDefinition.outputType.namedType -> selectionSetTypeConditionFeasible schema objectType [objectType] .allFields selectionSet
+
+def existingSplitMembershipBeforeArrow : Prop :=
+  firstCondition
+  ∧ ∀ objectType,
+      objectType ∈
+        schema.getPossibleTypes
+            fieldDefinition.outputType.namedType
+            -> selectionSetTypeConditionFeasible schema objectType [objectType]
+                .allFields selectionSet
+
+def existingSplitLongMembershipBeforeArrow : Prop :=
+  firstCondition
+  ∧ ∀ objectType,
+      objectType ∈
+        schema.getPossibleTypes
+            fieldDefinition.outputType.namedType additionalArgumentForWidth
+            -> selectionSetTypeConditionFeasible schema objectType [objectType]
+                .allFields selectionSet
+
+def leadingConnectorApplicationFinalArgument : Prop :=
+  ∃ boolCase, boolCase ∈ allBoolCases variables
+    ∧ selectionSetBoolTypeConditionFeasible schema operation.rootType
+        [operation.rootType] boolCase .existsField
+          operation.selectionSet
+
+def leadingConnectorApplicationDotContinuation : Prop :=
+  ∃ boolCase, boolCase ∈ allBoolCases variables
+    ∧ selectionSetBoolTypeConditionFeasible schema
+        fieldDefinition.outputType.namedTypeWithEnoughCharactersForLayoutTesting
+        [fieldDefinition.outputType.namedType] boolCaseWithEnoughCharacters
+          .existsField selectionSet
+
+def leadingArrowApplicationFinalArgument : Prop :=
+  directivesAllowIn boolCase directives = true
+  -> selectionSetBoolTypeConditionFeasible schema parentType
+      (typeCondition :: typeConditions) boolCase .allFields
+        selectionSet
+
+def applicationFlowLastArgument : Prop :=
+  selectionTypeConditionFeasible schema parentType typeConditions .existsField selection
+
+def longEqualityWithAssignment : Prop :=
+  have hresolveLater :
+      resolvers.resolve later.parentType later.fieldName later.arguments source = resolvers.resolve first.parentType first.fieldName first.arguments source := by
+    exact proof
+  body
+-----------------------------------------------------------------------------------------
+-- leanfmt: expected output below (DO NOT EDIT)
+-----------------------------------------------------------------------------------------
+def splitSomeApplicationAfterEquality : Prop :=
+  schema.lookupField objectTypeName fieldName = some implementation
+  ∧ fieldDefinitionImplements schema implementation expected
+
+def implicationAfterNestedEquality : Prop :=
+  ∀ implementationDefinition,
+    implementationDefinition ∈ implementation
+    -> Schema.lookupArgumentDefinition expected implementationDefinition.name = none
+    -> ¬ implementationDefinition.isRequired
+
+def conjunctionAfterApplicationArgument : Prop :=
+  selectionSetTypeConditionFeasible schema fieldDefinition.outputType.namedType
+    [fieldDefinition.outputType.namedType] .existsField
+    selectionSet
+  ∧ ∀ objectType,
+      objectType ∈ schema.getPossibleTypes fieldDefinition.outputType.namedType
+      -> selectionSetTypeConditionFeasible schema objectType [objectType] .allFields
+          selectionSet
+
+def existingSplitMembershipBeforeArrow : Prop :=
+  firstCondition
+  ∧ ∀ objectType,
+      objectType ∈ schema.getPossibleTypes fieldDefinition.outputType.namedType
+      -> selectionSetTypeConditionFeasible schema objectType [objectType]
+          .allFields selectionSet
+
+def existingSplitLongMembershipBeforeArrow : Prop :=
+  firstCondition
+  ∧ ∀ objectType,
+      objectType
+        ∈ schema.getPossibleTypes
+            fieldDefinition.outputType.namedType additionalArgumentForWidth
+      -> selectionSetTypeConditionFeasible schema objectType [objectType]
+          .allFields selectionSet
+
+def leadingConnectorApplicationFinalArgument : Prop :=
+  ∃ boolCase,
+    boolCase ∈ allBoolCases variables
+    ∧ selectionSetBoolTypeConditionFeasible schema operation.rootType
+        [operation.rootType] boolCase .existsField
+        operation.selectionSet
+
+def leadingConnectorApplicationDotContinuation : Prop :=
+  ∃ boolCase,
+    boolCase ∈ allBoolCases variables
+    ∧ selectionSetBoolTypeConditionFeasible schema
+        fieldDefinition.outputType.namedTypeWithEnoughCharactersForLayoutTesting
+        [fieldDefinition.outputType.namedType] boolCaseWithEnoughCharacters
+        .existsField selectionSet
+
+def leadingArrowApplicationFinalArgument : Prop :=
+  directivesAllowIn boolCase directives = true
+  -> selectionSetBoolTypeConditionFeasible schema parentType
+      (typeCondition :: typeConditions) boolCase .allFields
+      selectionSet
+
+def applicationFlowLastArgument : Prop :=
+  selectionTypeConditionFeasible schema parentType typeConditions .existsField selection
+
+def longEqualityWithAssignment : Prop :=
+  have hresolveLater :
+      resolvers.resolve later.parentType later.fieldName later.arguments source = resolvers.resolve first.parentType first.fieldName first.arguments source := by
+    exact proof
+  body

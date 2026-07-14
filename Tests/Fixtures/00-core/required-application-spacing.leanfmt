@@ -1,0 +1,80 @@
+def appliedType (ObjectRef : Type) : Type :=
+  List (ResolverValue ObjectRef)
+
+def productType : Type :=
+  List (Name × ResponseValue)
+
+def selectorApplication :=
+  fields.map InputValueDefinition.name
+
+def optionConstructor :=
+  some .null
+
+def quantified : Prop :=
+  ∀ expectedDefinition, expectedDefinition = expectedDefinition
+
+def patternConstructor : Nat -> Nat
+  | .zero => 0
+  | .succ n => n
+
+def postfixProjection (schema : Schema) (typeName objectName : Name) :=
+  (schema.getPossibleTypes typeName).contains objectName
+
+def prefixNot (value : Bool) :=
+  !value
+
+def patternAlias : Selection -> Prop
+  | fieldSelection@(.field _ _ _ _ _) => True
+  | _ => False
+
+def recordLiteral :=
+  { data := .null, errors := 1 }
+
+def recordUpdate (operation : Operation) :=
+  { operation with
+    selectionSet := operation.selectionSet }
+
+def listWrapper :=
+  [ .inlineFragment none [directiveForBit varName value]
+      (wrapWithBoolCase rest selectionSet) ]
+-----------------------------------------------------------------------------------------
+-- leanfmt: expected output below (DO NOT EDIT)
+-----------------------------------------------------------------------------------------
+def appliedType (ObjectRef : Type) : Type :=
+  List (ResolverValue ObjectRef)
+
+def productType : Type :=
+  List (Name × ResponseValue)
+
+def selectorApplication :=
+  fields.map InputValueDefinition.name
+
+def optionConstructor :=
+  some .null
+
+def quantified : Prop :=
+  ∀ expectedDefinition, expectedDefinition = expectedDefinition
+
+def patternConstructor : Nat -> Nat
+  | .zero => 0
+  | .succ n => n
+
+def postfixProjection (schema : Schema) (typeName objectName : Name) :=
+  (schema.getPossibleTypes typeName).contains objectName
+
+def prefixNot (value : Bool) :=
+  !value
+
+def patternAlias : Selection -> Prop
+  | fieldSelection@(.field _ _ _ _ _) => True
+  | _ => False
+
+def recordLiteral :=
+  { data := .null, errors := 1 }
+
+def recordUpdate (operation : Operation) :=
+  { operation with selectionSet := operation.selectionSet }
+
+def listWrapper :=
+  [.inlineFragment none [directiveForBit varName value]
+    (wrapWithBoolCase rest selectionSet)]

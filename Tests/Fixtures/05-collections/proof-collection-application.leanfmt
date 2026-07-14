@@ -1,0 +1,25 @@
+theorem collectSelection_field_noDirectives
+    : result = [(responseName, [{
+        parentType := parentType,
+        responseName := responseName,
+        fieldName := fieldName,
+        arguments := arguments,
+        selectionSet := selectionSet
+      }])] := by
+  rfl
+-----------------------------------------------------------------------------------------
+-- leanfmt: expected output below (DO NOT EDIT)
+-----------------------------------------------------------------------------------------
+theorem collectSelection_field_noDirectives
+    : result
+      = [(
+          responseName,
+          [{
+            parentType := parentType,
+            responseName := responseName,
+            fieldName := fieldName,
+            arguments := arguments,
+            selectionSet := selectionSet
+          }]
+        )] := by
+  rfl

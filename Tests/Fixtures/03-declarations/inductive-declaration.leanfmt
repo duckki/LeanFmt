@@ -1,0 +1,71 @@
+inductive Color where
+  | red
+  | green
+  | blue
+
+inductive ConstructorBinderLayout (schema : Schema) :
+    List Definition -> List Field -> Prop where
+  | intro (definitions : List Definition) (fields : List Field) (hnodup : fields.Nodup) (hknown : ∀ name value, (name, value) ∈ fields -> (Schema.lookupArgumentDefinition definitions name).isSome = true) (htyped : ∀ name value definition, (name, value) ∈ fields -> Schema.lookupArgumentDefinition definitions name = some definition -> ValueCorrect schema value definition.inputType) : ConstructorBinderLayout schema definitions fields
+
+inductive ConstructorShortBinders where
+  | nonNull (value : ConstInputValue) (inner : TypeRef) : ConstructorShortBinders
+
+inductive ConstructorResultLayout where
+  | intro (fields : List Field) : ConstructorResultLayoutForInput schema (ConstructorValue.object fields) (TypeRef.named typeName)
+
+inductive ConstructorLetHypothesis where
+  | intro (hfields : let fields := collectFields schema parentType selectionSet
+    ∀ left, left ∈ fields -> ∀ right, right ∈ fields -> left.responseName = right.responseName -> FieldsForNameCanMerge schema left right) : ConstructorLetHypothesis
+
+inductive ConstructorLongArrowApplication where
+  | intro (htyped : ∀ name value definition, (name, value) ∈ fields -> ValueIsCorrectTypeAtLocation schema variableDefinitions value definition.inputType definition.defaultValue) : ConstructorLongArrowApplication
+-----------------------------------------------------------------------------------------
+-- leanfmt: expected output below (DO NOT EDIT)
+-----------------------------------------------------------------------------------------
+inductive Color where
+  | red
+  | green
+  | blue
+
+inductive ConstructorBinderLayout (schema : Schema)
+    : List Definition -> List Field -> Prop where
+  | intro (definitions : List Definition) (fields : List Field) (hnodup : fields.Nodup)
+    (hknown
+      : ∀ name value,
+          (name, value) ∈ fields
+          -> (Schema.lookupArgumentDefinition definitions name).isSome = true)
+    (htyped
+      : ∀ name value definition,
+          (name, value) ∈ fields
+          -> Schema.lookupArgumentDefinition definitions name = some definition
+          -> ValueCorrect schema value definition.inputType)
+    : ConstructorBinderLayout schema definitions fields
+
+inductive ConstructorShortBinders where
+  | nonNull (value : ConstInputValue) (inner : TypeRef) : ConstructorShortBinders
+
+inductive ConstructorResultLayout where
+  | intro (fields : List Field)
+    : ConstructorResultLayoutForInput schema (ConstructorValue.object fields)
+        (TypeRef.named typeName)
+
+inductive ConstructorLetHypothesis where
+  | intro
+    (hfields
+      : let fields := collectFields schema parentType selectionSet
+        ∀ left,
+          left ∈ fields
+          -> ∀ right,
+              right ∈ fields
+              -> left.responseName = right.responseName
+              -> FieldsForNameCanMerge schema left right)
+    : ConstructorLetHypothesis
+
+inductive ConstructorLongArrowApplication where
+  | intro
+    (htyped
+      : ∀ name value definition,
+          (name, value) ∈ fields
+          -> ValueIsCorrectTypeAtLocation schema variableDefinitions value
+              definition.inputType definition.defaultValue)
+    : ConstructorLongArrowApplication

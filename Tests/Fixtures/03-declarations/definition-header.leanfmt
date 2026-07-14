@@ -1,0 +1,38 @@
+def lookupVariableValue? (variableValues : VariableValues) (name : Name) : Option InputValue :=
+  match variableValues with
+  | [] => none
+  | (variableName, value) :: rest =>
+      if variableName = name then some value else lookupVariableValue? rest name
+
+def lookupObject (schema : Schema) (typeName : Name)
+    : Option ObjectType :=
+  do
+  body
+
+def staleNameSplit
+    (arg : Arg) :
+    Ret :=
+  body
+
+def shapeExample (arg1 : VeryLongTypeNameUsedForLayout) (arg2 : AnotherVeryLongTypeNameUsedForLayout) : VeryLongReturnInputTypeWithEnoughCharactersForLayoutTesting -> VeryLongReturnOutputTypeWithEnoughCharactersForLayoutTesting := body
+-----------------------------------------------------------------------------------------
+-- leanfmt: expected output below (DO NOT EDIT)
+-----------------------------------------------------------------------------------------
+def lookupVariableValue? (variableValues : VariableValues) (name : Name)
+    : Option InputValue :=
+  match variableValues with
+  | [] => none
+  | (variableName, value) :: rest =>
+      if variableName = name then some value else lookupVariableValue? rest name
+
+def lookupObject (schema : Schema) (typeName : Name) : Option ObjectType := do
+  body
+
+def staleNameSplit (arg : Arg) : Ret :=
+  body
+
+def shapeExample (arg1 : VeryLongTypeNameUsedForLayout)
+    (arg2 : AnotherVeryLongTypeNameUsedForLayout)
+    : VeryLongReturnInputTypeWithEnoughCharactersForLayoutTesting
+      -> VeryLongReturnOutputTypeWithEnoughCharactersForLayoutTesting :=
+  body

@@ -1,0 +1,15 @@
+-- module comment
+
+/- block comment -/
+def f : Nat :=
+  -- body comment
+  0
+-----------------------------------------------------------------------------------------
+-- leanfmt: expected output below (DO NOT EDIT)
+-----------------------------------------------------------------------------------------
+-- module comment
+
+/- block comment -/
+def f : Nat :=
+  -- body comment
+  0

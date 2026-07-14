@@ -1,0 +1,998 @@
+# LeanFmt formatting design
+
+This document describes how LeanFmt formats Lean source code. It is written for
+Lean programmers evaluating the formatter and for users who want to understand
+the changes it makes.
+
+LeanFmt is a conservative, structure-preserving formatter. It parses a complete
+Lean file with Lean's parser, recognizes common Lean constructs, and chooses
+whitespace and line breaks around the existing source tokens.
+
+For implementation architecture, see [architecture.md](architecture.md). For build,
+test, and debugging commands, see [development.md](development.md).
+
+## Formatting at a glance
+
+LeanFmt turns a line-wrapped proposition whose nesting is difficult to scan:
+
+```lean
+def parenthesizedConjunctionChain (schema : Schema) : Prop :=
+  namesAreUnique (schema.allTypes.map TypeDefinition.name) ∧
+    schema.objectType schema.queryType ∧
+    (∀ typeDefinition, typeDefinition ∈ schema.types
+      -> typeDefinitionWellFormed schema typeDefinition) ∧ (∀ typeName objectTypeName,
+          objectTypeName ∈ schema.getPossibleTypes typeName
+    -> schema.objectType objectTypeName)
+```
+
+into a layout where each leading `∧` connects a peer operand and indentation
+shows the structure inside each operand:
+
+```lean
+def parenthesizedConjunctionChain (schema : Schema) : Prop :=
+  namesAreUnique (schema.allTypes.map TypeDefinition.name)
+  ∧ schema.objectType schema.queryType
+  ∧ (∀ typeDefinition,
+      typeDefinition ∈ schema.types -> typeDefinitionWellFormed schema typeDefinition)
+  ∧ (∀ typeName objectTypeName,
+      objectTypeName ∈ schema.getPossibleTypes typeName
+      -> schema.objectType objectTypeName)
+```
+
+## Design philosophy
+
+### Preserve code, format structure
+
+Formatting changes whitespace only. Token text and token order remain the same.
+
+### Prefer a clear rule over a clever guess
+
+LeanFmt has rules for common Lean constructs. Unknown syntax is still lossless and
+receives a generic structural layout, but LeanFmt does not guess at the meaning of custom
+syntax.
+
+Proofs receive an even more conservative treatment. Proof subtrees are retained
+from their original source so that formatting declarations and propositions
+does not accidentally damage tactic layout.
+
+### Keep fitting code compact
+
+LeanFmt uses an 88-character line limit and two-space indentation. Most
+constructs are first considered in a single-line form. A construct breaks only
+when it is structurally multiline, an accepted source break applies, or the
+flat form does not fit.
+
+The line limit counts displayed Lean characters in the formatter's string
+model: symbols such as `∀`, `∧`, and `→` count as one character.
+
+### Make continuation structure visible
+
+Indentation shows block structure under constructs such as `def` and `theorem`.
+It also shows a local continuation when an application wraps:
+
+```lean
+def result :=
+  veryLongFunctionName child children additionalArgumentOne
+    additionalArgumentTwo additionalArgumentThree
+    additionalArgumentFour
+```
+
+For infix expressions, a leading operator indicates continuation without adding
+another logical nesting level:
+
+```lean
+def result : Prop :=
+  firstCondition
+  ∧ secondCondition
+  ∧ finalCondition
+```
+
+LeanFmt generally breaks before operators for this reason. Bodies after `:=`,
+`=>`, `with`, quantifier commas, and similar separators are indented instead.
+
+### Preserve intentional source breaks selectively
+
+Line breaks from the input source code are meaningful in some places and incidental in
+others. LeanFmt preserves a source break only where the rule for that construct accepts
+one. It always computes the resulting indentation itself.
+
+For example, a multiline function application may retain well-chosen argument
+breaks after the flat form overflows. A fitting infix expression is flattened
+even if its source had an arbitrary break.
+
+Input source code with intentional line breaks:
+
+```lean
+      semanticEquality schema someLongContextParameter
+        (normalize left)
+        (normalize right)
+```
+
+We don't want to force wrap it like:
+
+```lean
+      semanticEquality schema someLongContextParameter (normalize left)
+        (normalize right)
+```
+
+Definitions, theorems, parameter lists, and match pattern lists also have
+specific boundaries where source line breaks may be preserved.
+
+Source-break preservation follows the rule's layout mode:
+
+- a flow rule may retain only the accepted boundaries needed by its fitting layout;
+- a non-flow rule is balanced: once an accepted source break activates the rule,
+  every break point returned by that rule is applied together.
+
+This prevents partially broken branch, collection, header, and peer layouts. A
+non-flow conditional cannot preserve only the break before `else`, for example;
+it formats the `then` and `else` branches as one balanced structure.
+
+### Keep separators with their headers
+
+The assignment and arm separators `:=`, `←`, and `=>` belong to the header on
+their left. Their syntax rules do not offer a break immediately before the
+separator. If the right-hand side must move, the break occurs after it:
+
+```lean
+def result :=
+  longDefinitionBody
+
+let value :=
+  longComputation
+
+let value ←
+  longAction
+
+| pattern =>
+    longArmBody
+```
+
+This rule applies consistently to declarations, ordinary and destructuring
+`let` bindings, monadic bindings, lambdas, match alternatives, and
+equation-style declaration arms.
+
+The same header-suffix principle keeps `instance ... where` and `match ... with`
+together; the body breaks after `where` or `with`, not before it.
+
+The introducer keyword is also part of a binding header. LeanFmt never emits a
+line containing only `let`; it keeps `let` with the pattern or identifier:
+
+```lean
+let coreContext : Core.Context :=
+  { fileName := inputContext.fileName, fileMap := inputContext.fileMap }
+```
+
+These separator rules are structural rather than renderer spelling checks. A
+rule simply does not offer a break before its separator.
+
+## File-level whitespace
+
+These rules apply to every formatted file:
+
+- CRLF and CR line endings become LF.
+- Trailing spaces and tabs are removed.
+- A run of blank lines becomes at most one blank line.
+- A nonempty file ends with exactly one newline.
+- Empty formatted output remains empty.
+
+## Comments
+
+Line comments, block comments, nested block comments, and doc comments keep
+their text. LeanFmt cleans surrounding whitespace and reindents comment trivia
+when a containing construct moves.
+
+```lean
+-- module comment
+
+/- block comment -/
+def f : Nat :=
+  -- body comment
+  0
+```
+
+A trailing line comment stays on its line:
+
+```lean
+def answer : Nat := 0 -- trailing comment
+```
+
+Comment contents are not wrapped or rewritten.
+
+## Token spacing
+
+LeanFmt normally inserts one space between adjacent ordinary tokens and keeps
+punctuation tight.
+
+```lean
+def identity : Nat → Nat :=
+  fun x => x
+
+def optionConstructor :=
+  some .null
+```
+
+The main punctuation rules are:
+
+- no space after `(`, `[`, `⟨`, `⟪`, `@`, or `@[`;
+- no space before `)`, `]`, `⟩`, `⟫`, `,`, `;`, or `@`;
+- dots stay tight in projections and qualified names;
+- ordinary operators and declaration punctuation receive surrounding spaces;
+- compact `!value` remains compact when `!` and the following token were
+  adjacent; otherwise `! value` retains a space.
+
+Braces retain the source's tight or spaced style where adjacency makes that
+distinction safe:
+
+```lean
+{data := .null}
+{ data := .null }
+```
+
+LeanFmt does not infer that whitespace before a dot is always removable. In
+Lean, a dot after an expression can also begin an anonymous constructor, so the
+syntax tree and original adjacency are respected.
+
+Interpolated strings are single atoms. The `s!` prefix stays attached to the
+string, and neither source breaks nor width wrapping introduce breaks inside an
+interpolation:
+
+```lean
+s!"expected three operands, got {repr other}"
+```
+
+The containing application may break before the whole interpolated string.
+
+## Modules and commands
+
+Imports and top-level commands start on separate lines. Their order is
+preserved. Blank lines from the source may separate logical groups.
+
+```lean
+import Init
+
+namespace Example
+
+def answer : Nat := 42
+
+end Example
+```
+
+A long individual import is not split internally. Syntax declarations and
+other command forms keep their tokens and use either an explicit command rule
+or the generic structural layout.
+
+```lean
+import Very.Long.Module.Name.ThatRemainsOneImportCommand
+
+syntax "widget" : term
+```
+
+Attributes begin on their own line before a declaration:
+
+```lean
+@[simp]
+def idNat (x : Nat) : Nat := x
+```
+
+Keyword modifiers remain on the declaration header:
+
+```lean
+private theorem helper : True := by
+  trivial
+```
+
+## Declaration headers
+
+### Parameters
+
+Declaration parameters flow at binder boundaries. LeanFmt keeps as many
+binders as fit and places later binders on continuation lines indented four
+spaces from the declaration base.
+
+```lean
+def lookupObject (schema : Schema) (typeName : Name)
+    (fallback : ObjectType) : Option ObjectType :=
+  body
+```
+
+Existing parameter breaks can be retained after the header no longer fits.
+
+```lean
+def shapeExample (arg1 : VeryLongTypeNameUsedForLayout)
+    (arg2 : AnotherVeryLongTypeNameUsedForLayout)
+    : VeryLongReturnInputTypeWithEnoughCharactersForLayoutTesting
+      -> VeryLongReturnOutputTypeWithEnoughCharactersForLayoutTesting :=
+  body
+```
+* Grouping inside a binder remains intact, such as `(x y : Nat)` and
+`{ObjectRef : Type}`.
+
+If one binder is too long, it may break before its type annotation:
+
+```lean
+def example
+    (hknown
+      : ∀ name value,
+          predicate name value) :=
+  body
+```
+
+### Return types
+
+When a declaration header is too long, the return type moves to a line beginning
+with `:`. This line uses the declaration continuation indentation rather than
+the body indentation.
+
+```lean
+def lookupVariableValue? (variableValues : VariableValues) (name : Name)
+    : Option InputValue :=
+  body
+```
+
+Long function return types break before arrows:
+
+```lean
+def nestedReturnChain
+    : A -> VeryLongIntermediateReturnTypeWithEnoughCharactersForLayoutTesting
+      -> VeryLongFinalReturnTypeWithEnoughCharactersForLayoutTesting :=
+  body
+```
+
+Return-type arrow chains use flow layout: only the boundaries required to fit
+the line are broken.
+
+### Definition bodies
+
+A body that does not fit on the header starts after `:=` and is indented one
+level:
+
+```lean
+def wrappedApplicationArgument : Result :=
+  singleFieldResult responseName
+    (completeValue schema resolvers variableValues
+      fuel' fieldDefinition.outputType
+      (field :: fields) resolved)
+```
+
+An existing break immediately after `:=` is an accepted source break, even when
+the body itself would fit on the header. This allows a project to retain a
+deliberately multiline definition style.
+
+Bodies beginning with `do` or `by` keep that keyword attached to `:=`; the
+nested construct owns its body layout.
+
+```lean
+def lookupObject (schema : Schema) (typeName : Name) : Option ObjectType := do
+  body
+```
+
+### `where` blocks
+
+`where` returns to the declaration's base column. Nested declarations are
+indented one level.
+
+```lean
+def outer : Nat :=
+  inner
+where
+  inner : Nat := 0
+```
+
+### Theorems and proofs
+
+Theorem headers use the same parameter and return-type rules as definitions.
+In a simple theorem, `:= by` remains on the final header line:
+
+```lean
+theorem theoremArrowChain (h : HypothesisWithEnoughCharactersForLayoutTesting)
+    : FirstCondition -> SecondCondition -> FinalCondition := by
+  exact proof
+```
+
+The source text of theorem proof values is preserved. Definitions and
+abbreviations containing proof subtrees are preserved as a whole. Termination
+proof suffixes are also protected. LeanFmt can therefore format surrounding
+declarations and propositions without imposing a tactic style.
+
+Equation-style theorem and definition arms begin on their own lines and use the
+declaration body indentation.
+
+```lean
+theorem equations : List Nat -> True
+  | [] => by
+      trivial
+  | _ :: rest => by
+      trivial
+```
+
+## Structures, inductives, and mutual declarations
+
+Structure fields start on separate lines under `where`:
+
+```lean
+structure Point where
+  x : Nat
+  y : Nat
+```
+
+Long field types use the same binder/type continuation principles as other
+declarations.
+
+```lean
+structure ResolverFixture where
+  resolve
+    : Name -> Name -> List Argument
+      -> Option ResponseValue
+```
+
+Inductive constructors also start on separate lines:
+
+```lean
+inductive Color where
+  | red
+  | green
+  | blue
+```
+
+Constructor parameters flow at binder boundaries. A long constructor result
+type moves to a leading `:` continuation line.
+
+```lean
+inductive ConstructorResultLayout where
+  | intro (fields : List Field)
+    : ConstructorResultLayoutForInput schema (ConstructorValue.object fields)
+        (TypeRef.named typeName)
+```
+
+The arm base remains stable while long constructor binders flow beneath it:
+
+```lean
+inductive ConstructorBinderLayout where
+  | intro (first : FirstTypeWithEnoughCharactersForLayoutTesting)
+    (second : SecondTypeWithEnoughCharactersForLayoutTesting)
+    : Result
+```
+
+This is the same base/flow relationship used by equation arms: `|` owns the
+arm base, while binders and patterns own continuation opportunities.
+
+`deriving` begins on its own line when it follows a multiline structure or
+inductive declaration:
+
+```lean
+structure Response where
+  data : Nat
+  errors : Nat := 0
+deriving Repr
+```
+
+Mutual declaration bodies are indented beneath `mutual`, and `end` returns to
+the `mutual` column:
+
+```lean
+mutual
+  def first : Nat := second
+  def second : Nat := first
+end
+```
+
+## Function applications
+
+Applications use flow layout. The function and the longest fitting prefix of
+arguments remain on the current line; later arguments wrap with one additional
+indentation level.
+
+```lean
+veryLongFunctionName child children additionalArgumentOne
+  additionalArgumentTwo additionalArgumentThree
+```
+
+Nested applications choose their continuation from the nested application's
+structural base rather than aligning every line under the first argument:
+
+```lean
+singleFieldResult responseName
+  (completeValue schema resolvers variableValues
+    fuel' fieldDefinition.outputType
+    (field :: fields) resolved)
+```
+
+If the flat application overflows, valid argument-boundary breaks from the
+source are tried before automatic flow wrapping. Original indentation is
+ignored and recomputed.
+
+An argument whose formatted shape spans multiple lines is treated as not
+fitting on the current line. The application therefore breaks before that
+argument, including structured arguments such as `let`, `if`, `match`, and
+structure instances. No special-case preference between parent and child
+breaks is needed.
+
+Projection chains do not break before a dot. The application around a
+projection may still wrap:
+
+```lean
+def postfixProjection (schema : Schema) (typeName objectName : Name) :=
+  (schema.getPossibleTypes typeName).contains objectName
+```
+
+## Infix expressions
+
+LeanFmt combines consecutive operators of the same parser kind into a chain.
+When a chain breaks, operators lead continuation lines:
+
+```lean
+veryLongLeftHandSideExpressionWithEnoughCharactersForLayoutTesting
+= veryLongRightHandSideExpressionWithEnoughCharactersForLayoutTesting
+```
+
+Inside an indented declaration body, that becomes:
+
+```lean
+def equality : Prop :=
+  veryLongLeftHandSideExpressionWithEnoughCharactersForLayoutTesting
+  = veryLongRightHandSideExpressionWithEnoughCharactersForLayoutTesting
+```
+
+The operator line follows the expression's local base. Nested operators gain
+continuation indentation when needed to distinguish an inner expression from
+its surrounding chain:
+
+```lean
+Schema.lookupFieldDefinition implementationFields interfaceField.name
+  = some implementationField
+∧ fieldDefinitionImplements schema implementationField interfaceField
+```
+
+Parentheses stay tight around the expression. The expression inside them owns
+the breaks:
+
+```lean
+(schema.isLeafType implementation
+  ∧ schema.isLeafType expected
+  ∧ implementation = expected)
+```
+
+## Propositions and arrows
+
+LeanFmt distinguishes the layout role of arrow chains from their syntactic
+context:
+
+- arrows in ordinary function types flow and wrap only where required;
+- arrows in theorem statements, `Prop` definition bodies, quantifier bodies,
+  and logical operands break as a balanced logical group.
+
+```lean
+theorem valid
+    : FirstCondition
+      -> SecondCondition
+      -> FinalCondition := by
+  exact proof
+```
+
+Logical and equality operators recognized for balanced proposition layout are
+`->`, `→`, `∧`, `∨`, `/\`, `\/`, and `=`. A lower-precedence outer connector
+breaks before nested higher-precedence expressions.
+
+```lean
+def leadingEqualityAndOperand : Prop :=
+  firstCondition = secondConditionWithEnoughCharactersForLayoutTesting
+  ∧ thirdConditionWithEnoughCharactersForLayoutTesting
+  ∧ finalConditionWithEnoughCharactersForLayoutTesting
+```
+
+`≠` receives normal spacing but is not included in the balanced logical group.
+
+Nested disjunction and conjunction groups retain a visible local hierarchy:
+
+```lean
+def parenthesizedDisjunctionChain (schema : Schema) (implementation expected : Name)
+    : Prop :=
+  (schema.isLeafType implementation
+    ∧ schema.isLeafType expected
+    ∧ implementation = expected)
+  ∨ (schema.isCompositeType implementation
+      ∧ schema.isCompositeType expected
+      ∧ ∀ objectName,
+          schema.typeIncludesObject implementation objectName
+          -> schema.typeIncludesObject expected objectName)
+```
+
+## Quantifiers and lambdas
+
+A quantifier stays flat when it fits. Otherwise its body begins after the comma
+and is indented one level.
+
+```lean
+def mixedAdjacentQuantifiers : Prop :=
+  ∃ objectType,
+    ∀ typeCondition,
+      typeCondition ∈ typeConditions
+      -> objectType ∈ schema.getPossibleTypes typeCondition
+```
+
+Adjacent quantifiers of the same kind do not add another indentation level
+between them:
+
+```lean
+def adjacentQuantifiers : Prop :=
+  ∀ x, ∀ y, body x y
+```
+
+Different quantifiers add a level when their bodies wrap:
+
+```lean
+def mixedAdjacentQuantifiers : Prop :=
+  ∃ objectType,
+    ∀ typeCondition,
+      predicate objectType typeCondition
+```
+
+Long binder sequences can flow between binders. Source breaks between fitting
+adjacent quantifiers are not preserved merely because they appeared in the
+input.
+
+A lambda breaks after `=>` and indents its body one level:
+
+```lean
+fun objectType =>
+  normalizeSelectionSet schema objectType selections
+```
+
+## `let` expressions
+
+A `let` body always begins on a separate line. A long right-hand side begins
+after `:=` with one additional indentation level:
+
+```lean
+def withLet : Result :=
+  let normalizedSubselections :=
+    normalizeSelectionSet schema returnType mergedSubselections
+  normalizedSubselections
+```
+
+The body aligns with `let`, not with the right-hand side. When a `let` appears
+after a leading operator, LeanFmt may insert alignment space before `let` so the
+result also satisfies Lean's indentation-sensitive parser.
+
+A structured right-hand side keeps its own layout below `:=`:
+
+```lean
+def letMatchRhs : Result :=
+  let current :=
+    match selection with
+    | .field responseName fieldName => collectField responseName fieldName
+    | .inlineFragment selectionSet => collectFields selectionSet
+  current
+```
+
+Monadic bindings follow the same header/RHS split. Both identifier and pattern
+bindings keep `←` on the header and break after it when necessary:
+
+```lean
+let (normalizedSource, normalizeMs) ←
+  timeIO <| pure <| normalize source
+```
+
+## Conditionals
+
+A fitting conditional stays on one line. A multiline conditional breaks as a
+balanced branch structure:
+
+```lean
+if responseName == group.fst then
+  (responseName, fields ++ group.snd) :: rest
+else
+  (responseName, fields) :: addExecutableGroup group rest
+```
+
+An `else if` keeps the nested `if` on the `else` line rather than adding an
+extra branch indentation.
+
+```lean
+if firstCondition then
+  firstResult
+else if secondCondition then
+  secondResult
+else
+  finalResult
+```
+
+Accepted source breaks between branch boundaries can keep an intentional
+multiline conditional even when a flatter form fits. Because conditionals are
+non-flow rules, any accepted branch break activates the complete balanced
+branch layout.
+
+Thus an input that breaks only before `else` does not remain half-broken:
+
+```lean
+if arg.startsWith "-" then
+  .error s!"unknown option: {arg}"
+else
+  loop options (FilePath.mk arg :: files) rest
+```
+
+## Match expressions and equation arms
+
+Match alternatives start on their own lines and align with the `match` keyword:
+
+```lean
+match variableValues with
+| [] => none
+| (variableName, value) :: rest =>
+    if variableName = name then some value else lookupVariableValue? rest name
+```
+
+A long discriminant is formatted by its own rules before `with`:
+
+```lean
+match veryLongFunctionName child children additionalArgumentOne
+        additionalArgumentTwo with
+| [] => 0
+| _ :: rest => rest.length
+```
+
+Multiple match discriminants are grouped as peers. They use flow layout with
+breaks after commas, aligned under the first discriminant following `match`, so
+only the suffix that does not fit moves:
+
+```lean
+match defaultPresentChildIndexBefore? segment index,
+      defaultPresentChildIndexAfter? segment index,
+      defaultPresentChildIndexAround? segment index with
+| some before,
+  some after,
+  some around => result
+```
+
+Multiple patterns in one arm are balanced peers. If a pattern boundary breaks,
+all comma-separated pattern boundaries break together. A long right-hand side
+breaks after `=>` and is indented two levels from the arm start:
+
+```lean
+| .field responseName fieldName arguments directives selectionSet =>
+    collectFields schema responseName fieldName arguments directives selectionSet
+```
+
+Pattern lists also flow when they become too long:
+
+```lean
+| parentType,
+  _source,
+  .field responseName fieldName arguments directives selectionSet =>
+    body
+```
+
+Short right-hand sides stay on the arrow line. A `by` or `do` right-hand side
+also stays attached to `=>`, and its nested body owns subsequent breaks.
+
+```lean
+| .some value => do
+    process value
+| .none => by
+    exact defaultValue
+```
+
+Equation-style declaration arms follow the same alternative layout.
+
+Alternative patterns are grouped as peers before rendering, like operands in
+an infix chain. This lets multiple `|` patterns wrap in a balanced layout at
+the arm base instead of inheriting accidental nesting from the raw parser
+tree. A pattern alias such as `fieldSelection@(` stays attached; if its nested
+pattern must wrap, the break occurs inside the parentheses before the arm's
+`=>` body layout is considered.
+
+Indentation is relative to the arm's logical base, even when the enclosing
+expression starts at a shifted physical column. The formatter does not align
+continuations under an incidental token column. Comments between a pattern,
+separator, and body remain attached to their source tokens and are reindented
+with the resulting arm rather than changing which rule wins.
+
+## `do` expressions
+
+`do` remains attached to the expression that introduces it, and statements
+start one level below it:
+
+```lean
+def run : IO Unit := do
+  IO.println "start"
+  IO.println "done"
+```
+
+Statement boundaries are structural and remain on separate lines.
+
+A semicolon explicitly joins adjacent statements. If the complete sequence
+fits, it may remain on one line even when the source broke after `;`:
+
+```lean
+IO.println usage; pure 0
+```
+
+If it does not fit, the do-sequence rules provide the normal balanced
+statement boundaries.
+
+A refutable `let` with a fallback treats its value and fallback as separate
+branches. A multiline value begins one level below `:=`; `|` aligns with
+`let`, as required by Lean's layout parser:
+
+```lean
+let .some value :=
+  lookupVeryLongValue firstArgument secondArgument thirdArgument
+| return none
+consume value
+```
+
+If only the fallback is long, the value can remain on the header while the
+break occurs before `|`:
+
+```lean
+let .some value := candidate
+| recoverVeryLongValue firstArgument secondArgument thirdArgument
+consume value
+```
+
+The successful continuation also aligns with `let`. Formatting inside the
+value and fallback remains the responsibility of their own expression rules.
+
+## Subtypes
+
+A subtype stays compact when it fits:
+
+```lean
+{ target : ScopedField // target ∈ fields }
+```
+
+When it does not fit, it breaks before `//`:
+
+```lean
+{ targetField : ScopedFieldVeryLongTypeNameLikeThis
+  // targetField ∈ targetFieldsWithVeryLongName }
+```
+
+The property can then use ordinary proposition layout.
+
+## Arrays, tuples, and structure instances
+
+Single-line collections remain compact:
+
+```lean
+[firstItem, secondItem, thirdItem]
+(firstValue, secondValue)
+{ data := .null, errors := 1 }
+```
+
+Multi-item arrays and tuples use balanced layout: when the collection does not
+fit, the opening boundary, every item boundary, and the closing delimiter break
+together.
+
+```lean
+[
+  veryLongFirstArrayItemNameUsedForLayoutTesting,
+  veryLongSecondArrayItemNameUsedForLayoutTesting,
+  veryLongThirdArrayItemNameUsedForLayoutTesting
+]
+```
+
+LeanFmt does not add a trailing comma.
+
+A single multiline item keeps the outer array compact around that item. This
+supports common nested forms such as an array containing one structure value:
+
+```lean
+[{
+  parentType := parentType,
+  responseName := responseName,
+  fieldName := fieldName
+}]
+```
+
+Structure instances with several fields break after `{`, between fields, and
+before `}`. Comma-separated fields remain flat when they fit. Newline-separated
+fields without commas are structurally multiline because Lean's layout syntax
+requires those boundaries.
+
+A fitting constructor remains completely flat, including a nested constructor
+used as a field value. If a constructor argument is too wide, its containing
+application breaks before `{`. In a declaration body, the declaration first
+uses its normal break after `:=`; only then does the constructor apply its own
+field breaks. This avoids splitting a short constructor merely because the
+source happened to break inside it.
+
+```lean
+def recordOperand :=
+  {
+    parentType := validParentWithEnoughCharactersForLayoutTesting,
+    responseName := responseNameWithEnoughCharactersForLayoutTesting
+  }
+```
+
+A multiline tuple uses the same balanced opening, item, and closing shape:
+
+```lean
+def tupleOperand :=
+  (
+    firstItemNameWithEnoughCharactersForLayoutTesting,
+    secondItemNameWithEnoughCharactersForLayoutTesting,
+  )
+```
+
+Existing punctuation is preserved, so the trailing comma above remains because
+it was present in the source; LeanFmt does not add one.
+
+Structure updates follow the same field layout:
+
+```lean
+def normalizeOperation (schema : Schema) (operation : Operation) : Operation :=
+  {
+    operation with
+      selectionSet :=
+        normalizeSelectionSet schema operation.rootType operation.selectionSet
+  }
+```
+
+The update source is one level inside the braces, and fields are one level
+inside the `with` header. A short update remains flat, such as
+`{ operation with selectionSet := selectionSet }`.
+
+## Unknown and custom syntax
+
+Every parser token remains present even when LeanFmt has no explicit rule for a
+syntax node. The generic rule examines only the node's immediate child shape:
+
+- a token between two child nodes is treated as an infix-like break point;
+- otherwise, boundaries between present children become flow break points;
+- token spelling is not used to guess the meaning of the syntax.
+
+This provides conservative wrapping for long custom syntax without pretending
+to understand it. Formatting developers can use `--check-exception` to identify
+syntax that deserves an explicit rule.
+
+Unknown syntax is lossless, but its whitespace is not guaranteed to remain
+byte-for-byte unchanged.
+
+A short custom syntax declaration can remain flat:
+
+```lean
+syntax "widget" : term
+```
+
+If a larger custom node overflows, its parser-child boundaries determine the
+generic wrapping until LeanFmt has a dedicated rule for that syntax.
+
+## Diagnostics
+
+Diagnostics observe source without changing formatting behavior. The compact
+bang diagnostic reports `!f a b` because it can be read as either compact
+negation or a function application.
+
+These spellings are accepted and preserved:
+
+```lean
+!value
+! value
+! f a b
+! (f a b)
+```
+
+The ambiguous `!f a b` spelling is reported but not automatically rewritten.
+
+## Formatting guarantees
+
+LeanFmt is designed around these checks:
+
+1. Parsing succeeds with Lean's parser and active syntax extensions.
+2. Reconstructing the syntax tree reproduces the parsed source.
+3. Formatting preserves the non-whitespace character sequence.
+4. Formatting is idempotent: formatting the output again produces the same
+   output.
+
+The third and fourth properties are available as internal CLI checks for
+formatter development. They describe formatter correctness, not style options
+that ordinary users need to select.
+
+Formatting may require more than one parse/render pass because a first layout
+can expose a different accepted source-break shape to the next pass. LeanFmt
+iterates to a fixed point with a hard limit of four passes. If an intermediate
+result does not parse, repeats a previously seen result, or does not converge
+within that limit, LeanFmt emits a warning and returns the original source
+rather than treating the fallback as a hard formatter error.

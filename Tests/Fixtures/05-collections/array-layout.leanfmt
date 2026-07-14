@@ -1,0 +1,28 @@
+def singleItemArray := [singleItem]
+
+def multiItemArraySingleLine := [firstItem, secondItem, thirdItem]
+
+def multiItemArraySourceMultiline :=
+  [
+    firstItem,
+    secondItem,
+    thirdItem
+  ]
+
+def multiItemArrayMultiline := [veryLongFirstArrayItemNameUsedForLayoutTesting, veryLongSecondArrayItemNameUsedForLayoutTesting, veryLongThirdArrayItemNameUsedForLayoutTesting]
+-----------------------------------------------------------------------------------------
+-- leanfmt: expected output below (DO NOT EDIT)
+-----------------------------------------------------------------------------------------
+def singleItemArray := [singleItem]
+
+def multiItemArraySingleLine := [firstItem, secondItem, thirdItem]
+
+def multiItemArraySourceMultiline :=
+  [firstItem, secondItem, thirdItem]
+
+def multiItemArrayMultiline :=
+  [
+    veryLongFirstArrayItemNameUsedForLayoutTesting,
+    veryLongSecondArrayItemNameUsedForLayoutTesting,
+    veryLongThirdArrayItemNameUsedForLayoutTesting
+  ]

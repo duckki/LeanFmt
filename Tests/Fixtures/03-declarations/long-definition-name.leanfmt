@@ -1,0 +1,10 @@
+def ExecutedGroupedSelectionSetAlignedState.of_collected_groups_recursiveAlignedAppendState {ObjectIdentity
+    : Type}
+    {schema : Schema} :=
+  body
+-----------------------------------------------------------------------------------------
+-- leanfmt: expected output below (DO NOT EDIT)
+-----------------------------------------------------------------------------------------
+def ExecutedGroupedSelectionSetAlignedState.of_collected_groups_recursiveAlignedAppendState
+    {ObjectIdentity : Type} {schema : Schema} :=
+  body

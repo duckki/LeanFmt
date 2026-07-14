@@ -1,0 +1,62 @@
+def collectSelection :=
+  [(responseName, [{
+    parentType := parentType,
+    responseName := responseName,
+    fieldName := fieldName,
+    arguments := arguments,
+    selectionSet := selectionSet
+  }])]
+
+def collectFields :=
+  [{
+    parentType := parentType,
+    responseName := responseName,
+    fieldName := fieldName,
+    arguments := arguments,
+    outputType := fieldDefinition.outputType,
+    selectionSet := selectionSet
+  }]
+
+def collectFieldsSpaced :=
+  [ {
+      parentType := parentType,
+      responseName := responseName,
+      fieldName := fieldName,
+      arguments := arguments,
+      outputType := fieldDefinition.outputType,
+      selectionSet := selectionSet
+    }]
+-----------------------------------------------------------------------------------------
+-- leanfmt: expected output below (DO NOT EDIT)
+-----------------------------------------------------------------------------------------
+def collectSelection :=
+  [(
+    responseName,
+    [{
+      parentType := parentType,
+      responseName := responseName,
+      fieldName := fieldName,
+      arguments := arguments,
+      selectionSet := selectionSet
+    }]
+  )]
+
+def collectFields :=
+  [{
+    parentType := parentType,
+    responseName := responseName,
+    fieldName := fieldName,
+    arguments := arguments,
+    outputType := fieldDefinition.outputType,
+    selectionSet := selectionSet
+  }]
+
+def collectFieldsSpaced :=
+  [{
+    parentType := parentType,
+    responseName := responseName,
+    fieldName := fieldName,
+    arguments := arguments,
+    outputType := fieldDefinition.outputType,
+    selectionSet := selectionSet
+  }]

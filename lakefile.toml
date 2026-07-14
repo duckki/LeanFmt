@@ -1,0 +1,20 @@
+name = "leanfmt"
+version = "0.1.0"
+description = "A structure-preserving code formatter for Lean"
+keywords = ["lean4", "formatter", "devtool", "development-tools"]
+defaultTargets = ["LeanFmt", "fmt"]
+testDriver = "Tests"
+
+[[lean_lib]]
+name = "LeanFmt"
+
+[[lean_lib]]
+name = "Tests"
+
+[[lean_exe]]
+name = "fmt"
+root = "LeanFmt.Cli"
+
+[[lean_exe]]
+name = "fmt-test"
+root = "Tests.Cli"

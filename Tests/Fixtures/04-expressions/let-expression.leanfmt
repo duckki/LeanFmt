@@ -1,0 +1,123 @@
+def withLet : Nat :=
+  let x := 0
+  x
+
+def letIfRhs : Result :=
+  let normalizedSubselections :=
+    if objectTypeNameBool schema returnType then
+      normalizeSelectionSet schema returnType mergedSubselections
+    else
+      (schema.getPossibleTypes returnType).filterMap
+        (fun objectType =>
+          match normalizeSelectionSet schema objectType mergedSubselections with
+          | [] => none
+          | selection :: rest =>
+              some (.inlineFragment (some objectType) [] (selection :: rest)))
+  normalizedSubselections
+
+def letMatchRhs : Result :=
+  let current :=
+    match selection with
+    | .field responseName fieldName arguments _directives selectionSet =>
+        match schema.lookupField parentType fieldName with
+        | none => []
+        | some fieldDefinition =>
+            [
+              {
+                parentType := parentType,
+                responseName := responseName,
+                fieldName := fieldName,
+                arguments := arguments,
+                outputType := fieldDefinition.outputType,
+                selectionSet := selectionSet
+              }
+            ]
+    | .inlineFragment none _directives selectionSet =>
+        collectFields schema parentType selectionSet
+    | .inlineFragment (some typeCondition) _directives selectionSet =>
+        collectFields schema typeCondition selectionSet
+  current
+
+def letMatchRhsMisindented : Result :=
+  let current :=
+    match selection with
+    | .field responseName fieldName arguments _directives selectionSet =>
+        match schema.lookupField parentType fieldName with
+      | none => []
+      | some fieldDefinition =>
+            [
+              {
+                parentType := parentType,
+                responseName := responseName,
+                fieldName := fieldName,
+                arguments := arguments,
+                outputType := fieldDefinition.outputType,
+                selectionSet := selectionSet
+              }
+            ]
+    | .inlineFragment none _directives selectionSet =>
+        collectFields schema parentType selectionSet
+    | .inlineFragment (some typeCondition) _directives selectionSet =>
+        collectFields schema typeCondition selectionSet
+  current
+-----------------------------------------------------------------------------------------
+-- leanfmt: expected output below (DO NOT EDIT)
+-----------------------------------------------------------------------------------------
+def withLet : Nat :=
+  let x := 0
+  x
+
+def letIfRhs : Result :=
+  let normalizedSubselections :=
+    if objectTypeNameBool schema returnType then
+      normalizeSelectionSet schema returnType mergedSubselections
+    else
+      (schema.getPossibleTypes returnType).filterMap
+        (fun objectType =>
+          match normalizeSelectionSet schema objectType mergedSubselections with
+          | [] => none
+          | selection :: rest =>
+              some (.inlineFragment (some objectType) [] (selection :: rest)))
+  normalizedSubselections
+
+def letMatchRhs : Result :=
+  let current :=
+    match selection with
+    | .field responseName fieldName arguments _directives selectionSet =>
+        match schema.lookupField parentType fieldName with
+        | none => []
+        | some fieldDefinition =>
+            [{
+              parentType := parentType,
+              responseName := responseName,
+              fieldName := fieldName,
+              arguments := arguments,
+              outputType := fieldDefinition.outputType,
+              selectionSet := selectionSet
+            }]
+    | .inlineFragment none _directives selectionSet =>
+        collectFields schema parentType selectionSet
+    | .inlineFragment (some typeCondition) _directives selectionSet =>
+        collectFields schema typeCondition selectionSet
+  current
+
+def letMatchRhsMisindented : Result :=
+  let current :=
+    match selection with
+    | .field responseName fieldName arguments _directives selectionSet =>
+        match schema.lookupField parentType fieldName with
+        | none => []
+        | some fieldDefinition =>
+            [{
+              parentType := parentType,
+              responseName := responseName,
+              fieldName := fieldName,
+              arguments := arguments,
+              outputType := fieldDefinition.outputType,
+              selectionSet := selectionSet
+            }]
+    | .inlineFragment none _directives selectionSet =>
+        collectFields schema parentType selectionSet
+    | .inlineFragment (some typeCondition) _directives selectionSet =>
+        collectFields schema typeCondition selectionSet
+  current

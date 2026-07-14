@@ -1,0 +1,30 @@
+def splitMatchDiscriminant (resolver : Nat -> Nat -> Option Nat) : Nat :=
+  match Option.some 1 with
+  | some fieldDefinition =>
+      match resolver fieldDefinition
+              fieldDefinition with
+      | none => 0
+      | some value => value
+  | none => 0
+
+def longMatchDiscriminant (child : Nat) (children : List Nat) : Nat :=
+  match veryLongFunctionName child children additionalArgumentOne
+          additionalArgumentTwo with
+  | [] => 0
+  | _ :: rest => rest.length
+-----------------------------------------------------------------------------------------
+-- leanfmt: expected output below (DO NOT EDIT)
+-----------------------------------------------------------------------------------------
+def splitMatchDiscriminant (resolver : Nat -> Nat -> Option Nat) : Nat :=
+  match Option.some 1 with
+  | some fieldDefinition =>
+      match resolver fieldDefinition fieldDefinition with
+      | none => 0
+      | some value => value
+  | none => 0
+
+def longMatchDiscriminant (child : Nat) (children : List Nat) : Nat :=
+  match veryLongFunctionName child children additionalArgumentOne
+          additionalArgumentTwo with
+  | [] => 0
+  | _ :: rest => rest.length

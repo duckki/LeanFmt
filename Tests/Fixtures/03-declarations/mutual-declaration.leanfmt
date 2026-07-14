@@ -1,0 +1,18 @@
+mutual
+  def executeCollectedFields (schema : Schema) (resolvers : Resolvers ObjectRef)
+      (variableValues : VariableValues) (fuel : Nat)
+      (source : ResolverValue ObjectRef) :
+      List (Name × List ExecutableField)
+      -> Result (List (Name × ResponseValue))
+    | [] => .ok ([], 0)
+end
+-----------------------------------------------------------------------------------------
+-- leanfmt: expected output below (DO NOT EDIT)
+-----------------------------------------------------------------------------------------
+mutual
+  def executeCollectedFields (schema : Schema) (resolvers : Resolvers ObjectRef)
+      (variableValues : VariableValues) (fuel : Nat)
+      (source : ResolverValue ObjectRef)
+      : List (Name × List ExecutableField) -> Result (List (Name × ResponseValue))
+    | [] => .ok ([], 0)
+end

@@ -1,0 +1,147 @@
+def allowsBool : DirectiveApplication -> Bool
+  | .skip ifArgument =>
+      match ifArgument.staticBoolean? with
+      | some value => !value
+      | none => false
+  | .include ifArgument =>
+      match ifArgument.staticBoolean? with
+      | some value => value
+      | none => false
+
+def multiPatternAfterInnerMatch : Nat -> Option Nat -> Nat
+  | 0, _ => 0
+  | fuel + 1, previous? =>
+      match previous? with
+      | none => 0
+      | some value => value
+  | fuel + 1, some value => value
+
+def parenthesizedNestedMatch (fieldDefinition? : Option Nat)
+    (resolved? : Option Nat) : Prop :=
+  (match fieldDefinition? with
+  | some fieldDefinition =>
+      match resolved? with
+      | some value => value = fieldDefinition
+      | none => True
+  | none => True)
+
+def nestedValueMatchInResult
+    (completed : Result ResponseValue) : Result ResponseValue :=
+  match completed with
+  | .error errors => .error errors
+  | .ok (.null, errors) =>
+      .error <|
+        match errors with
+        | 0 => 1
+        | errors + 1 => errors + 1
+  | .ok (response, errors) => .ok (response, errors)
+
+def nestedListMatch (xs : List Nat) : Option Nat -> List Nat
+  | some _value =>
+      match xs with
+      | [] => []
+      | head :: tail => head :: tail
+  | none => []
+
+def nestedPairMatch (xs ys : List Nat) : Option Nat -> List Nat
+  | some _value =>
+      match xs, ys with
+      | [], _ => []
+      | _ :: _, [] => []
+      | _ :: _, child :: children => child :: children
+  | none => []
+
+def nestedPairMatchLongArm (xs ys : List Nat) : Option Nat -> List Nat
+  | some _value =>
+      match xs, ys with
+      | [], _ => []
+      | _ :: _, [] => []
+      | _ :: _, child :: children =>
+          veryLongFunctionName child children additionalArgumentOne
+            additionalArgumentTwo
+  | none => []
+
+def nestedOptionMatchInListMatch
+    (selectionSet : List Nat) (field? : Option Nat) : Prop :=
+  match selectionSet with
+  | [] => True
+  | _ :: _ =>
+      condition
+      -> match field? with
+      | none => False
+      | some fieldDefinition => True
+-----------------------------------------------------------------------------------------
+-- leanfmt: expected output below (DO NOT EDIT)
+-----------------------------------------------------------------------------------------
+def allowsBool : DirectiveApplication -> Bool
+  | .skip ifArgument =>
+      match ifArgument.staticBoolean? with
+      | some value => !value
+      | none => false
+  | .include ifArgument =>
+      match ifArgument.staticBoolean? with
+      | some value => value
+      | none => false
+
+def multiPatternAfterInnerMatch : Nat -> Option Nat -> Nat
+  | 0, _ => 0
+  | fuel + 1, previous? =>
+      match previous? with
+      | none => 0
+      | some value => value
+  | fuel + 1, some value => value
+
+def parenthesizedNestedMatch (fieldDefinition? : Option Nat) (resolved? : Option Nat)
+    : Prop :=
+  (match fieldDefinition? with
+    | some fieldDefinition =>
+        match resolved? with
+        | some value => value = fieldDefinition
+        | none => True
+    | none => True)
+
+def nestedValueMatchInResult (completed : Result ResponseValue)
+    : Result ResponseValue :=
+  match completed with
+  | .error errors => .error errors
+  | .ok (.null, errors) =>
+      .error
+      <| match errors with
+          | 0 => 1
+          | errors + 1 => errors + 1
+  | .ok (response, errors) => .ok (response, errors)
+
+def nestedListMatch (xs : List Nat) : Option Nat -> List Nat
+  | some _value =>
+      match xs with
+      | [] => []
+      | head :: tail => head :: tail
+  | none => []
+
+def nestedPairMatch (xs ys : List Nat) : Option Nat -> List Nat
+  | some _value =>
+      match xs, ys with
+      | [], _ => []
+      | _ :: _, [] => []
+      | _ :: _, child :: children => child :: children
+  | none => []
+
+def nestedPairMatchLongArm (xs ys : List Nat) : Option Nat -> List Nat
+  | some _value =>
+      match xs, ys with
+      | [], _ => []
+      | _ :: _, [] => []
+      | _ :: _, child :: children =>
+          veryLongFunctionName child children additionalArgumentOne
+            additionalArgumentTwo
+  | none => []
+
+def nestedOptionMatchInListMatch (selectionSet : List Nat) (field? : Option Nat)
+    : Prop :=
+  match selectionSet with
+  | [] => True
+  | _ :: _ =>
+      condition
+      -> match field? with
+          | none => False
+          | some fieldDefinition => True

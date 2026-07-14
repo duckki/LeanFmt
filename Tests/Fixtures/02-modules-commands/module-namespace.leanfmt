@@ -1,0 +1,13 @@
+import Init
+
+namespace Example
+
+end Example
+-----------------------------------------------------------------------------------------
+-- leanfmt: expected output below (DO NOT EDIT)
+-----------------------------------------------------------------------------------------
+import Init
+
+namespace Example
+
+end Example

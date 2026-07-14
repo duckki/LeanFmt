@@ -1,0 +1,34 @@
+def ifElseAfterQualifiedArgument : Result :=
+  if responseName == group.fst then
+    (responseName, fields ++ group.snd) :: rest
+  else
+    (responseName, fields) :: addExecutableGroup group rest
+
+def ifElseAfterLeadingDotConstructor : Result :=
+  if (TypeRef.named typeName).isCompositeBool schema then
+    .error 1
+  else
+    .ok (.scalar value, 0)
+
+def compactLongIfThenElse : Result :=
+  if fieldResponseName == responseName then some response else lookupResponseField? responseName rest
+-----------------------------------------------------------------------------------------
+-- leanfmt: expected output below (DO NOT EDIT)
+-----------------------------------------------------------------------------------------
+def ifElseAfterQualifiedArgument : Result :=
+  if responseName == group.fst then
+    (responseName, fields ++ group.snd) :: rest
+  else
+    (responseName, fields) :: addExecutableGroup group rest
+
+def ifElseAfterLeadingDotConstructor : Result :=
+  if (TypeRef.named typeName).isCompositeBool schema then
+    .error 1
+  else
+    .ok (.scalar value, 0)
+
+def compactLongIfThenElse : Result :=
+  if fieldResponseName == responseName then
+    some response
+  else
+    lookupResponseField? responseName rest

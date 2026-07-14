@@ -1,0 +1,356 @@
+structure ResolverFixture (ObjectRef : Type := PUnit) where
+  resolve :
+    Name -> Name -> List Argument -> ResolverValue ObjectRef ->
+      Option (ResolverValue ObjectRef)
+  resolve_argumentsEquivalent :
+    ∀ parentType fieldName firstArguments laterArguments source,
+      Argument.argumentsEquivalent firstArguments laterArguments ->
+        resolve parentType fieldName firstArguments source =
+          resolve parentType fieldName laterArguments source
+
+def equalityChain : Prop :=
+  first = second
+
+def selectionDirectiveFree : Selection -> Prop
+  | .field _responseName _fieldName _arguments directives selectionSet =>
+      directives
+      = [] ∧ selectionSetDirectiveFree selectionSet
+
+def selectionsAllInlineFragments (selectionSet : List Selection) : Prop :=
+  ∀ selection, selection ∈ selectionSet
+  -> Selection.isInlineFragment selection
+
+def alreadySplitConjunction : Prop :=
+  directives = []
+  ∧ selectionSetDirectiveFree selectionSet
+
+def binderEqualityCase
+    (variableDefinitions : VariableDefinitions)
+    (hlookup
+    : getVariableDefinition? variableDefinitions variableName
+    = some variableDefinition) :=
+  body
+
+def oldTrailingEquality : Prop :=
+  veryLongLeftHandSideExpressionWithEnoughCharactersForLayoutTesting =
+    veryLongRightHandSideExpressionWithEnoughCharactersForLayoutTesting
+
+def leadingEqualityArrowOperand : Prop :=
+  firstCondition
+  = secondConditionWithEnoughCharactersForLayoutTesting -> thirdConditionWithEnoughCharactersForLayoutTesting -> finalConditionWithEnoughCharactersForLayoutTesting
+
+def leadingEqualityAndOperand : Prop :=
+  firstCondition
+  = secondConditionWithEnoughCharactersForLayoutTesting ∧ thirdConditionWithEnoughCharactersForLayoutTesting ∧ finalConditionWithEnoughCharactersForLayoutTesting
+
+def parenthesizedConjunctionChain (schema : Schema) : Prop :=
+  namesAreUnique (schema.allTypes.map TypeDefinition.name)
+    ∧ schema.objectType schema.queryType
+    ∧ (∀ typeDefinition, typeDefinition ∈ schema.types
+      -> typeDefinitionWellFormed schema typeDefinition) ∧ (∀ typeName objectTypeName,
+          objectTypeName ∈ schema.getPossibleTypes typeName
+          -> schema.objectType objectTypeName)
+
+def parenthesizedDisjunctionChain (schema : Schema)
+    (implementation expected : Name) : Prop :=
+  (schema.isLeafType implementation ∧ schema.isLeafType expected
+    ∧ implementation = expected)
+    ∨ (schema.isCompositeType implementation
+      ∧ schema.isCompositeType expected ∧ ∀ objectName,
+          schema.typeIncludesObject implementation objectName
+          -> schema.typeIncludesObject expected objectName)
+
+def leadingEqualityOrOperand : Prop :=
+  firstCondition
+  = secondConditionWithEnoughCharactersForLayoutTesting ∨ thirdConditionWithEnoughCharactersForLayoutTesting ∨ finalConditionWithEnoughCharactersForLayoutTesting
+
+def leadingArrowAndOperand : Prop :=
+  firstCondition
+  -> secondConditionWithEnoughCharactersForLayoutTesting ∧ thirdConditionWithEnoughCharactersForLayoutTesting ∧ finalConditionWithEnoughCharactersForLayoutTesting
+
+def nonRedundantConjunction (selectionSet : List Selection) : Prop :=
+  responseNamesNodup selectionSet ∧ inlineFragmentTypeConditionsNodup selectionSet
+    ∧ ∀ selection, selection ∈ selectionSet -> selectionNonRedundant selection
+
+def ordinaryCallConjunctionSequence (fields : List FieldDefinition) : Prop :=
+  listNonempty fields ∧ namesAreUnique (fields.map FieldDefinition.name)
+    ∧ ∀ field, field ∈ fields -> fieldDefinitionWellFormed schema field
+
+def underindentedCallConjunction (fields : List FieldDefinition) : Prop :=
+  listNonempty fields
+    ∧ namesAreUnique (fields.map FieldDefinition.name)
+∧ ∀ field, field ∈ fields -> fieldDefinitionWellFormed schema field
+
+def underindentedTrailingConjunctionAfterParenthesizedOperand : Prop :=
+  namesAreUnique (schema.allTypes.map TypeDefinition.name)
+    ∧ schema.objectType schema.queryType
+    ∧ (∀ typeName, (schema.getPossibleTypes typeName).Nodup)
+  ∧ possibleObjectFieldDefinitionsImplement schema
+
+def operatorLedMatchConjunction (schema : Schema)
+    (variableDefinitions : List VariableDefinition)
+    (parentType : Name) : Selection -> Prop
+  | fieldSelection@(.field _responseName fieldName _arguments _directives selectionSet) =>
+      Validation.selectionValid schema variableDefinitions parentType fieldSelection
+        ∧ match schema.lookupField parentType fieldName with
+        | none => False
+        | some fieldDefinition =>
+              ∀ objectType,
+                objectType ∈
+                    schema.getPossibleTypes fieldDefinition.outputType.namedType
+                    -> selectionSetValidInPossibleTypes schema
+                    variableDefinitions objectType selectionSet
+
+def arrowBeforeEqualityInLongImplication : Prop :=
+  let fields := collectFields schema parentType selectionSet
+  ∀ left, left ∈ fields -> ∀ right, right ∈ fields -> left.responseName = right.responseName -> FieldsForNameCanMerge schema left right
+
+def arrowBeforeExistingEqualityBreak : Prop :=
+  let fields := collectFields schema parentType selectionSet
+  ∀ left, left ∈ fields -> ∀ right, right ∈ fields -> left.responseName
+  = right.responseName
+    -> FieldsForNameCanMerge schema left right
+
+mutual
+  def nestedParenthesizedSelectionSetValid (schema : Schema)
+      (variableDefinitions : List VariableDefinition)
+      (fieldDefinition : FieldDefinition) (selectionSet : List Selection) : Prop :=
+    let returnType := fieldDefinition.outputType.namedType
+    fieldDefinition.outputType.isOutputType schema
+      ∧ ((schema.isLeafType returnType
+      ∧ selectionSet = [])
+  ∨ (schema.isCompositeType returnType
+    ∧ selectionSet ≠ []
+        ∧ selectionSetValid schema variableDefinitions returnType selectionSet)) end
+
+def equalityInWrappedImplicationOperand : Prop :=
+  operationBoolVarsComplete operation variableValues
+  -> Execution.executeQueryWithFuel schema resolvers variableValues operation fuel
+      source = Execution.executeQueryWithFuel schema resolvers variableValues
+      (completeNormalizeOperation schema operation) fuel source
+
+def parenthesizedConjunctionBlockSequence : Prop :=
+  variables.Nodup
+  ∧ (∀ selection, selection ∈ selectionSet -> ∃ boolCase body,
+      completeNormalBoolCase variables boolCase
+      ∧ completeNormalBooleanStem boolCase selection body
+      ∧ selectionSetNormal schema body
+      ∧ selectionSetDirectiveFree body)
+    ∧ (∀ left right leftCase rightCase leftBody rightBody,
+        left ∈ selectionSet -> right ∈ selectionSet
+        -> completeNormalBoolCase variables leftCase
+        -> completeNormalBoolCase variables rightCase
+        -> completeNormalBooleanStem leftCase left leftBody
+        -> completeNormalBooleanStem rightCase right rightBody
+        -> selectionSetDirectiveFree leftBody
+        -> selectionSetDirectiveFree rightBody
+        -> completeNormalBoolCasesEquivalent leftCase rightCase
+        -> left = right)
+
+def parenthesizedDisjunctionThenConjunctionInMatchArm : Prop :=
+  match locationType, variableDefinition.typeRef with
+  | .nonNull locationInner, _variableType =>
+      (defaultValueNonNull variableDefinition.defaultValue
+            ∨ defaultValueNonNull locationDefault)
+          ∧ areInputTypesCompatible variableDefinition.typeRef locationInner
+
+def parenthesizedImplicationAfterConjunction : Prop :=
+  schema.isOutputType left
+  ∧ schema.isOutputType right
+  ∧ ((schema.isLeafType left ∨ schema.isLeafType right) -> left = right)
+
+def parenthesizedImplicationAfterConjunctionInArm : TypeRef -> TypeRef -> Prop
+  | .named left, .named right => schema.isOutputType left
+  ∧ schema.isOutputType right
+  ∧ ((schema.isLeafType left ∨ schema.isLeafType right)
+      -> left = right)
+-----------------------------------------------------------------------------------------
+-- leanfmt: expected output below (DO NOT EDIT)
+-----------------------------------------------------------------------------------------
+structure ResolverFixture (ObjectRef : Type := PUnit) where
+  resolve
+    : Name -> Name -> List Argument -> ResolverValue ObjectRef
+      -> Option (ResolverValue ObjectRef)
+  resolve_argumentsEquivalent
+    : ∀ parentType fieldName firstArguments laterArguments source,
+        Argument.argumentsEquivalent firstArguments laterArguments
+        -> resolve parentType fieldName firstArguments source
+            = resolve parentType fieldName laterArguments source
+
+def equalityChain : Prop :=
+  first = second
+
+def selectionDirectiveFree : Selection -> Prop
+  | .field _responseName _fieldName _arguments directives selectionSet =>
+      directives = [] ∧ selectionSetDirectiveFree selectionSet
+
+def selectionsAllInlineFragments (selectionSet : List Selection) : Prop :=
+  ∀ selection, selection ∈ selectionSet -> Selection.isInlineFragment selection
+
+def alreadySplitConjunction : Prop :=
+  directives = [] ∧ selectionSetDirectiveFree selectionSet
+
+def binderEqualityCase
+    (variableDefinitions : VariableDefinitions)
+    (hlookup
+      : getVariableDefinition? variableDefinitions variableName
+        = some variableDefinition) :=
+  body
+
+def oldTrailingEquality : Prop :=
+  veryLongLeftHandSideExpressionWithEnoughCharactersForLayoutTesting
+  = veryLongRightHandSideExpressionWithEnoughCharactersForLayoutTesting
+
+def leadingEqualityArrowOperand : Prop :=
+  firstCondition = secondConditionWithEnoughCharactersForLayoutTesting
+  -> thirdConditionWithEnoughCharactersForLayoutTesting
+  -> finalConditionWithEnoughCharactersForLayoutTesting
+
+def leadingEqualityAndOperand : Prop :=
+  firstCondition = secondConditionWithEnoughCharactersForLayoutTesting
+  ∧ thirdConditionWithEnoughCharactersForLayoutTesting
+  ∧ finalConditionWithEnoughCharactersForLayoutTesting
+
+def parenthesizedConjunctionChain (schema : Schema) : Prop :=
+  namesAreUnique (schema.allTypes.map TypeDefinition.name)
+  ∧ schema.objectType schema.queryType
+  ∧ (∀ typeDefinition,
+      typeDefinition ∈ schema.types -> typeDefinitionWellFormed schema typeDefinition)
+  ∧ (∀ typeName objectTypeName,
+      objectTypeName ∈ schema.getPossibleTypes typeName
+      -> schema.objectType objectTypeName)
+
+def parenthesizedDisjunctionChain (schema : Schema) (implementation expected : Name)
+    : Prop :=
+  (schema.isLeafType implementation
+    ∧ schema.isLeafType expected
+    ∧ implementation = expected)
+  ∨ (schema.isCompositeType implementation
+      ∧ schema.isCompositeType expected
+      ∧ ∀ objectName,
+          schema.typeIncludesObject implementation objectName
+          -> schema.typeIncludesObject expected objectName)
+
+def leadingEqualityOrOperand : Prop :=
+  firstCondition = secondConditionWithEnoughCharactersForLayoutTesting
+  ∨ thirdConditionWithEnoughCharactersForLayoutTesting
+  ∨ finalConditionWithEnoughCharactersForLayoutTesting
+
+def leadingArrowAndOperand : Prop :=
+  firstCondition
+  -> secondConditionWithEnoughCharactersForLayoutTesting
+      ∧ thirdConditionWithEnoughCharactersForLayoutTesting
+      ∧ finalConditionWithEnoughCharactersForLayoutTesting
+
+def nonRedundantConjunction (selectionSet : List Selection) : Prop :=
+  responseNamesNodup selectionSet
+  ∧ inlineFragmentTypeConditionsNodup selectionSet
+  ∧ ∀ selection, selection ∈ selectionSet -> selectionNonRedundant selection
+
+def ordinaryCallConjunctionSequence (fields : List FieldDefinition) : Prop :=
+  listNonempty fields
+  ∧ namesAreUnique (fields.map FieldDefinition.name)
+  ∧ ∀ field, field ∈ fields -> fieldDefinitionWellFormed schema field
+
+def underindentedCallConjunction (fields : List FieldDefinition) : Prop :=
+  listNonempty fields
+  ∧ namesAreUnique (fields.map FieldDefinition.name)
+  ∧ ∀ field, field ∈ fields -> fieldDefinitionWellFormed schema field
+
+def underindentedTrailingConjunctionAfterParenthesizedOperand : Prop :=
+  namesAreUnique (schema.allTypes.map TypeDefinition.name)
+  ∧ schema.objectType schema.queryType
+  ∧ (∀ typeName, (schema.getPossibleTypes typeName).Nodup)
+  ∧ possibleObjectFieldDefinitionsImplement schema
+
+def operatorLedMatchConjunction (schema : Schema)
+    (variableDefinitions : List VariableDefinition)
+    (parentType : Name)
+    : Selection -> Prop
+  | fieldSelection@(
+        .field _responseName fieldName _arguments _directives selectionSet) =>
+      Validation.selectionValid schema variableDefinitions parentType fieldSelection
+      ∧ match schema.lookupField parentType fieldName with
+        | none => False
+        | some fieldDefinition =>
+            ∀ objectType,
+              objectType ∈ schema.getPossibleTypes fieldDefinition.outputType.namedType
+              -> selectionSetValidInPossibleTypes schema
+                  variableDefinitions objectType selectionSet
+
+def arrowBeforeEqualityInLongImplication : Prop :=
+  let fields := collectFields schema parentType selectionSet
+  ∀ left,
+    left ∈ fields
+    -> ∀ right,
+        right ∈ fields
+        -> left.responseName = right.responseName
+        -> FieldsForNameCanMerge schema left right
+
+def arrowBeforeExistingEqualityBreak : Prop :=
+  let fields := collectFields schema parentType selectionSet
+  ∀ left,
+    left ∈ fields
+    -> ∀ right,
+        right ∈ fields
+        -> left.responseName = right.responseName
+        -> FieldsForNameCanMerge schema left right
+
+mutual
+  def nestedParenthesizedSelectionSetValid (schema : Schema)
+      (variableDefinitions : List VariableDefinition)
+      (fieldDefinition : FieldDefinition) (selectionSet : List Selection)
+      : Prop :=
+    let returnType := fieldDefinition.outputType.namedType
+    fieldDefinition.outputType.isOutputType schema
+    ∧ ((schema.isLeafType returnType ∧ selectionSet = [])
+        ∨ (schema.isCompositeType returnType
+            ∧ selectionSet ≠ []
+            ∧ selectionSetValid schema variableDefinitions returnType selectionSet))
+end
+
+def equalityInWrappedImplicationOperand : Prop :=
+  operationBoolVarsComplete operation variableValues
+  -> Execution.executeQueryWithFuel schema resolvers variableValues operation fuel
+        source
+      = Execution.executeQueryWithFuel schema resolvers variableValues
+          (completeNormalizeOperation schema operation) fuel source
+
+def parenthesizedConjunctionBlockSequence : Prop :=
+  variables.Nodup
+  ∧ (∀ selection,
+      selection ∈ selectionSet
+      -> ∃ boolCase body,
+          completeNormalBoolCase variables boolCase
+          ∧ completeNormalBooleanStem boolCase selection body
+          ∧ selectionSetNormal schema body
+          ∧ selectionSetDirectiveFree body)
+  ∧ (∀ left right leftCase rightCase leftBody rightBody,
+      left ∈ selectionSet
+      -> right ∈ selectionSet
+      -> completeNormalBoolCase variables leftCase
+      -> completeNormalBoolCase variables rightCase
+      -> completeNormalBooleanStem leftCase left leftBody
+      -> completeNormalBooleanStem rightCase right rightBody
+      -> selectionSetDirectiveFree leftBody
+      -> selectionSetDirectiveFree rightBody
+      -> completeNormalBoolCasesEquivalent leftCase rightCase
+      -> left = right)
+
+def parenthesizedDisjunctionThenConjunctionInMatchArm : Prop :=
+  match locationType, variableDefinition.typeRef with
+  | .nonNull locationInner, _variableType =>
+      (defaultValueNonNull variableDefinition.defaultValue
+        ∨ defaultValueNonNull locationDefault)
+      ∧ areInputTypesCompatible variableDefinition.typeRef locationInner
+
+def parenthesizedImplicationAfterConjunction : Prop :=
+  schema.isOutputType left
+  ∧ schema.isOutputType right
+  ∧ ((schema.isLeafType left ∨ schema.isLeafType right) -> left = right)
+
+def parenthesizedImplicationAfterConjunctionInArm : TypeRef -> TypeRef -> Prop
+  | .named left, .named right =>
+      schema.isOutputType left
+      ∧ schema.isOutputType right
+      ∧ ((schema.isLeafType left ∨ schema.isLeafType right) -> left = right)

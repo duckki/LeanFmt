@@ -1,0 +1,70 @@
+def responseName? : Selection -> Option Name
+  | .field responseName _fieldName _arguments _directives _selectionSet =>
+      some responseName
+  | _ => none
+
+def collectSelection (schema : Schema) (variableValues : VariableValues)
+    : Name -> ResolverValue ObjectRef -> Selection -> List (Name × List ExecutableField)
+  | parentType, _source,
+    .field responseName fieldName arguments directives selectionSet =>
+      body
+
+def constructorPatternIndent : Selection -> Result
+  | .field veryLongResponseName veryLongFieldName veryLongArguments veryLongDirectives
+      veryLongSelectionSet =>
+        body
+
+def combine {α β γ : Type} (combine : α -> β -> γ) : Result α -> Result β -> Result γ
+  | .ok (left, leftErrors), .ok (right, rightErrors) =>
+      .ok (combine left right, leftErrors + rightErrors)
+  | .error leftErrors, .ok (_right, rightErrors) => .error (leftErrors + rightErrors)
+  | .ok (_left, leftErrors), .error rightErrors => .error (leftErrors + rightErrors)
+  | .error leftErrors, .error rightErrors => .error (leftErrors + rightErrors)
+
+theorem theoremEquationsAfterMatchReturn
+    : ∀ groups,
+        result groups
+        = match groups with
+          | [] => zero
+          | _ :: rest => succ zero
+  | [] => by
+      simp
+  | _ :: rest => by
+      simp
+-----------------------------------------------------------------------------------------
+-- leanfmt: expected output below (DO NOT EDIT)
+-----------------------------------------------------------------------------------------
+def responseName? : Selection -> Option Name
+  | .field responseName _fieldName _arguments _directives _selectionSet =>
+      some responseName
+  | _ => none
+
+def collectSelection (schema : Schema) (variableValues : VariableValues)
+    : Name -> ResolverValue ObjectRef -> Selection -> List (Name × List ExecutableField)
+  | parentType,
+    _source,
+    .field responseName fieldName arguments directives selectionSet =>
+      body
+
+def constructorPatternIndent : Selection -> Result
+  | .field veryLongResponseName veryLongFieldName veryLongArguments veryLongDirectives
+      veryLongSelectionSet =>
+      body
+
+def combine {α β γ : Type} (combine : α -> β -> γ) : Result α -> Result β -> Result γ
+  | .ok (left, leftErrors), .ok (right, rightErrors) =>
+      .ok (combine left right, leftErrors + rightErrors)
+  | .error leftErrors, .ok (_right, rightErrors) => .error (leftErrors + rightErrors)
+  | .ok (_left, leftErrors), .error rightErrors => .error (leftErrors + rightErrors)
+  | .error leftErrors, .error rightErrors => .error (leftErrors + rightErrors)
+
+theorem theoremEquationsAfterMatchReturn
+    : ∀ groups,
+        result groups
+        = match groups with
+          | [] => zero
+          | _ :: rest => succ zero
+  | [] => by
+      simp
+  | _ :: rest => by
+      simp

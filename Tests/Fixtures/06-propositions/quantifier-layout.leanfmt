@@ -1,0 +1,133 @@
+def adjacentQuantifiers : Prop :=
+  ∀ x,
+  ∀ y,
+  body x y
+
+def mixedAdjacentQuantifiers : Prop :=
+  ∃ objectType,
+  ∀ typeCondition,
+  typeCondition ∈ typeConditions -> objectType ∈ schema.getPossibleTypes typeCondition
+
+def intervenedQuantifier : Prop :=
+  ∀ x,
+  ! ∀ y,
+    body x y
+
+def embeddedQuantifierImplication : Prop :=
+  head ∧ ∀ x,
+  veryLongQuantifierBodyExpressionWithEnoughCharactersForLayoutTestingAndMoreText x
+  -> tail x
+
+def leadingArrowExistentialBody : Prop :=
+  ∀ interfaceField, interfaceField ∈ interfaceType.fields
+    -> ∃ implementationField, Schema.lookupFieldDefinition implementationFields interfaceField.name = some implementationField ∧ fieldDefinitionImplements schema implementationField interfaceField
+
+def leadingArrowExistentialApplicationWrap : Prop :=
+  ∃ interfaceType, schema.lookupInterface interfaceName = some interfaceType
+    ∧ ∀ interfaceField, interfaceField ∈ interfaceType.fields
+      -> ∃ implementationField,
+          Schema.lookupFieldDefinition implementationFields
+          interfaceField.name
+          = some implementationField
+        ∧ fieldDefinitionImplements schema implementationField interfaceField
+
+def conjunctionBeforeQuantifier : Prop :=
+  (directives.map directiveName).Nodup ∧ ∀ directive, directive ∈ directives
+    -> directiveValid schema variableDefinitions directive
+
+def conjunctionBeforeQuantifierAlreadySplit : Prop :=
+  (directives.map directiveName).Nodup ∧ ∀ directive,
+      directive ∈ directives -> directiveValid schema variableDefinitions directive
+
+def conjunctionBeforeParenthesizedQuantifier : Prop :=
+  (arguments.map Argument.name).Nodup ∧ (∀ argument, argument ∈ arguments
+    -> argumentValid schema definitions variableDefinitions argument)
+    ∧ (∀ definition, definition ∈ definitions -> isRequiredArgument definition
+      -> ∃ argument, getArgument? arguments definition.name = some argument
+        ∧ inputValueNonNull argument.value)
+
+def closedDisjunctionBeforeQuantifierArrow : Prop :=
+  (left.parentType = right.parentType
+    ∨ ¬ schema.objectType left.parentType
+    ∨ ¬ schema.objectType right.parentType) -> ∀ objectType,
+      FieldsInSetCanMerge schema objectType
+        (left.selectionSet ++ right.selectionSet)
+
+def parenthesizedQuantifierImplicationConjunction : Prop :=
+  (∀ argument, argument ∈ left -> ∃ argument', argument' ∈ right
+     ∧ argument.equivalent argument')
+ ∧ (∀ argument, argument ∈ right -> ∃ argument', argument' ∈ left
+       ∧ argument'.equivalent argument)
+-----------------------------------------------------------------------------------------
+-- leanfmt: expected output below (DO NOT EDIT)
+-----------------------------------------------------------------------------------------
+def adjacentQuantifiers : Prop :=
+  ∀ x, ∀ y, body x y
+
+def mixedAdjacentQuantifiers : Prop :=
+  ∃ objectType,
+    ∀ typeCondition,
+      typeCondition ∈ typeConditions
+      -> objectType ∈ schema.getPossibleTypes typeCondition
+
+def intervenedQuantifier : Prop :=
+  ∀ x, ! ∀ y, body x y
+
+def embeddedQuantifierImplication : Prop :=
+  head
+  ∧ ∀ x,
+      veryLongQuantifierBodyExpressionWithEnoughCharactersForLayoutTestingAndMoreText x
+      -> tail x
+
+def leadingArrowExistentialBody : Prop :=
+  ∀ interfaceField,
+    interfaceField ∈ interfaceType.fields
+    -> ∃ implementationField,
+        Schema.lookupFieldDefinition implementationFields interfaceField.name
+          = some implementationField
+        ∧ fieldDefinitionImplements schema implementationField interfaceField
+
+def leadingArrowExistentialApplicationWrap : Prop :=
+  ∃ interfaceType,
+    schema.lookupInterface interfaceName = some interfaceType
+    ∧ ∀ interfaceField,
+        interfaceField ∈ interfaceType.fields
+        -> ∃ implementationField,
+            Schema.lookupFieldDefinition implementationFields interfaceField.name
+              = some implementationField
+            ∧ fieldDefinitionImplements schema implementationField interfaceField
+
+def conjunctionBeforeQuantifier : Prop :=
+  (directives.map directiveName).Nodup
+  ∧ ∀ directive,
+      directive ∈ directives -> directiveValid schema variableDefinitions directive
+
+def conjunctionBeforeQuantifierAlreadySplit : Prop :=
+  (directives.map directiveName).Nodup
+  ∧ ∀ directive,
+      directive ∈ directives -> directiveValid schema variableDefinitions directive
+
+def conjunctionBeforeParenthesizedQuantifier : Prop :=
+  (arguments.map Argument.name).Nodup
+  ∧ (∀ argument,
+      argument ∈ arguments
+      -> argumentValid schema definitions variableDefinitions argument)
+  ∧ (∀ definition,
+      definition ∈ definitions
+      -> isRequiredArgument definition
+      -> ∃ argument,
+          getArgument? arguments definition.name = some argument
+          ∧ inputValueNonNull argument.value)
+
+def closedDisjunctionBeforeQuantifierArrow : Prop :=
+  (left.parentType = right.parentType
+    ∨ ¬ schema.objectType left.parentType
+    ∨ ¬ schema.objectType right.parentType)
+  -> ∀ objectType,
+      FieldsInSetCanMerge schema objectType (left.selectionSet ++ right.selectionSet)
+
+def parenthesizedQuantifierImplicationConjunction : Prop :=
+  (∀ argument,
+    argument ∈ left -> ∃ argument', argument' ∈ right ∧ argument.equivalent argument')
+  ∧ (∀ argument,
+      argument ∈ right -> ∃ argument', argument' ∈ left ∧ argument'.equivalent argument)

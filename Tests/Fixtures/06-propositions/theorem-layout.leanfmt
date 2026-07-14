@@ -1,0 +1,86 @@
+def implicationChain : Prop :=
+  FirstCondition ->
+    SecondCondition ->
+      FinalCondition
+
+theorem theoremArrowChain (h : HypothesisWithEnoughCharactersForLayoutTesting) : FirstCondition -> SecondCondition -> FinalCondition := by
+  exact proof
+
+private theorem selectionSet_size_append (left right : List Selection) :
+    SelectionSet.size (left ++ right) = SelectionSet.size left + SelectionSet.size right := by
+  exact proof
+
+private theorem mergeSelectionSets_append
+    (left right : List Selection)
+    : mergeSelectionSets (left ++ right) = mergeSelectionSets left ++ mergeSelectionSets right := by
+  exact proof
+
+private theorem size_withoutFieldSelectionsWithResponseName_le (schema : Schema)
+    (responseName : Name)
+    : ∀ selectionSet,
+      SelectionSet.size
+          (withoutFieldSelectionsWithResponseName schema responseName selectionSet)
+        ≤ SelectionSet.size selectionSet := by
+  exact proof
+
+theorem theoremLetReturn
+    (h : Hypothesis) :
+    let first := value
+    Result first := by
+  exact proof
+
+theorem theoremMultilineLongArrowHead
+    (schema : Schema)
+    (operation : Operation)
+    : SchemaWellFormedness.schemaWellFormed schema -> Validation.operationDefinitionValid schema operation -> operationFieldsValidInPossibleTypes schema operation -> FieldMerge.fieldsInSetCanMerge schema operation.rootType := by
+  exact proof
+
+theorem theoremLeadingArrowQuantifierReturnDone
+    : schemaWellFormed schema -> ∀ typeName, (schema.getPossibleTypes typeName).Nodup := by
+  intro hschema
+  exact proof
+-----------------------------------------------------------------------------------------
+-- leanfmt: expected output below (DO NOT EDIT)
+-----------------------------------------------------------------------------------------
+def implicationChain : Prop :=
+  FirstCondition -> SecondCondition -> FinalCondition
+
+theorem theoremArrowChain (h : HypothesisWithEnoughCharactersForLayoutTesting)
+    : FirstCondition -> SecondCondition -> FinalCondition := by
+  exact proof
+
+private theorem selectionSet_size_append (left right : List Selection)
+    : SelectionSet.size (left ++ right)
+      = SelectionSet.size left + SelectionSet.size right := by
+  exact proof
+
+private theorem mergeSelectionSets_append (left right : List Selection)
+    : mergeSelectionSets (left ++ right)
+      = mergeSelectionSets left ++ mergeSelectionSets right := by
+  exact proof
+
+private theorem size_withoutFieldSelectionsWithResponseName_le (schema : Schema)
+    (responseName : Name)
+    : ∀ selectionSet,
+        SelectionSet.size
+          (withoutFieldSelectionsWithResponseName schema responseName selectionSet)
+        ≤ SelectionSet.size selectionSet := by
+  exact proof
+
+theorem theoremLetReturn (h : Hypothesis)
+    : let first := value
+      Result first := by
+  exact proof
+
+theorem theoremMultilineLongArrowHead (schema : Schema) (operation : Operation)
+    : SchemaWellFormedness.schemaWellFormed schema
+      -> Validation.operationDefinitionValid schema operation
+      -> operationFieldsValidInPossibleTypes schema operation
+      -> FieldMerge.fieldsInSetCanMerge schema operation.rootType := by
+  exact proof
+
+theorem theoremLeadingArrowQuantifierReturnDone
+    : schemaWellFormed schema
+      -> ∀ typeName, (schema.getPossibleTypes typeName).Nodup := by
+  intro hschema
+  exact proof
