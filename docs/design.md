@@ -197,7 +197,8 @@ A trailing line comment stays on its line:
 def answer : Nat := 0 -- trailing comment
 ```
 
-Comment contents are not wrapped or rewritten.
+Comment contents are not wrapped or rewritten. Module and declaration documentation
+comments retain their exact internal whitespace and line shape.
 
 ## Token spacing
 
@@ -982,7 +983,8 @@ LeanFmt is designed around these checks:
 
 1. Parsing succeeds with Lean's parser and active syntax extensions.
 2. Reconstructing the syntax tree reproduces the parsed source.
-3. Formatting preserves the non-whitespace character sequence.
+3. Formatting preserves the code-token sequence and the exact text inside comments;
+   whitespace between code and comment fragments is normalized for comparison.
 4. Formatting is idempotent: formatting the output again produces the same
    output.
 

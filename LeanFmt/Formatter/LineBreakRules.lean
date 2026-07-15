@@ -1659,11 +1659,20 @@ def basicFunRule : LineBreakRule :=
     breakPoints := basicFunBreaks
   }
 
-def bangPrefixRule : LineBreakRule :=
+def prefixedTermRule (name : String) : LineBreakRule :=
   {
-    name := "bangPrefix"
+    name
     inheritBase := fun _ _ => true
   }
+
+def bangPrefixRule : LineBreakRule :=
+  prefixedTermRule "bangPrefix"
+
+def nestedActionRule : LineBreakRule :=
+  prefixedTermRule "nestedAction"
+
+def unsafeTermRule : LineBreakRule :=
+  prefixedTermRule "unsafeTerm"
 
 def matchPatternsRule : LineBreakRule :=
   {
@@ -1809,6 +1818,9 @@ def ruleFor : SyntaxTree.Tree → Option LineBreakRule
   | .node (.raw `Lean.Parser.Module.module) _ => some moduleRule
   | .node (.raw `Lean.Parser.Module.header) _ => some moduleRule
   | .node (.raw `Lean.Parser.Module.import) _ => some moduleRule
+  | .node (.raw `Lean.Parser.Module.moduleTk) _ => some defaultRule
+  | .node (.raw `Lean.Parser.Module.public) _ => some defaultRule
+  | .node (.raw `Lean.Parser.Module.meta) _ => some defaultRule
   | .node (.raw `Lean.Parser.Command.moduleDoc) _ => some defaultRule
   | .node (.raw `Lean.Parser.Command.docComment) _ => some defaultRule
   | .node (.raw `Lean.Parser.Command.sectionHeader) _ => some defaultRule
@@ -1816,6 +1828,7 @@ def ruleFor : SyntaxTree.Tree → Option LineBreakRule
   | .node (.raw `Lean.Parser.Command.end) _ => some defaultRule
   | .node (.raw `Lean.Parser.Command.open) _ => some defaultRule
   | .node (.raw `Lean.Parser.Command.openSimple) _ => some defaultRule
+  | .node (.raw `Lean.Parser.Command.openScoped) _ => some defaultRule
   | .node (.raw `Lean.Parser.Command.variable) _ => some defaultRule
   | .node (.raw `Lean.Parser.Command.set_option) _ => some defaultRule
   | .node (.raw `Lean.Parser.Command.declModifiers) _ => some defaultRule
@@ -1824,14 +1837,23 @@ def ruleFor : SyntaxTree.Tree → Option LineBreakRule
   | .node (.raw `Lean.Parser.Command.optDeriving) _ => some defaultRule
   | .node (.raw `Lean.Parser.Command.derivingClass) _ => some defaultRule
   | .node (.raw `Lean.Parser.Command.structureTk) _ => some defaultRule
+  | .node (.raw `Lean.Parser.Command.classTk) _ => some defaultRule
   | .node (.raw `Lean.Parser.Command.private) _ => some defaultRule
+  | .node (.raw `Lean.Parser.Command.public) _ => some defaultRule
+  | .node (.raw `Lean.Parser.Command.meta) _ => some defaultRule
   | .node (.raw `Lean.Parser.Command.noncomputable) _ => some defaultRule
   | .node (.raw `Lean.Parser.Command.protected) _ => some defaultRule
   | .node (.raw `Lean.Parser.Command.partial) _ => some defaultRule
   | .node (.raw `Lean.Parser.Command.eval) _ => some defaultRule
+  | .node (.raw `Lean.Parser.Command.example) _ => some defaultRule
+  | .node (.raw `Lean.Parser.Command.universe) _ => some defaultRule
+  | .node (.raw `Lean.Parser.Command.syntax) _ => some defaultRule
+  | .node (.raw `Lean.Parser.Command.macro_rules) _ => some defaultRule
   -- Transparent expression wrappers and atomic syntax.
   | .node (.raw `Lean.Parser.Term.paren) _ => some parenRule
   | .node (.raw `Lean.Parser.Term.fun) _ => some transparentRule
+  | .node (.raw `Lean.Parser.Term.nestedAction) _ => some nestedActionRule
+  | .node (.raw `Lean.Parser.Term.unsafe) _ => some unsafeTermRule
   | .node (.raw `Lean.Parser.Term.typeSpec) _ => some transparentRule
   | .node (.raw `Lean.Parser.Command.declValSimple) _ => some transparentRule
   | .node (.raw `Lean.Parser.Command.instance) _ => some transparentRule
@@ -1866,6 +1888,7 @@ def ruleFor : SyntaxTree.Tree → Option LineBreakRule
   | .node (.raw `Lean.Parser.Term.attrKind) _ => some defaultRule
   | .node (.raw `Lean.Parser.Term.attrInstance) _ => some defaultRule
   | .node (.raw `Lean.Parser.Term.attributes) _ => some defaultRule
+  | .node (.raw `Lean.Parser.Term.scoped) _ => some defaultRule
   | .node (.raw `Lean.Parser.Term.ellipsis) _ => some defaultRule
   | .node (.raw `Lean.Parser.Term.nomatch) _ => some defaultRule
   | .node (.raw `Lean.Parser.Term.quotedName) _ => some defaultRule
@@ -1883,10 +1906,19 @@ def ruleFor : SyntaxTree.Tree → Option LineBreakRule
   | .node (.raw `fieldIdx) _ => some defaultRule
   | .node (.raw `patternIgnore) _ => some defaultRule
   | .node (.raw `choice) _ => some transparentRule
+  | .node (.raw `Lean.Parser.Syntax.atom) _ => some transparentRule
+  | .node (.raw `Lean.Parser.Syntax.cat) _ => some transparentRule
+  | .node (.raw `«stx_,*») _ => some transparentRule
+  | .node (.raw `Lean.Parser.Term.quot) _ => some defaultRule
   | .node (.raw `term!_) _ => some bangPrefixRule
   | .node (.raw `«term¬_») _ => some defaultRule
   | .node (.raw `token.«← ») _ => some defaultRule
   | .node (.raw `Lean.Parser.Attr.simp) _ => some defaultRule
+  | .node (.raw `Lean.Parser.Attr.grind) _ => some defaultRule
+  | .node (.raw `Lean.Parser.Attr.grindMod) _ => some defaultRule
+  | .node (.raw `Lean.Parser.Attr.grindEq) _ => some defaultRule
+  | .node (.raw `Lean.Parser.Attr.grindDef) _ => some defaultRule
+  | .node (.raw `Lean.Parser.Attr.grindLR) _ => some defaultRule
   | .node (.raw `«term{}») _ => some defaultRule
   | .node (.raw `«term{_}») _ => some structInstRule
   | .node (.raw `«term[_]») _ => some arrayRule

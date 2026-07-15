@@ -75,7 +75,8 @@ lake exe fmt --check --check-exception --check-idempotent --recursive Some/Direc
 
 `--check-exception` runs the formatter's internal diagnostic bundle:
 
-- compare the non-whitespace character sequence before and after formatting;
+- compare the code-token sequence before and after formatting while preserving
+  comment text exactly;
 - report actionable formatted lines that still exceed the configured width;
 - report syntax nodes that have no registered line-break rule.
 

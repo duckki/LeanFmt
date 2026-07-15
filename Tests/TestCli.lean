@@ -7,7 +7,7 @@ namespace LeanFmt.TestCli
 
 def loadFormatterEnvironment : IO Lean.Environment := do
   Lean.initSearchPath (← Lean.findSysroot)
-  Lean.importModules (loadExts := true) #[{ module := `Lean }] {} 0
+  Formatter.defaultEnvironment
 
 inductive Mode where
   | format

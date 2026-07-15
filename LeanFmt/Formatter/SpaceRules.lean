@@ -107,7 +107,7 @@ def noSpaceAfterToken (lexeme : String) : Bool :=
   stringIn lexeme ["(", "[", "#[", "⟨", "⟪", "@", "@["]
 
 def noSpaceBeforeToken (lexeme : String) : Bool :=
-  stringIn lexeme [")", "]", "⟩", "⟫", ",", ";", "@"]
+  stringIn lexeme [")", "]", "⟩", "⟫", ",", ",*", ";", "@"]
 
 def preservesTightBraceSpacing (left right : SyntaxTree.Token) : Bool :=
   left.lexeme == "{" || right.lexeme == "}"

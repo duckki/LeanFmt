@@ -76,10 +76,9 @@ def lineNumberAt (source : String) (position : String.Pos.Raw) : Nat :=
   newlineCount (SyntaxTree.sourceText source 0 position) + 1
 
 def missingRuleReportSkipsTree : SyntaxTree.Tree → Bool
-  | .node (.raw `Lean.Parser.Term.byTactic) _ => true
   | .node (.raw `Lean.Parser.Term.byTactic') _ => true
   | .node (.raw `Lean.Parser.Termination.suffix) _ => true
-  | _ => false
+  | tree => shouldEmitOriginalTree tree
 
 def treeStart? (tree : SyntaxTree.Tree) : Option String.Pos.Raw :=
   match tree.firstToken? with
@@ -116,26 +115,132 @@ def missingRuleOccurrencesForModule (moduleTree : SyntaxTree.Module)
     : List MissingRuleOccurrence :=
   missingRuleOccurrences moduleTree.source none moduleTree.tree
 
-def isIgnoredWhitespace : Char → Bool
-  | ' ' | '\t' | '\n' | '\r' => true
-  | _ => false
-
-def withoutIgnoredWhitespace (text : String) : String :=
-  String.ofList <| text.toList.filter fun char => !isIgnoredWhitespace char
-
-def preservesCodeIgnoringWhitespace (before after : String) : Bool :=
-  withoutIgnoredWhitespace before == withoutIgnoredWhitespace after
-
-def positionAfter (position : String.Pos.Raw) (text : String) : String.Pos.Raw :=
-  String.Pos.Raw.mk (position.byteIdx + text.endPos.offset.byteIdx)
-
-def tokenIntersects (start stop : String.Pos.Raw) (token : SyntaxTree.Token) : Bool :=
-  token.span.start < stop && start < token.span.stop
-
 def treeSpan? (tree : SyntaxTree.Tree) : Option SyntaxTree.Span := do
   let first ← tree.firstToken?
   let last ← tree.lastToken?
   some { start := first.span.start, stop := last.span.stop }
+
+inductive PreservationFragment where
+  | code (text : String)
+  | comment (text : String)
+  | space
+deriving BEq, Repr
+
+partial def takeLineCommentAux (reversed : List Char)
+    : List Char → List Char × List Char
+  | [] => (reversed.reverse, [])
+  | chars@('\n' :: _) => (reversed.reverse, chars)
+  | chars@('\r' :: _) => (reversed.reverse, chars)
+  | char :: rest => takeLineCommentAux (char :: reversed) rest
+
+partial def takeBlockCommentAux (depth : Nat) (reversed : List Char)
+    : List Char → List Char × List Char
+  | [] => (reversed.reverse, [])
+  | '/' :: '-' :: rest =>
+      takeBlockCommentAux (depth + 1) ('-' :: '/' :: reversed) rest
+  | '-' :: '/' :: rest =>
+      let reversed := '/' :: '-' :: reversed
+      if depth == 1 then
+        (reversed.reverse, rest)
+      else
+        takeBlockCommentAux (depth - 1) reversed rest
+  | char :: rest => takeBlockCommentAux depth (char :: reversed) rest
+
+partial def commentFragmentsAux (reversed : List PreservationFragment)
+    : List Char → List PreservationFragment
+  | [] => reversed.reverse
+  | '-' :: '-' :: rest =>
+      let (comment, rest) := takeLineCommentAux ['-', '-'] rest
+      commentFragmentsAux (.comment (String.ofList comment) :: reversed) rest
+  | '/' :: '-' :: rest =>
+      let (comment, rest) := takeBlockCommentAux 1 ['-', '/'] rest
+      commentFragmentsAux (.comment (String.ofList comment) :: reversed) rest
+  | _ :: rest => commentFragmentsAux reversed rest
+
+def commentFragments (trivia : String) : List PreservationFragment :=
+  commentFragmentsAux [] trivia.toList
+
+def isSyntaxCommentKind (kind : SyntaxNodeKind) : Bool :=
+  kind == `Lean.Parser.Command.moduleDoc || kind == `Lean.Parser.Command.docComment
+
+partial def syntaxCommentSpans : SyntaxTree.Tree → List SyntaxTree.Span
+  | .missing | .leaf _ => []
+  | tree@(.node (.raw kind) children) =>
+      if isSyntaxCommentKind kind then
+        treeSpan? tree |>.toList
+      else
+        children.toList.flatMap syntaxCommentSpans
+  | .node _ children => children.toList.flatMap syntaxCommentSpans
+
+def commentSpanForToken? (spans : List SyntaxTree.Span) (token : SyntaxTree.Token)
+    : Option SyntaxTree.Span :=
+  spans.find? fun span => span.start <= token.span.start && token.span.stop <= span.stop
+
+def tokenPreservationFragments
+    (source : String) (syntaxCommentSpans : List SyntaxTree.Span)
+    (token : SyntaxTree.Token)
+    : List PreservationFragment :=
+  match commentSpanForToken? syntaxCommentSpans token with
+  | none =>
+      let code := if token.lexeme.isEmpty then [] else [.code token.lexeme]
+      commentFragments token.leading.text
+      ++ code
+      ++ commentFragments token.trailing.text
+  | some span =>
+      let leading :=
+        if token.span.start == span.start then
+          commentFragments token.leading.text
+        else
+          []
+      let comment :=
+        if token.span.start == span.start then
+          [.comment (SyntaxTree.sourceText source span.start span.stop)]
+        else
+          []
+      let trailing :=
+        if token.span.stop == span.stop then
+          commentFragments token.trailing.text
+        else
+          []
+      leading ++ comment ++ trailing
+
+def preservationFragments (moduleTree : SyntaxTree.Module)
+    : List PreservationFragment :=
+  let tokens :=
+    moduleTree.sourceOrderedTokens.toList.filter
+      fun token => SyntaxTree.tokenComesFromSource moduleTree.source token
+  let syntaxCommentSpans := syntaxCommentSpans moduleTree.tree
+  let fragments :=
+    tokens.flatMap (tokenPreservationFragments moduleTree.source syntaxCommentSpans)
+  let trailingSource :=
+    match tokens.getLast? with
+    | none => moduleTree.source
+    | some token =>
+        SyntaxTree.sourceText moduleTree.source token.fullSpan.stop
+          moduleTree.source.endPos.offset
+  (fragments ++ commentFragments trailingSource).intersperse .space
+
+def preservesCodeIgnoringWhitespace (before after : SyntaxTree.Module) : Bool :=
+  preservationFragments before == preservationFragments after
+
+def positionAfter (position : String.Pos.Raw) (text : String) : String.Pos.Raw :=
+  String.Pos.Raw.mk (position.byteIdx + text.endPos.offset.byteIdx)
+
+partial def preservedOriginalSpans : SyntaxTree.Tree → List SyntaxTree.Span
+  | .missing | .leaf _ => []
+  | tree@(.node _ children) =>
+      if shouldEmitOriginalTree tree then
+        treeSpan? tree |>.toList
+      else
+        children.toList.zipIdx.flatMap
+          fun (child, index) =>
+            if shouldEmitOriginalChild tree index child then
+              treeSpan? child |>.toList
+            else
+              preservedOriginalSpans child
+
+def tokenIntersects (start stop : String.Pos.Raw) (token : SyntaxTree.Token) : Bool :=
+  token.span.start < stop && start < token.span.stop
 
 def atomicTreeSpan? (tree : SyntaxTree.Tree) : Option SyntaxTree.Span :=
   match tree with
@@ -223,7 +328,8 @@ def overflowIsExempt
 
 def overflowOccurrences (moduleTree : SyntaxTree.Module) : List OverflowOccurrence :=
   let tokens := realTokens moduleTree
-  let indivisibleSpans := indivisibleOverflowSpans moduleTree.tree
+  let indivisibleSpans :=
+    preservedOriginalSpans moduleTree.tree ++ indivisibleOverflowSpans moduleTree.tree
   let rec loop (lineNumber : Nat) (lineStart : String.Pos.Raw)
       : List String → List OverflowOccurrence
     | [] => []
@@ -242,7 +348,7 @@ def overflowOccurrences (moduleTree : SyntaxTree.Module) : List OverflowOccurren
 def formattingExceptions (sourceModule formattedModule : SyntaxTree.Module)
     : List FormattingException :=
   let codeExceptions :=
-    if preservesCodeIgnoringWhitespace sourceModule.source formattedModule.source then
+    if preservesCodeIgnoringWhitespace sourceModule formattedModule then
       []
     else
       [.codeChanged]

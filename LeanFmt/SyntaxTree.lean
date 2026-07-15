@@ -335,17 +335,6 @@ def regroupMatchDiscriminants : Tree → Tree
   | .node (.raw `null) children => .node .matchDiscriminants children
   | tree => .node .matchDiscriminants #[tree]
 
-partial def structInstFieldDefChildren? : Tree → Option (Array Tree)
-  | .node (.raw `Lean.Parser.Term.structInstFieldDef) children => some children
-  | .node _ children =>
-      children.foldl
-        (fun found child =>
-          match found with
-          | some children => some children
-          | none => structInstFieldDefChildren? child)
-        none
-  | _ => none
-
 def previousContentIndex? (children : Array Tree) (index : Nat) : Option Nat :=
   (List.range index).foldl
     (fun found candidate =>
@@ -369,6 +358,29 @@ def childrenRange (children : Array Tree) (start stop : Nat) : Array Tree :=
       | some child => acc.push child
       | none => acc)
     #[]
+
+def appendApplicationArgumentContainers (children : Array Tree) (start : Nat)
+    : Array Tree :=
+  (childrenRange children start children.size).foldl
+    (fun arguments container =>
+      arguments ++ appendApplicationArgumentChildren container)
+    #[]
+
+partial def structInstFieldParts? : Tree → Option (Array Tree)
+  | .node (.raw `Lean.Parser.Term.structInstFieldDef) children => some children
+  | .node _ children =>
+      let rec loop (index : Nat)
+          : Option (Array Tree) := do
+            let child ← children[index]?
+            match structInstFieldParts? child with
+            | some parts =>
+                some
+                <| childrenRange children 0 index
+                    ++ parts
+                    ++ childrenRange children (index + 1) children.size
+            | none => loop (index + 1)
+      loop 0
+  | _ => none
 
 def doForDeclChildren? : Tree → Option (Array Tree)
   | .node (.raw `Lean.Parser.Term.doForDecl) children => some children
@@ -430,17 +442,17 @@ def regroupRawNode (kind : SyntaxNodeKind) (children : Array Tree) : Tree :=
           (headAndArgs ++ appendApplicationArgumentChildren argumentContainer)
     | _, _ =>
         .node (.raw kind) children
-  else if kind == `Lean.Parser.Term.pipeProj && children.size == 4 then
-    match children[0]?, children[1]?, children[2]?, children[3]? with
-    | some receiver, some operator, some head, some argumentContainer =>
+  else if kind == `Lean.Parser.Term.pipeProj && 3 < children.size then
+    match children[0]?, children[1]?, children[2]? with
+    | some receiver, some operator, some head =>
         .node (.raw kind)
           #[
             receiver,
             operator,
             .node .application
-              (#[head] ++ appendApplicationArgumentChildren argumentContainer)
+              (#[head] ++ appendApplicationArgumentContainers children 3)
           ]
-    | _, _, _, _ => .node (.raw kind) children
+    | _, _, _ => .node (.raw kind) children
   else if isBinaryInfixRawNode kind children then
     match children[0]?, children[1]?, children[2]? with
     | some left, some operator, some right =>
@@ -466,6 +478,11 @@ def regroupRawNode (kind : SyntaxNodeKind) (children : Array Tree) : Tree :=
         .node (.raw kind) #[regroupSignatureParameters parameters, typeSpec]
     | _, _ =>
         .node (.raw kind) children
+  else if kind == `Lean.Parser.Term.basicFun then
+    match children[0]? with
+    | some parameters =>
+        .node (.raw kind) <| children.set! 0 (regroupSignatureParameters parameters)
+    | none => .node (.raw kind) children
   else if kind == `Lean.Parser.Term.letEqnsDecl then
     match regroupLetEquationSignature children with
     | some children => .node (.raw kind) children
@@ -481,9 +498,9 @@ def regroupRawNode (kind : SyntaxNodeKind) (children : Array Tree) : Tree :=
         .node (.raw kind) <| children.set! 1 (regroupMatchPatterns patterns)
     | none => .node (.raw kind) children
   else if kind == `Lean.Parser.Term.structInstField then
-    match children[0]?, children[1]? >>= structInstFieldDefChildren? with
-    | some lvalue, some fieldDefChildren =>
-        .node (.raw kind) <| #[lvalue] ++ fieldDefChildren
+    match children[0]?, children[1]? >>= structInstFieldParts? with
+    | some lvalue, some fieldParts =>
+        .node (.raw kind) <| #[lvalue] ++ fieldParts
     | _, _ => .node (.raw kind) children
   else if kind == `Lean.Parser.Term.match then
     match children.findIdx?
@@ -521,6 +538,10 @@ def extractTree (source : String) (stx : Syntax) : Tree :=
 
 /-! ## Lean module parsing -/
 
+def importLeanEnvironment : IO Environment := do
+  unsafe enableInitializersExecution
+  importModules (loadExts := true) #[{ module := `Lean }] {} 0
+
 partial def parseModuleCommandsQuiet
     (env : Environment) (inputContext : Parser.InputContext)
     (state : Parser.ModuleParserState) (messages : MessageLog)
@@ -546,9 +567,7 @@ def parseModuleSyntaxWithEnv (env : Environment) (source fileName : String)
         #[header, mkListNode commands]).raw.updateLeading
 
 def parseModuleSyntax (source fileName : String) : IO Syntax := do
-  parseModuleSyntaxWithEnv
-    (← importModules (loadExts := true) #[{ module := `Lean }] {} 0)
-    source fileName
+  parseModuleSyntaxWithEnv (← importLeanEnvironment) source fileName
 
 def parseModuleStringWithEnv (env : Environment) (source fileName : String := "<input>")
     : IO Module := do
@@ -557,9 +576,7 @@ def parseModuleStringWithEnv (env : Environment) (source fileName : String := "<
   pure { source, rawSyntax, tree, tokens := tree.tokens }
 
 def parseModuleString (source fileName : String := "<input>") : IO Module := do
-  parseModuleStringWithEnv
-    (← importModules (loadExts := true) #[{ module := `Lean }] {} 0)
-    source fileName
+  parseModuleStringWithEnv (← importLeanEnvironment) source fileName
 
 end SyntaxTree
 end LeanFmt

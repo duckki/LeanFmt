@@ -374,6 +374,11 @@ def isLayoutSensitiveCommand : SyntaxTree.Tree → Bool
   | .node (.raw `Lean.Parser.Command.macro_rules) _ => true
   | _ => false
 
+def isSyntaxCommentTree : SyntaxTree.Tree → Bool
+  | .node (.raw `Lean.Parser.Command.moduleDoc) _ => true
+  | .node (.raw `Lean.Parser.Command.docComment) _ => true
+  | _ => false
+
 partial def containsProofTree : SyntaxTree.Tree → Bool
   | .missing => false
   | .leaf _ => false
@@ -392,6 +397,7 @@ def shouldEmitOriginalTree (tree : SyntaxTree.Tree) : Bool :=
   || isDefinitionContainingProof tree
   || isQuotationTree tree
   || isLayoutSensitiveCommand tree
+  || isSyntaxCommentTree tree
 
 def isTheoremValueChild (parent : SyntaxTree.Tree) (index : Nat) : Bool :=
   match parent with

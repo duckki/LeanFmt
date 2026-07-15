@@ -90,7 +90,7 @@ def formatSourceWithEnv (env : Environment) (source fileName : String := "<input
   Internal.convergeSourceWithEnv env normalized fileName Internal.maxConvergencePasses
 
 def defaultEnvironment : IO Environment :=
-  importModules (loadExts := true) #[{ module := `Lean }] {} 0
+  SyntaxTree.importLeanEnvironment
 
 def formatSource (source fileName : String := "<input>") : IO String := do
   formatSourceWithEnv (← defaultEnvironment) source fileName

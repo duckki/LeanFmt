@@ -427,10 +427,11 @@ only measures with those classifications.
 
 ### Proof and original-source escape hatches
 
-Proof subtrees are not reformatted. When the renderer reaches a
-recognized proof node, it emits the original source slice, adjusted only for indentation
-when needed. This protects tactic scripts and term proof layout while declaration headers
-around them can still be formatted.
+Proof subtrees are not reformatted. When the renderer reaches a recognized proof node, it
+emits the original source slice, adjusted only for indentation when needed. Module and
+declaration documentation comments are also emitted from their original source slices so
+their internal whitespace cannot be changed. This protects tactic scripts, term proof
+layout, and comment text while declarations around them can still be formatted.
 
 The escape hatch is intentionally narrow. If a non-proof syntax form is unsafe, prefer a
 specific transparent/default rule or a grouping change before adding another original
@@ -442,12 +443,15 @@ Diagnostics are separate from formatting. The compact-bang diagnostic examines t
 and reports ambiguous spellings such as `!f a b`, but it does not rewrite them. The
 diagnostic API lives under `Formatter.Diagnostics`.
 
-Formatter-exception checking is also separate from rendering. It verifies non-whitespace
-preservation, reports remaining line overflow, and reports missing rules with their source
-location and tree slice. `ruleFor` returning `none` still renders with `defaultRule`, so
-unknown nodes remain conservatively formatable. Diagnostic analysis and the exception
-model live in `Formatter.Diagnostics`; trace and profiling APIs live under
-`Formatter.Debug`; convergence and shared pipeline phases live under `Formatter.Internal`.
+Formatter-exception checking is also separate from rendering. It verifies that the
+code-token sequence and exact comment text are preserved, reports remaining line overflow,
+and reports missing rules with their source location and tree slice. Preservation
+normalization gives every code token and comment boundary one canonical space, so ordinary
+formatting whitespace is ignored without conflating tokenizations such as `ab c` and
+`a bc`. `ruleFor` returning `none` still renders with `defaultRule`, so unknown nodes remain
+conservatively formatable. Diagnostic analysis and the exception model live in
+`Formatter.Diagnostics`; trace and profiling APIs live under `Formatter.Debug`;
+convergence and shared pipeline phases live under `Formatter.Internal`.
 
 Overflow analysis uses the formatted module's lossless token spans. It ignores comment
 overflow, which occupies trivia rather than syntax tokens, and unavoidable overflow where

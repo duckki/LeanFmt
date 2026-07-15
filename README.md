@@ -97,3 +97,31 @@ keeps token text and order and preserves proof regions.
   between the syntax tree, rules, and renderer.
 - [Development](docs/development.md) covers building, testing, fixtures, tracing,
   profiling, validation, and contributing new rules.
+
+## External validation
+
+The external validator clones CSLib and mathlib, downloads their Lake build caches,
+builds each project, reports unknown formatter rules, formats every tracked Lean file
+while checking code preservation and idempotence, and then builds each project again:
+
+```sh
+scripts/validate-external-projects.sh
+```
+
+To validate one or more other Git repositories instead of the defaults, pass each
+one as `NAME=GIT_URL_OR_PATH`. The validator always makes a fresh scratch clone,
+including when the source is a local repository:
+
+```sh
+scripts/validate-external-projects.sh graphql-lean=$HOME/work/apollo-graphql/graphql-lean
+```
+
+Clones are recreated under `.scratch/external-validation`. Set
+`LEANFMT_VALIDATION_DIR` to use another directory,
+`LEANFMT_VALIDATION_SKIP_CACHE=1` to build without downloading caches, or
+`LEANFMT_VALIDATION_BATCH_SIZE` to change the number of files passed to each
+formatter invocation. The script continues after individual phase failures so it
+can report all issues, then exits with a nonzero status if any phase failed. Each
+phase and the final summary include elapsed wall-clock time. Build-cache retrieval
+is an optional optimization: repositories without a `cache` executable are reported
+as skipped rather than failed.

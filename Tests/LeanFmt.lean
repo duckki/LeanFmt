@@ -26,6 +26,14 @@ def assertTextContains (label text needle : String) : IO Unit := do
 def assertTextLacks (label text needle : String) : IO Unit := do
   assertTrue label (!textContains text needle)
 
+def codePreservedIgnoringWhitespace (env : Lean.Environment) (before after : String)
+    : IO Bool := do
+  let beforeModule ←
+    SyntaxTree.parseModuleStringWithEnv env before "preservation-before.lean"
+  let afterModule ←
+    SyntaxTree.parseModuleStringWithEnv env after "preservation-after.lean"
+  pure <| Formatter.Diagnostics.preservesCodeIgnoringWhitespace beforeModule afterModule
+
 def assertSyntaxTreeRoundTrip (env : Lean.Environment) : IO Unit := do
   let source := "def f (x : Nat) :=\n" ++ "  x + 1\n"
   let moduleTree ←
@@ -50,7 +58,7 @@ def assertOverlappingQuotationTokensRemoved (env : Lean.Environment) : IO Unit :
   assertEq "quotation overlap syntax tree reconstruction" source moduleTree.reconstruct
   let formatted ← Formatter.formatSourceWithEnv env source "quotation-overlap.lean"
   assertTrue "quotation formatting preserves non-whitespace"
-    (Formatter.Diagnostics.preservesCodeIgnoringWhitespace source formatted)
+    (← codePreservedIgnoringWhitespace env source formatted)
   assertTextContains "quotation splice spacing is preserved"
     formatted "`(field $name:str { $selection,* })"
   assertTextLacks "quotation splice is not duplicated"
@@ -64,7 +72,7 @@ def assertOverlappingEmptySyntaxTokensRemoved (env : Lean.Environment) : IO Unit
   assertEq "empty syntax overlap tree reconstruction" source moduleTree.reconstruct
   let formatted ← Formatter.formatSourceWithEnv env source "empty-syntax-overlap.lean"
   assertTrue "empty syntax formatting preserves non-whitespace"
-    (Formatter.Diagnostics.preservesCodeIgnoringWhitespace source formatted)
+    (← codePreservedIgnoringWhitespace env source formatted)
   assertTextLacks "empty syntax block is not duplicated" formatted "{} {}"
   let formattedAgain ←
     Formatter.formatSourceWithEnv env formatted "empty-syntax-overlap-formatted.lean"
@@ -216,6 +224,14 @@ def assertCommentsDoNotBlockFormatting (env : Lean.Environment) : IO Unit := do
     ++ "  veryLongIdentifierNameThatPushesTheDefinitionBodyPastTheWidthLimit\n"
   let formatted ← Formatter.formatSourceWithEnv env source "comments-formatting.lean"
   assertEq "comments do not block formatting" expected formatted
+  let syntaxCommentSource :=
+    "/-! Ground-typed normalization smoke tests use `*InputQuery` and `*OutputSnapshot` pairs. -/\n"
+    ++ "/-- Declaration documentation keeps  its exact internal whitespace and line shape. -/\n"
+    ++ "def documented : Nat := 0\n"
+  let syntaxCommentFormatted ←
+    Formatter.formatSourceWithEnv env syntaxCommentSource "syntax-comments.lean"
+  assertEq "syntax comments preserve exact source text"
+    syntaxCommentSource syntaxCommentFormatted
 
 def assertLeadingCommentsPreserved (env : Lean.Environment) : IO Unit := do
   let source := "-- module comment\n" ++ "\n" ++
@@ -1860,6 +1876,28 @@ def assertLambdaBodyUsesOperandAnchor (env : Lean.Environment) : IO Unit := do
     Formatter.formatSourceWithEnv env source "lambda-body-operand-anchor.lean"
   assertEq "lambda body uses operand anchor" expected formatted
 
+def assertLambdaBinderSequenceBreaksBetweenBinders (env : Lean.Environment)
+    : IO Unit := do
+  let source :=
+    "def foldValues values :=\n"
+    ++ "  values.foldl\n"
+    ++ "    (fun (state : List Execution.ResponseValue × List Execution.ResponseValue) incomingValue =>\n"
+    ++ "      state)\n"
+    ++ "    ([], [])\n"
+  let expected :=
+    "def foldValues values :=\n"
+    ++ "  values.foldl\n"
+    ++ "    (fun (state : List Execution.ResponseValue × List Execution.ResponseValue)\n"
+    ++ "        incomingValue =>\n"
+    ++ "      state)\n"
+    ++ "    ([], [])\n"
+  let formatted ← Formatter.formatSourceWithEnv env source "lambda-binder-sequence.lean"
+  assertEq "lambda binder sequence breaks between binders" expected formatted
+  let moduleTree ←
+    SyntaxTree.parseModuleStringWithEnv env formatted "lambda-binder-sequence.lean"
+  assertTrue "lambda binder sequence has no overflow"
+    (Formatter.Diagnostics.overflowOccurrences moduleTree).isEmpty
+
 def assertQuantifierBreaksAfterComma (env : Lean.Environment) : IO Unit := do
   let source :=
     "def quantifierCommaBreak : Prop := ∀ scopedField, scopedField ∈ sourceFieldsWithEnoughCharactersForLayoutTestingAndMoreText -> targetField ∈ targetFields\n"
@@ -2069,6 +2107,22 @@ def assertStructInstanceFieldsBreakBalanced (env : Lean.Environment) : IO Unit :
   let formatted ←
     Formatter.formatSourceWithEnv env source "struct-instance-fields-balanced.lean"
   assertEq "structure constructor fields break balanced" expected formatted
+
+def assertStructInstanceFieldBindersPreserved (env : Lean.Environment) : IO Unit := do
+  let source :=
+    "instance : Coe Nat Nat where\n"
+    ++ "  coe value := value\n"
+    ++ "\n"
+    ++ "instance : Coe Nat Nat where\n"
+    ++ "  coe (value : Nat) := value\n"
+  let formatted ←
+    Formatter.formatSourceWithEnv env source "struct-instance-field-binders.lean"
+  assertTrue "structure field binders preserve code"
+    (← codePreservedIgnoringWhitespace env source formatted)
+  assertTextContains "single structure field binder is preserved"
+    formatted "coe value := value"
+  assertTextContains "typed structure field binder is preserved"
+    formatted "coe (value : Nat) := value"
 
 def assertStructUpdateWithFieldsBreaks (env : Lean.Environment) : IO Unit := do
   let shortSource := "def update state := { state with output := text }\n"
@@ -2304,11 +2358,41 @@ def assertCliParsing : IO Unit := do
 
 def assertFormattingExceptionChecks (env : Lean.Environment) : IO Unit := do
   assertTrue "whitespace-only edits preserve code"
-    (Formatter.Diagnostics.preservesCodeIgnoringWhitespace
-      "def x : Nat := 0\n" "def   x:Nat:=0\n")
+    (← codePreservedIgnoringWhitespace env "def x : Nat := 0\n" "def   x:Nat:=0\n")
   assertTrue "token edits do not preserve code"
-    (!Formatter.Diagnostics.preservesCodeIgnoringWhitespace
-        "def x : Nat := 0\n" "def y : Nat := 0\n")
+    (!(← codePreservedIgnoringWhitespace env "def x : Nat := 0\n" "def y : Nat := 0\n"))
+  assertTrue "whitespace cannot move an identifier boundary"
+    (!(← codePreservedIgnoringWhitespace env
+          "def value := ab c\n" "def value := a bc\n"))
+  assertTrue "whitespace outside comments is normalized"
+    (← codePreservedIgnoringWhitespace env
+        "def value:=0-- keep  spaces\n"
+        "def value := 0 -- keep  spaces\n")
+  assertTrue "line-comment whitespace is preserved"
+    (!(← codePreservedIgnoringWhitespace env
+          "def value := 0 -- keep  spaces\n"
+          "def value := 0 -- keep spaces\n"))
+  assertTrue "comments remain ordered relative to code"
+    (!(← codePreservedIgnoringWhitespace env
+          "def value := 0 -- keep comment\n"
+          "-- keep comment\ndef value := 0\n"))
+  assertTrue "module-doc whitespace is preserved" (!(← codePreservedIgnoringWhitespace env
+          "namespace X\n/-! keep  spaces -/\nend X\n"
+          "namespace X\n/-!\n  keep  spaces -/\nend X\n"))
+  let declarationDocWhitespacePreserved ← codePreservedIgnoringWhitespace env
+      "/-- keep  spaces -/\ndef value := 0\n"
+      "/--\n  keep  spaces -/\ndef value := 0\n"
+  assertTrue "declaration-doc whitespace is preserved"
+    (!declarationDocWhitespacePreserved)
+  let nestedBlockCommentWhitespacePreserved ← codePreservedIgnoringWhitespace env
+      "def value := /- outer /- keep  spaces -/ comment -/ 0\n"
+      "def value := /- outer /- keep spaces -/ comment -/ 0\n"
+  assertTrue "nested block-comment whitespace is preserved"
+    (!nestedBlockCommentWhitespacePreserved)
+  assertTrue "string-literal whitespace remains code"
+    (!(← codePreservedIgnoringWhitespace env
+          "def value := \"keep  spaces\"\n"
+          "def value := \"keep spaces\"\n"))
   let longIdentifier := String.ofList (List.replicate (Formatter.maxLineWidth + 1) 'x')
   let overflow := s!"def overflow := {longIdentifier} y\n"
   let overflowModule ←
@@ -2353,6 +2437,16 @@ def assertFormattingExceptionChecks (env : Lean.Environment) : IO Unit := do
       "block-comment-overflow.lean"
   assertTrue "block-comment overflow is exempt"
     (Formatter.Diagnostics.overflowOccurrences blockCommentModule).isEmpty
+  let proofOverflow :=
+    "theorem preservedProofOverflow : True := by\n"
+    ++ "  have veryLongProofName := "
+    ++ String.ofList (List.replicate Formatter.maxLineWidth 'x')
+    ++ "\n"
+    ++ "  exact True.intro\n"
+  let proofOverflowModule ←
+    SyntaxTree.parseModuleStringWithEnv env proofOverflow "proof-overflow.lean"
+  assertTrue "preserved proof overflow is exempt"
+    (Formatter.Diagnostics.overflowOccurrences proofOverflowModule).isEmpty
   let interpolatedStringOverflow :=
     "def message := s!\""
     ++ String.ofList (List.replicate Formatter.maxLineWidth 'x')
@@ -2610,6 +2704,62 @@ def assertMissingRuleCheckUsesDispatch (_env : Lean.Environment) : IO Unit := do
             occurrence.kind == "Lean.Parser.Term.syntheticUnknownForTest"
         | _ => false)
 
+def assertSyntaxDeclarationsHaveRules (env : Lean.Environment) : IO Unit := do
+  let source :=
+    "syntax \"field \" str \"{\" term,* \"}\" : term\n"
+    ++ "macro_rules\n"
+    ++ "  | `(field $name:str { $selection,* }) => `(id)\n"
+  let moduleTree ←
+    SyntaxTree.parseModuleStringWithEnv env source "syntax-declaration-rules.lean"
+  assertTrue "syntax declarations have complete rule coverage"
+    (Formatter.Diagnostics.missingRuleOccurrencesForModule moduleTree).isEmpty
+  let formatted ←
+    Formatter.formatSourceWithEnv env source "syntax-declaration-rules.lean"
+  assertTextContains "syntax separator stays tight" formatted "term,*"
+
+def assertPrefixedTermWrappersHaveRules (env : Lean.Environment) : IO Unit := do
+  let source :=
+    "def nestedAction : IO Nat := do\n"
+    ++ "  pure (← pure 1)\n"
+    ++ "\n"
+    ++ "def initializer : IO Unit := do\n"
+    ++ "  unsafe enableInitializersExecution\n"
+  let moduleTree ←
+    SyntaxTree.parseModuleStringWithEnv env source "prefixed-term-wrapper-rules.lean"
+  assertTrue "prefixed term wrappers have complete rule coverage"
+    (Formatter.Diagnostics.missingRuleOccurrencesForModule moduleTree).isEmpty
+  let formatted ←
+    Formatter.formatSourceWithEnv env source "prefixed-term-wrapper-rules.lean"
+  assertEq "prefixed term wrappers stay attached" source formatted
+
+def assertCslibStyleCoreSyntaxHasRules (env : Lean.Environment) : IO Unit := do
+  let source :=
+    "module\n"
+    ++ "\n"
+    ++ "public import Lean\n"
+    ++ "\n"
+    ++ "universe u\n"
+    ++ "\n"
+    ++ "public section\n"
+    ++ "\n"
+    ++ "namespace CslibLowRiskSyntax\n"
+    ++ "\n"
+    ++ "@[scoped grind =]\n"
+    ++ "theorem scopedGrind (p : Prop) : p = p := by rfl\n"
+    ++ "\n"
+    ++ "open scoped Nat\n"
+    ++ "\n"
+    ++ "class HasWellFormed (α : Type u) where\n"
+    ++ "  wf (x : α) : Prop\n"
+    ++ "\n"
+    ++ "example : True := by trivial\n"
+    ++ "\n"
+    ++ "end CslibLowRiskSyntax\n"
+  let moduleTree ←
+    SyntaxTree.parseModuleStringWithEnv env source "cslib-style-core-rules.lean"
+  assertTrue "CSLib-style core syntax has complete rule coverage"
+    (Formatter.Diagnostics.missingRuleOccurrencesForModule moduleTree).isEmpty
+
 def runSyntaxTreeTests (env : Lean.Environment) : IO Unit := do
   assertSyntaxTreeRoundTrip env
   assertSyntaxTreeWhereRoundTrip env
@@ -2714,6 +2864,7 @@ def runControlFlowTests (env : Lean.Environment) : IO Unit := do
   assertNestedMatchAfterLambdaAlignsWithMatch env
   assertPrefixedMatchAlternativesAlignWithMatch env
   assertLambdaBodyUsesOperandAnchor env
+  assertLambdaBinderSequenceBreaksBetweenBinders env
   assertQuantifierBreaksAfterComma env
   assertArrowQuantifierKeepsQuantifierOnArrowLine env
   assertArrowMatchKeepsMatchOnArrowLine env
@@ -2729,6 +2880,7 @@ def runCollectionAndDeclarationTests (env : Lean.Environment) : IO Unit := do
   assertStructInstanceFieldsBreakMandatory env
   assertStructInstanceFieldsBreakMandatoryBetweenFields env
   assertStructInstanceFieldsBreakBalanced env
+  assertStructInstanceFieldBindersPreserved env
   assertStructUpdateWithFieldsBreaks env
   assertTupleBreakBalanced env
   assertExportBreaksLongList env
@@ -2746,6 +2898,9 @@ def runCliAndArchitectureTests (env : Lean.Environment) : IO Unit := do
   assertFormatterArchitecture
   assertDeclarationRuleTransparent
   assertMissingRuleCheckUsesDispatch env
+  assertSyntaxDeclarationsHaveRules env
+  assertPrefixedTermWrappersHaveRules env
+  assertCslibStyleCoreSyntaxHasRules env
 
 #eval
   show IO Unit from do
