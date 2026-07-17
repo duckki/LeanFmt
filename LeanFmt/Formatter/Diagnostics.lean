@@ -126,6 +126,19 @@ inductive PreservationFragment where
   | space
 deriving BEq, Repr
 
+inductive SyntaxSignature where
+  | missing
+  | atom (value : String)
+  | ident (rawValue : String) (value : Name)
+  | node (kind : SyntaxNodeKind) (children : Array SyntaxSignature)
+deriving BEq, Inhabited, Repr
+
+partial def syntaxSignature : Syntax → SyntaxSignature
+  | .missing => .missing
+  | .atom _ value => .atom value
+  | .ident _ rawValue value _ => .ident rawValue.toString value
+  | .node _ kind children => .node kind (children.map syntaxSignature)
+
 partial def takeLineCommentAux (reversed : List Char)
     : List Char → List Char × List Char
   | [] => (reversed.reverse, [])
@@ -220,8 +233,12 @@ def preservationFragments (moduleTree : SyntaxTree.Module)
           moduleTree.source.endPos.offset
   (fragments ++ commentFragments trailingSource).intersperse .space
 
+def preservesSyntaxIgnoringSourceInfo (before after : SyntaxTree.Module) : Bool :=
+  syntaxSignature before.rawSyntax == syntaxSignature after.rawSyntax
+
 def preservesCodeIgnoringWhitespace (before after : SyntaxTree.Module) : Bool :=
   preservationFragments before == preservationFragments after
+  && preservesSyntaxIgnoringSourceInfo before after
 
 def positionAfter (position : String.Pos.Raw) (text : String) : String.Pos.Raw :=
   String.Pos.Raw.mk (position.byteIdx + text.endPos.offset.byteIdx)

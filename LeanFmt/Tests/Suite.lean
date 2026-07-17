@@ -46,6 +46,16 @@ def assertSyntaxTreeWhereRoundTrip (env : Lean.Environment) : IO Unit := do
     SyntaxTree.parseModuleStringWithEnv env source "syntax-tree-where.lean"
   assertEq "syntax tree where reconstruction" source moduleTree.reconstruct
 
+def assertPreservationDetectsSyntaxChange (env : Lean.Environment) : IO Unit := do
+  let source :=
+    "def letAlt (x? : Option Nat) : Nat := do\n"
+    ++ "  let .some x ← x? | return 0\n"
+    ++ "  x\n"
+  let changed :=
+    "def letAlt (x? : Option Nat) : Nat := do\n" ++ "  let .some x ← x? | return 0 x\n"
+  assertTrue "preservation rejects syntax-significant whitespace changes"
+    (!(← codePreservedIgnoringWhitespace env source changed))
+
 def assertOverlappingQuotationTokensRemoved (env : Lean.Environment) : IO Unit := do
   let source :=
     "syntax \"field \" str \"{\" term,* \"}\" : term\n"
@@ -2770,6 +2780,7 @@ def assertCslibStyleCoreSyntaxHasRules (env : Lean.Environment) : IO Unit := do
 def runSyntaxTreeTests (env : Lean.Environment) : IO Unit := do
   assertSyntaxTreeRoundTrip env
   assertSyntaxTreeWhereRoundTrip env
+  assertPreservationDetectsSyntaxChange env
   assertOverlappingQuotationTokensRemoved env
   assertOverlappingEmptySyntaxTokensRemoved env
   assertGroupedApplication env
