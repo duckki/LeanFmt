@@ -143,10 +143,10 @@ lake test
 To build the test library directly:
 
 ```sh
-lake build Tests
+lake build LeanFmt.Tests
 ```
 
-The test library imports `Tests.LeanFmt`, whose broad suite runners execute the
+`LeanFmt.Tests.Suite` is the test library root. Its broad suite runners execute the
 unit-style checks with `#eval`.
 
 Run fixture checks without rewriting fixture files:
@@ -296,7 +296,7 @@ Before cutting a release or sharing a commit, run:
 
 ```sh
 lake build
-lake build Tests
+lake build LeanFmt.Tests
 lake exe fmt-test --update-fixture --check Tests/Fixtures/*/*.leanfmt
 ```
 

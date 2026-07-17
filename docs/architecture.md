@@ -48,8 +48,17 @@ The test-only executable is separate:
 
 | Module | Responsibility |
 | --- | --- |
-| `Tests.TestCli` | Fixture update/check mode, renderer trace printing, and profile output used by formatter tests. |
-| `Tests.LeanFmt` | Unit-style formatter checks grouped into syntax-tree, basic formatting, expression/renderer, control-flow, collection/declaration, and CLI/architecture suites. |
+| `LeanFmt.Tests.Cli` | Fixture update/check mode, renderer trace printing, and profile output. |
+| `LeanFmt.Tests.Main` | Minimal `fmt-test` executable entry point. |
+| `LeanFmt.Tests.Suite` | Root of the test library, containing unit-style formatter checks grouped into syntax-tree, basic formatting, expression/renderer, control-flow, collection/declaration, and CLI/architecture suites. |
+
+Every imported test module is rooted at `LeanFmt.Tests`. A downstream package may
+therefore define its own top-level `Tests` library without either package claiming the
+other package's `Tests.*` modules. Lake package scope does not create a Lean module
+namespace, so the namespace is explicit in the module names. The library explicitly uses
+`LeanFmt.Tests.Suite` as its root, allowing all imported test sources to live under
+`LeanFmt/Tests/` without a `LeanFmt/Tests.lean` forwarding module. Fixtures remain under
+`Tests/Fixtures` because the test CLI reads them as files rather than importing them.
 
 ## Pipeline
 

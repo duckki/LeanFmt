@@ -1,11 +1,10 @@
 import LeanFmt
 import LeanFmt.Cli
-import Tests.TestCli
+import LeanFmt.Tests.Cli
 
 open System
 
-namespace LeanFmt
-namespace Tests
+namespace LeanFmt.Tests
 
 def assertEq (label expected actual : String) : IO Unit := do
   unless actual == expected do
@@ -2264,12 +2263,13 @@ def assertBangApplicationDiagnostics (env : Lean.Environment) : IO Unit := do
       throw <| IO.userError s!"expected one bang diagnostic, got {repr diagnostics}"
 
 def assertCliParsing : IO Unit := do
-  assertTextContains "CLI help documents exception checks" Cli.usage "--check-exception"
+  assertTextContains "CLI help documents exception checks" LeanFmt.Cli.usage
+    "--check-exception"
   assertTextLacks "CLI help omits replaced preservation option"
-    Cli.usage "--check-preserves-code"
+    LeanFmt.Cli.usage "--check-preserves-code"
   assertTextLacks "CLI help omits replaced unknown-rule option"
-    Cli.usage "--report-unknown-rules"
-  match Cli.parseArgs ["--check", "GraphQL.lean", "LeanFmt.lean"] with
+    LeanFmt.Cli.usage "--report-unknown-rules"
+  match LeanFmt.Cli.parseArgs ["--check", "GraphQL.lean", "LeanFmt.lean"] with
   | .run options =>
       assertTrue "CLI check flag" options.check
       assertTrue "CLI file order"
@@ -2277,7 +2277,7 @@ def assertCliParsing : IO Unit := do
   | result =>
       throw
       <| IO.userError s!"CLI parser should accept --check and files: {repr result}"
-  match Cli.parseArgs ["--check-exception", "GraphQL.lean"] with
+  match LeanFmt.Cli.parseArgs ["--check-exception", "GraphQL.lean"] with
   | .run options =>
       assertTrue "CLI exception check flag" options.checkException
       assertTrue "CLI exception check does not imply no-write check" (!options.check)
@@ -2287,7 +2287,7 @@ def assertCliParsing : IO Unit := do
       throw
       <| IO.userError
           s!"CLI parser should accept --check-exception and files: {repr result}"
-  match Cli.parseArgs ["--check-idempotent", "GraphQL.lean"] with
+  match LeanFmt.Cli.parseArgs ["--check-idempotent", "GraphQL.lean"] with
   | .run options =>
       assertTrue "CLI idempotence check flag" options.checkIdempotent
       assertTrue "CLI idempotence does not imply no-write check" (!options.check)
@@ -2297,7 +2297,7 @@ def assertCliParsing : IO Unit := do
       throw
       <| IO.userError
           s!"CLI parser should accept --check-idempotent and files: {repr result}"
-  match Cli.parseArgs
+  match LeanFmt.Cli.parseArgs
           ["--check", "--check-exception", "--check-idempotent", "GraphQL.lean"] with
   | .run options =>
       assertTrue "CLI combined check flag" options.check
@@ -2307,7 +2307,7 @@ def assertCliParsing : IO Unit := do
       throw
       <| IO.userError s!"CLI parser should accept combined check flags: {repr result}"
   for testOnlyOption in ["--profile", "--update-fixture", "--trace-renderer"] do
-    match Cli.parseArgs [testOnlyOption, "GraphQL.lean"] with
+    match LeanFmt.Cli.parseArgs [testOnlyOption, "GraphQL.lean"] with
     | .error message =>
         assertEq s!"public CLI rejects {testOnlyOption}"
           s!"unknown option: {testOnlyOption}" message
@@ -2315,27 +2315,26 @@ def assertCliParsing : IO Unit := do
         throw
         <| IO.userError
             s!"public CLI should reject {testOnlyOption}, got: {repr result}"
-  match TestCli.parseArgs ["--profile", "GraphQL.lean"] with
+  match Cli.parseArgs ["--profile", "GraphQL.lean"] with
   | .run options =>
       assertTrue "CLI profile flag" options.profile
       assertTrue "CLI profile does not imply no-write check" (!options.check)
   | result =>
       throw <| IO.userError s!"CLI parser should accept --profile: {repr result}"
-  match Cli.parseArgs ["--report-unknown-rules", "GraphQL.lean"] with
+  match LeanFmt.Cli.parseArgs ["--report-unknown-rules", "GraphQL.lean"] with
   | .error "unknown option: --report-unknown-rules" => pure ()
   | result =>
       throw
       <| IO.userError s!"CLI should reject replaced unknown-rule option: {repr result}"
-  match Cli.parseArgs ["--recursive", "GraphQL"] with
+  match LeanFmt.Cli.parseArgs ["--recursive", "GraphQL"] with
   | .run _ => pure ()
   | result =>
       throw <| IO.userError s!"CLI parser should accept --recursive: {repr result}"
-  match Cli.parseArgs ["-r", "GraphQL"] with
+  match LeanFmt.Cli.parseArgs ["-r", "GraphQL"] with
   | .run _ => pure ()
   | result =>
       throw <| IO.userError s!"CLI parser should accept -r: {repr result}"
-  match TestCli.parseArgs
-          ["--update-fixture", "--trace-renderer", "fixture.leanfmt"] with
+  match Cli.parseArgs ["--update-fixture", "--trace-renderer", "fixture.leanfmt"] with
   | .run options =>
       assertTrue "CLI update fixture trace mode" (options.mode == .updateFixture)
       assertTrue "CLI renderer trace flag" options.traceRenderer
@@ -2345,13 +2344,13 @@ def assertCliParsing : IO Unit := do
       throw
       <| IO.userError
           s!"CLI parser should accept --update-fixture --trace-renderer: {repr result}"
-  match TestCli.parseArgs ["--trace-renderer", "GraphQL.lean"] with
+  match Cli.parseArgs ["--trace-renderer", "GraphQL.lean"] with
   | .error "--trace-renderer requires --update-fixture" => pure ()
   | result =>
       throw
       <| IO.userError
           s!"CLI parser should require --update-fixture for --trace-renderer: {repr result}"
-  match Cli.parseArgs [] with
+  match LeanFmt.Cli.parseArgs [] with
   | .error "no input files" => pure ()
   | result =>
       throw <| IO.userError s!"CLI parser should require files: {repr result}"
@@ -2472,7 +2471,7 @@ def assertFormattingExceptionChecks (env : Lean.Environment) : IO Unit := do
       "atomic-comma-overflow.lean"
   assertTrue "atomic tree and trailing comma overflow is exempt"
     (Formatter.Diagnostics.overflowOccurrences atomicCommaModule).isEmpty
-  let counts : Cli.ExceptionCounts :=
+  let counts : LeanFmt.Cli.ExceptionCounts :=
     { codeChanged := 1, lineOverflow := 2, missingRule := 3, notIdempotent := 4 }
   assertEq "CLI exception summary includes every kind"
     (String.intercalate "\n"
@@ -2492,7 +2491,7 @@ def assertCliChecksStillFormatUnlessCheck (env : Lean.Environment) : IO Unit := 
   let preservingSource := "def  preserving  : Nat := 0\n"
   IO.FS.writeFile preservingFile preservingSource
   let preservingExitCode ←
-    Cli.runOptions { checkException := true, files := [preservingFile] }
+    LeanFmt.Cli.runOptions { checkException := true, files := [preservingFile] }
   assertTrue "CLI exception check still formats" (preservingExitCode == 0)
   let preservingFormatted ←
     Formatter.formatSourceWithEnv env preservingSource preservingFile.toString
@@ -2509,7 +2508,7 @@ def assertCliChecksStillFormatUnlessCheck (env : Lean.Environment) : IO Unit := 
   let afterExceptionSource := "def  afterException  : Nat := 0\n"
   IO.FS.writeFile afterExceptionFile afterExceptionSource
   let overflowExitCode ←
-    Cli.runOptions
+    LeanFmt.Cli.runOptions
       { checkException := true, files := [overflowFile, afterExceptionFile] }
   assertTrue "CLI exception check rejects remaining overflow" (overflowExitCode == 1)
   assertEq "CLI exception failure prevents writes"
@@ -2523,7 +2522,7 @@ def assertCliChecksStillFormatUnlessCheck (env : Lean.Environment) : IO Unit := 
   let idempotentSource := "def  idempotent  : Nat := 0\n"
   IO.FS.writeFile idempotentFile idempotentSource
   let idempotentExitCode ←
-    Cli.runOptions { checkIdempotent := true, files := [idempotentFile] }
+    LeanFmt.Cli.runOptions { checkIdempotent := true, files := [idempotentFile] }
   assertTrue "CLI idempotence check still formats" (idempotentExitCode == 0)
   let idempotentFormatted ←
     Formatter.formatSourceWithEnv env idempotentSource idempotentFile.toString
@@ -2534,7 +2533,7 @@ def assertCliChecksStillFormatUnlessCheck (env : Lean.Environment) : IO Unit := 
   let checkedSource := "def  checked  : Nat := 0\n"
   IO.FS.writeFile checkedFile checkedSource
   let checkedExitCode ←
-    Cli.runOptions
+    LeanFmt.Cli.runOptions
       {
         check := true
         checkException := true
@@ -2545,7 +2544,8 @@ def assertCliChecksStillFormatUnlessCheck (env : Lean.Environment) : IO Unit := 
   assertEq "CLI diagnostic --check remains a dry run"
     checkedSource (← IO.FS.readFile checkedFile)
 
-  let ordinaryCheckExitCode ← Cli.runOptions { check := true, files := [checkedFile] }
+  let ordinaryCheckExitCode ←
+    LeanFmt.Cli.runOptions { check := true, files := [checkedFile] }
   assertTrue "CLI ordinary --check still fails on formatting changes"
     (ordinaryCheckExitCode == 1)
 
@@ -2559,7 +2559,7 @@ def assertCliFormatsDirectory (env : Lean.Environment) : IO Unit := do
   let nestedSource := "def  nested  : Nat := 0\n"
   IO.FS.writeFile topFile topSource
   IO.FS.writeFile nestedFile nestedSource
-  let exitCode ← Cli.runOptions { files := [root] }
+  let exitCode ← LeanFmt.Cli.runOptions { files := [root] }
   assertTrue "CLI directory format succeeds" (exitCode == 0)
   let topFormatted ← Formatter.formatSourceWithEnv env topSource topFile.toString
   assertEq "CLI formats direct Lean files in directory" topFormatted
@@ -2577,9 +2577,9 @@ def assertCliFormatsDirectoryRecursively (env : Lean.Environment) : IO Unit := d
   let nestedSource := "def  nested  : Nat := 0\n"
   IO.FS.writeFile topFile topSource
   IO.FS.writeFile nestedFile nestedSource
-  match Cli.parseArgs ["-r", root.toString] with
+  match LeanFmt.Cli.parseArgs ["-r", root.toString] with
   | .run options =>
-      let exitCode ← Cli.runOptions options
+      let exitCode ← LeanFmt.Cli.runOptions options
       assertTrue "CLI recursive directory format succeeds" (exitCode == 0)
       let topFormatted ← Formatter.formatSourceWithEnv env topSource topFile.toString
       let nestedFormatted ←
@@ -2594,11 +2594,18 @@ def assertCliFormatsDirectoryRecursively (env : Lean.Environment) : IO Unit := d
 
 def assertFmtExecutableConfigured : IO Unit := do
   let lakefile ← IO.FS.readFile "lakefile.toml"
+  assertTextContains "lakefile uses namespaced test driver" lakefile
+    "testDriver = \"LeanFmt.Tests\""
+  assertTextContains "lakefile defines namespaced test library" lakefile
+    "name = \"LeanFmt.Tests\""
+  assertTextContains "test library uses suite root" lakefile
+    "roots = [\"LeanFmt.Tests.Suite\"]"
   assertTextContains "lakefile defines fmt executable" lakefile "name = \"fmt\""
   assertTextContains "fmt executable uses LeanFmt.Cli root" lakefile
     "root = \"LeanFmt.Cli\""
   assertTextContains "lakefile defines test CLI" lakefile "name = \"fmt-test\""
-  assertTextContains "test CLI uses Tests.Cli root" lakefile "root = \"Tests.Cli\""
+  assertTextContains "test CLI uses LeanFmt.Tests.Main root" lakefile
+    "root = \"LeanFmt.Tests.Main\""
 
 def assertRendererTraceIncludesPathAndState (env : Lean.Environment) : IO Unit := do
   let source :=
@@ -2619,15 +2626,15 @@ def assertRendererTraceIncludesPathAndState (env : Lean.Environment) : IO Unit :
 
 def assertCliFixtureUpdate (env : Lean.Environment) : IO Unit := do
   let separator :=
-    TestCli.fixtureSeparatorRule
+    Cli.fixtureSeparatorRule
     ++ "\n"
     ++ "-- leanfmt: expected output below (DO NOT EDIT)\n"
-    ++ TestCli.fixtureSeparatorRule
+    ++ Cli.fixtureSeparatorRule
   let source := "def  f  (x  : Nat)  := x\n"
   let staleExpected := "def stale := 0\n"
   let original := source ++ separator ++ "\n" ++ staleExpected
   let expectedFormatted ← Formatter.formatSourceWithEnv env source "fixture-source.lean"
-  let updated ← TestCli.updateFixtureContent env "fixture.leanfmt" original
+  let updated ← Cli.updateFixtureContent env "fixture.leanfmt" original
   let expected := source ++ separator ++ "\n" ++ expectedFormatted
   assertEq "fixture update" expected updated
 
@@ -2912,5 +2919,4 @@ def runCliAndArchitectureTests (env : Lean.Environment) : IO Unit := do
     runCollectionAndDeclarationTests env
     runCliAndArchitectureTests env
 
-end Tests
-end LeanFmt
+end LeanFmt.Tests

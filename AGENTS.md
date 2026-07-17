@@ -18,8 +18,9 @@ linked below remains the source of truth when this summary and the code diverge.
 - `LeanFmt/Formatter/Diagnostics.lean` checks code preservation, actionable line
   overflow, and missing rules; `Trace.lean` supports renderer debugging.
 - `LeanFmt/Cli.lean` implements the public `fmt` executable.
-- `Tests/LeanFmt.lean` contains the unit-style suites executed through `#eval`;
-  `Tests/TestCli.lean` and `Tests/Cli.lean` implement the fixture/test executable.
+- `LeanFmt/Tests/Suite.lean` contains the unit-style suites executed through
+  `#eval`; `LeanFmt/Tests/Cli.lean` implements the fixture/test CLI and
+  `LeanFmt/Tests/Main.lean` is its executable entry point.
 - `Tests/Fixtures/<category>/*.leanfmt` contain input above the separator and
   generated expected output below it. Do not hand-edit the generated half.
 - `scripts/validate-external-projects.sh` validates the formatter against fresh
@@ -69,13 +70,13 @@ developing, then run the complete sequence before requesting review.
 
    ```sh
    lake exe fmt --check-exception --check-idempotent \
-     -r LeanFmt Tests/*.lean
+     -r LeanFmt
    ```
 
    This invocation writes formatting changes only for files without exceptions.
    `--check-exception` checks non-whitespace code preservation, actionable line
    overflow, and missing rule dispatch; `--check-idempotent` performs a second
-   formatting pass. Review `git diff -- LeanFmt Tests` after it runs, including
+   formatting pass. Review `git diff -- LeanFmt` after it runs, including
    mechanically generated changes.
 
 4. If fixture or self-formatting output changed Lean sources, rerun `lake build`
@@ -84,7 +85,7 @@ developing, then run the complete sequence before requesting review.
    ```sh
    lake exe fmt-test --update-fixture --check Tests/Fixtures/*/*.leanfmt
    lake exe fmt --check --check-exception --check-idempotent \
-     -r LeanFmt Tests/*.lean
+     -r LeanFmt
    git diff --check
    ```
 

@@ -18,9 +18,9 @@ shellcheck:
 	shellcheck --severity=warning scripts/*.sh
 
 check: build test lint fixtures
-	lake exe fmt --check --check-exception --check-idempotent -r LeanFmt Tests/*.lean
+	lake exe fmt --check --check-exception --check-idempotent -r LeanFmt
 	git diff --check
 
 fmt:
-	lake exe fmt -r LeanFmt Tests/*.lean
+	lake exe fmt -r LeanFmt
 	make check

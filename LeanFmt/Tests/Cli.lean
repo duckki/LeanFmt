@@ -3,7 +3,7 @@ import LeanFmt.Formatter
 
 open System
 
-namespace LeanFmt.TestCli
+namespace LeanFmt.Tests.Cli
 
 def loadFormatterEnvironment : IO Lean.Environment := do
   Lean.initSearchPath (← Lean.findSysroot)
@@ -140,4 +140,4 @@ def runMain (args : List String) : IO UInt32 := do
   | .help => IO.println usage; pure 0
   | .error message => IO.eprintln s!"fmt-test: {message}"; IO.eprintln usage; pure 1
 
-end LeanFmt.TestCli
+end LeanFmt.Tests.Cli
