@@ -4,6 +4,12 @@ description = "A structure-preserving code formatter for Lean"
 keywords = ["lean4", "formatter", "devtool", "development-tools"]
 defaultTargets = ["LeanFmt", "fmt"]
 testDriver = "Tests"
+lintDriver = "batteries/runLinter"
+
+[[require]]
+name = "batteries"
+scope = "leanprover-community"
+rev = "main"
 
 [[lean_lib]]
 name = "LeanFmt"

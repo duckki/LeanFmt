@@ -1,0 +1,31 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  merge_group:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  lean:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: leanprover/lean-action@v1
+        with:
+          build-args: --wfail
+          test-args: --wfail
+      - name: Check fixtures and formatter invariants
+        run: |
+          lake exe fmt-test --update-fixture --check Tests/Fixtures/*/*.leanfmt
+          lake exe fmt --check --check-exception --check-idempotent -r LeanFmt Tests/*.lean
+      - name: Check whitespace errors
+        run: git diff --check

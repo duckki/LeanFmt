@@ -65,6 +65,25 @@ lake exe fmt --check --recursive Some/Directory
 
 ## Validation checks
 
+The repository uses the same Lake entry points adopted by mathlib and CSLib:
+
+```sh
+lake build --wfail
+lake test --wfail
+lake lint
+```
+
+`--wfail` promotes Lean warnings to errors. `lake lint` runs Batteries'
+environment linter. The complete local review gate is `make check`; run
+`make shellcheck` when changing shell scripts. CI runs these checks for every
+pull request.
+
+`scripts/nolints.json` records findings that predate the lint gate, principally
+missing documentation on internal declarations. New findings fail the gate.
+After paying down existing findings, refresh the baseline with
+`lake lint -- --update LeanFmt.Cli`; specifying the executable root ensures the
+baseline covers both the library and CLI modules.
+
 These options are intended for formatter development, not everyday user formatting:
 
 ```sh
@@ -142,13 +161,17 @@ Update fixture expected output after an intentional formatting change:
 lake exe fmt-test --update-fixture Tests/Fixtures/*/*.leanfmt
 ```
 
-The `Makefile` wraps the common test command:
+The `Makefile` wraps the common maintenance commands:
 
 ```sh
 make test
+make lint
+make check
 ```
 
-`make test` runs `lake test` with elapsed timing.
+`make check` is the normal pre-review gate. It builds and tests with warnings as
+errors, runs lints, checks fixtures and formatter invariants, and checks the diff
+for whitespace errors.
 
 ## Fixture format
 

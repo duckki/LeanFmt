@@ -91,6 +91,8 @@ keeps token text and order and preserves proof regions.
 
 ## Project documentation
 
+- [Contributing](CONTRIBUTING.md) defines the code-quality standards and local review
+  gate.
 - [Design](docs/design.md) describes the style, philosophy, rules, and examples for Lean
   programmers considering the formatter.
 - [Architecture](docs/architecture.md) explains the implementation decisions and division

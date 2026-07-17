@@ -3,8 +3,10 @@
 set -u
 set -o pipefail
 
-readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-readonly REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)" || exit 1
+readonly SCRIPT_DIR
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)" || exit 1
+readonly REPO_ROOT
 readonly FORMATTER="$REPO_ROOT/.lake/build/bin/fmt"
 readonly WORK_DIR="${LEANFMT_VALIDATION_DIR:-$REPO_ROOT/.scratch/external-validation}"
 readonly FILES_PER_BATCH="${LEANFMT_VALIDATION_BATCH_SIZE:-200}"
@@ -94,7 +96,7 @@ run_formatter() {
   # Keep the formatter in this repository's toolchain context. Running it from
   # the external project can make Elan select an incompatible Lean toolchain.
   (
-    cd "$REPO_ROOT"
+    cd "$REPO_ROOT" || exit 1
     printf '%s\0' "${files[@]}" |
       xargs -0 -n "$FILES_PER_BATCH" "$FORMATTER" "$@"
   )
@@ -154,5 +156,5 @@ main() {
   return 1
 }
 
-cd "$REPO_ROOT"
+cd "$REPO_ROOT" || exit 1
 main "$@"

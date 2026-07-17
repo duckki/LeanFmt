@@ -1,0 +1,25 @@
+name: PR title
+
+on:
+  merge_group:
+  pull_request:
+    types: [opened, synchronize, reopened, edited]
+
+permissions:
+  contents: read
+
+jobs:
+  conventional-title:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check conventional title
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const title = context.payload.pull_request
+              ? context.payload.pull_request.title
+              : context.payload.merge_group.head_commit.message;
+            const convention = /^(ci|feat|fix|doc|style|refactor|test|chore|perf)(\(.*\))?: .+[^.]$/;
+            if (!convention.test(title)) {
+              core.setFailed('Use a conventional PR title, for example: fix(cli): preserve exit status');
+            }
