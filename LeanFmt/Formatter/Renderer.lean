@@ -1172,16 +1172,23 @@ partial def renderNestedSegment
   let childSegment := LineBreakRules.Segment.ofTree child
   let childRule := LineBreakRules.formattingRuleFor child
   let inheritsBase := childRule.inheritBase childContext childSegment
+  let suffixStop := suffixStop?.getD segment.stop
+  let lineFitSuffix := lineFitSuffixForChild state segment index suffixStop child
   let state :=
     if inheritsBase || !childRule.alignStartToIndentation childContext childSegment then
+      state
+    else if flatSegmentFits
+              {
+                state with
+                  context := childContext, lineFitSuffixWidth := lineFitSuffix
+              }
+              childSegment then
       state
     else
       let naturalStartColumn := state.segmentStartColumn childSegment
       let alignedStartColumn := indentationPastColumn naturalStartColumn
       state.appendOutput <| spaces (alignedStartColumn - naturalStartColumn)
   let scope := ChildRenderScope.capture state
-  let suffixStop := suffixStop?.getD segment.stop
-  let lineFitSuffix := lineFitSuffixForChild state segment index suffixStop child
   let childBase :=
     if inheritsBase then
       { column := state.segmentBaseColumn, indentation := state.segmentIndentation }

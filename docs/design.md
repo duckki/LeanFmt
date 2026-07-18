@@ -721,6 +721,18 @@ multiline conditional even when a flatter form fits. Because conditionals are
 non-flow rules, any accepted branch break activates the complete balanced
 branch layout.
 
+Conditionals start on an indentation boundary. When an opening parenthesis
+would otherwise put `if` off-column, a space inside the parenthesis aligns
+`if`, `else`, and their branch indentation:
+
+```lean
+pure
+  ( if firstCheck && secondCheck && thirdCheck && fourthCheck then
+      0
+    else
+      1)
+```
+
 Thus an input that breaks only before `else` does not remain half-broken:
 
 ```lean

@@ -1875,6 +1875,26 @@ def assertIfThenElseBreaksBalanced (env : Lean.Environment) : IO Unit := do
   let formatted ← Formatter.formatSourceWithEnv env source "if-then-else-balanced.lean"
   assertEq "if-then-else balanced breaks" expected formatted
 
+def assertParenthesizedIfAlignsBeforeBranchIndent (env : Lean.Environment)
+    : IO Unit := do
+  let source :=
+    "def diagnosticExit : UInt32 :=\n"
+    ++ "  pure\n"
+    ++ "    (if buildExit == 0 && commentExit == 0 && styleExit == 0 && leanExit == 0 then\n"
+    ++ "      0\n"
+    ++ "      else\n"
+    ++ "      1)\n"
+  let expected :=
+    "def diagnosticExit : UInt32 :=\n"
+    ++ "  pure\n"
+    ++ "    ( if buildExit == 0 && commentExit == 0 && styleExit == 0 && leanExit == 0 then\n"
+    ++ "        0\n"
+    ++ "      else\n"
+    ++ "        1)\n"
+  let formatted ←
+    Formatter.formatSourceWithEnv env source "parenthesized-if-alignment.lean"
+  assertEq "parenthesized if aligns before branch indentation" expected formatted
+
 def assertMatchArmRhsIndent (env : Lean.Environment) : IO Unit := do
   let source :=
     "def responseName? : Selection -> Option Name\n"
@@ -3248,6 +3268,7 @@ def runControlFlowTests (env : Lean.Environment) : IO Unit := do
   assertLetMatchAlternativesAlign env
   assertMatchArmPreservesSourceBreakBeforeShortRhs env
   assertIfThenElseBreaksBalanced env
+  assertParenthesizedIfAlignsBeforeBranchIndent env
   assertMatchArmRhsIndent env
   assertMatchPeerBreakConsistency env
   assertMatchDiscriminantApplicationIndent env

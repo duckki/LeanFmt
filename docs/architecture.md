@@ -288,8 +288,10 @@ Rule methods mean:
   infix continuation depth. Each broken prefix adds one depth; physical breakpoint
   indentation does not affect this structural count.
 - `alignStartToIndentation`: renderer may insert spaces before the first token to move
-  this segment to an indentation boundary. The `let` rule uses this because Lean's
-  layout parser requires a stable indentation column.
+  a multiline segment to an indentation boundary. Fitting flat segments do not need
+  alignment. The `let` rule uses this because Lean's layout parser requires a stable
+  indentation column; conditionals use it to keep `if`, `then`, and `else` on a stable
+  grid.
 - `breakPoints`: logical child boundaries. Rules must not read renderer state.
 
 The default rule is deliberately shape-only. It distinguishes missing children, empty

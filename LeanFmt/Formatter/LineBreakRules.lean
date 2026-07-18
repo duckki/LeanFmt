@@ -1725,6 +1725,7 @@ def ifThenElseRule : LineBreakRule :=
     name := "ifThenElse"
     useExistingBreaks := fun _ _ => true
     inheritBase := fun context _ => ifThenElseElseBranch context
+    alignStartToIndentation := fun _ _ => true
     breakPoints := ifThenElseBreaks
   }
 
