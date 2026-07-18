@@ -1490,6 +1490,12 @@ def assertChildFitCountsParentSuffix (env : Lean.Environment) : IO Unit := do
 def assertColumnIndentationIsConservative : IO Unit := do
   assertTrue "column 3 needs only one indentation level"
     (Formatter.indentationLevelForColumn 3 == 1)
+  assertTrue "unmoved infix uses structural depth"
+    (Formatter.combinedInfixDepth 1 1 1 == 1)
+  assertTrue "physical movement subsumes smaller infix depth"
+    (Formatter.combinedInfixDepth 1 3 1 == 2)
+  assertTrue "larger infix depth subsumes physical movement"
+    (Formatter.combinedInfixDepth 1 2 3 == 3)
 
 def tokenAt (lexeme : String) (start stop : String.Pos.Raw) : SyntaxTree.Token :=
   {
@@ -1760,6 +1766,64 @@ def assertParenthesizedQuantifierBlockIgnoresParentInfixLeftDepth
       "parenthesized-quantifier-block-ignore-parent-infix-depth.lean"
   assertEq "parenthesized quantifier block ignores parent infix-left depth"
     expected formatted
+
+def assertNestedInfixDoesNotDoubleCountOperatorWidth (env : Lean.Environment)
+    : IO Unit := do
+  let source :=
+    "def hasUnscopedSetOption (line : String) : Bool :=\n"
+    ++ "  let trimmed := trimLeft line\n"
+    ++ "  trimmed.startsWith \"set_option\"\n"
+    ++ "  && (trimmed.contains \"trace\"\n"
+    ++ "        || trimmed.contains \"pp.\"\n"
+    ++ "        || trimmed.contains \"profiler\"\n"
+    ++ "        || trimmed.contains \"maxHeartbeats\")\n"
+    ++ "  && !trimmed.contains \" in \"\n"
+  let expected :=
+    "def hasUnscopedSetOption (line : String) : Bool :=\n"
+    ++ "  let trimmed := trimLeft line\n"
+    ++ "  trimmed.startsWith \"set_option\"\n"
+    ++ "  && (trimmed.contains \"trace\"\n"
+    ++ "      || trimmed.contains \"pp.\"\n"
+    ++ "      || trimmed.contains \"profiler\"\n"
+    ++ "      || trimmed.contains \"maxHeartbeats\")\n"
+    ++ "  && !trimmed.contains \" in \"\n"
+  let formatted ←
+    Formatter.formatSourceWithEnv env source "nested-infix-operator-width.lean"
+  assertEq "nested infix does not double-count operator width" expected formatted
+
+def assertNestedInfixLhsKeepsHierarchy (env : Lean.Environment) : IO Unit := do
+  let source :=
+    "def nestedAppendLhs :=\n"
+    ++ "  ((executableFieldSelectionsWithEnoughCharactersForLayoutTesting [first] ++ middle ++ executableFieldSelectionsWithEnoughCharactersForLayoutTesting [later]) ++ suffix)\n"
+    ++ "\n"
+    ++ "def nestedConsLhs :=\n"
+    ++ "  (({ parentType := parentType, responseName := responseName, fieldName := fieldName, arguments := arguments, selectionSet := selectionSet } :: fields) ++ [{ parentType := parentType, responseName := responseName, fieldName := fieldName, arguments := laterArguments, selectionSet := laterSelectionSet }])\n"
+  let expected :=
+    "def nestedAppendLhs :=\n"
+    ++ "  ((executableFieldSelectionsWithEnoughCharactersForLayoutTesting [first]\n"
+    ++ "      ++ middle\n"
+    ++ "      ++ executableFieldSelectionsWithEnoughCharactersForLayoutTesting [later])\n"
+    ++ "    ++ suffix)\n"
+    ++ "\n"
+    ++ "def nestedConsLhs :=\n"
+    ++ "  (({\n"
+    ++ "      parentType := parentType,\n"
+    ++ "      responseName := responseName,\n"
+    ++ "      fieldName := fieldName,\n"
+    ++ "      arguments := arguments,\n"
+    ++ "      selectionSet := selectionSet\n"
+    ++ "    }\n"
+    ++ "      :: fields)\n"
+    ++ "    ++ [{\n"
+    ++ "        parentType := parentType,\n"
+    ++ "        responseName := responseName,\n"
+    ++ "        fieldName := fieldName,\n"
+    ++ "        arguments := laterArguments,\n"
+    ++ "        selectionSet := laterSelectionSet\n"
+    ++ "        }])\n"
+  let formatted ←
+    Formatter.formatSourceWithEnv env source "nested-infix-lhs-hierarchy.lean"
+  assertEq "nested infix LHS keeps hierarchy" expected formatted
 
 def assertSubtypeBreaksBeforeProperty (env : Lean.Environment) : IO Unit := do
   let source :=
@@ -3256,6 +3320,8 @@ def runExpressionAndRendererTests (env : Lean.Environment) : IO Unit := do
   assertApplicationFlowBreakKeepsInfixDepthIdempotent env
   assertQuantifierBodyIgnoresParentInfixLeftDepth env
   assertParenthesizedQuantifierBlockIgnoresParentInfixLeftDepth env
+  assertNestedInfixDoesNotDoubleCountOperatorWidth env
+  assertNestedInfixLhsKeepsHierarchy env
   assertSubtypeBreaksBeforeProperty env
   assertAdjacentQuantifiersFitBeforeSourceBreaks env
 

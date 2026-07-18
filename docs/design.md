@@ -563,6 +563,16 @@ the breaks:
   ∧ implementation = expected)
 ```
 
+When a parenthesized chain is the left operand of another chain, its operators
+remain one level deeper than the outer operator:
+
+```lean
+((executableFieldSelections [first]
+    ++ middle
+    ++ executableFieldSelections [later])
+  ++ suffix)
+```
+
 ## Propositions and arrows
 
 LeanFmt distinguishes the layout role of arrow chains from their syntactic

@@ -317,6 +317,7 @@ structure RenderState where
   segmentBaseColumn : Nat := 0
   segmentIndentation : Nat := 0
   infixLeftDepth : Nat := 0
+  infixParentBaseIndentation? : Option Nat := none
   lineFitSuffixWidth : Nat := 0
   context : LineBreakRules.RuleContext := {}
   trace : Trace.State := {}
@@ -330,6 +331,10 @@ Key fields:
 - `segmentBaseColumn` and `segmentIndentation` are the current segment's physical and
   logical bases.
 - `infixLeftDepth` accounts for nested broken infix prefixes.
+- `infixParentBaseIndentation?` carries a rounded infix parent's break base through
+  child rendering. Nested chains combine physical movement from that base with
+  structural left depth using their maximum, avoiding both double indentation and
+  collapsed inner and outer operators.
 - `lineFitSuffixWidth` is trailing same-line width that a recursive child must leave
   room for.
 - `context` is the rule ancestor stack.
@@ -436,6 +441,12 @@ more conservative for continuations such as application arguments.
 Child segment bases are derived from renderer state, not from token spelling. If a child
 rule says `inheritBase`, the surrounding segment base is reused. Otherwise the child base
 comes from the column where its first visible token will be emitted.
+
+An infix parent also passes its rounded break-base indentation into child state. For a
+nested infix chain, effective depth is
+`max (currentIndentation - parentIndentation) infixLeftDepth`. Physical movement caused
+by parentheses can therefore satisfy structural depth, but an inner operator in the
+outer chain's left operand still remains deeper than the outer operator.
 
 ### Suffix width
 

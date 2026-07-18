@@ -41,6 +41,10 @@ def indentationLevelForColumn (column : Nat) : Nat :=
 def indentationPastColumn (column : Nat) : Nat :=
   indentationLevelForColumn (column + indentationSpaces - 1) * indentationSpaces
 
+def combinedInfixDepth (parentIndentation currentIndentation infixLeftDepth : Nat)
+    : Nat :=
+  max (currentIndentation - parentIndentation) infixLeftDepth
+
 def leadingWhitespace (line : String) : String :=
   (line.takeWhile SpaceRules.isHorizontalWhitespace).toString
 
@@ -131,6 +135,7 @@ structure RenderState where
   segmentBaseColumn : Nat := 0
   segmentIndentation : Nat := 0
   infixLeftDepth : Nat := 0
+  infixParentBaseIndentation? : Option Nat := none
   lineFitSuffixWidth : Nat := 0
   context : LineBreakRules.RuleContext := {}
   trace : Trace.State := {}
@@ -145,6 +150,7 @@ structure ChildRenderScope where
   context : LineBreakRules.RuleContext
   segmentBaseColumn : Nat
   segmentIndentation : Nat
+  infixParentBaseIndentation? : Option Nat
   lineFitSuffixWidth : Nat
   trace : Trace.State
 
@@ -153,6 +159,7 @@ def ChildRenderScope.capture (state : RenderState) : ChildRenderScope :=
     context := state.context
     segmentBaseColumn := state.segmentBaseColumn
     segmentIndentation := state.segmentIndentation
+    infixParentBaseIndentation? := state.infixParentBaseIndentation?
     lineFitSuffixWidth := state.lineFitSuffixWidth
     trace := state.trace
   }
@@ -164,6 +171,7 @@ def ChildRenderScope.restore (scope : ChildRenderScope) (rendered : RenderState)
       context := scope.context
       segmentBaseColumn := scope.segmentBaseColumn
       segmentIndentation := scope.segmentIndentation
+      infixParentBaseIndentation? := scope.infixParentBaseIndentation?
       lineFitSuffixWidth := scope.lineFitSuffixWidth
       trace := rendered.trace.restorePathFrom scope.trace
   }
@@ -931,10 +939,21 @@ def ruleBreakBase
     (baseColumn baseIndentation : Nat)
     (breakPoint : LineBreakRules.BreakPoint)
     : SegmentBase :=
-  if !rule.accumulatesInfixLeftDepth state.context segment
-      && rule.flow state.context segment
-      && 0 < state.infixLeftDepth
-      && 0 < breakPoint.indentLevels then
+  if rule.accumulatesInfixLeftDepth state.context segment
+      && 0 < state.infixLeftDepth then
+    match state.infixParentBaseIndentation? with
+    | some parentIndentation =>
+        let currentIndentation :=
+          indentationLevelForColumn (indentationPastColumn baseColumn)
+        let combinedDepth :=
+          combinedInfixDepth parentIndentation currentIndentation state.infixLeftDepth
+        let indentation := parentIndentation + combinedDepth - state.infixLeftDepth
+        { column := baseColumn, indentation }
+    | none => { column := baseColumn, indentation := baseIndentation }
+  else if !rule.accumulatesInfixLeftDepth state.context segment
+          && rule.flow state.context segment
+          && 0 < state.infixLeftDepth
+          && 0 < breakPoint.indentLevels then
     let roundedIndentation :=
       indentationLevelForColumn (indentationPastColumn baseColumn)
     let indentation := roundedIndentation + (state.infixLeftDepth - 1)
@@ -1171,6 +1190,12 @@ partial def renderNestedSegment
   let childContext := state.context.push segment index
   let childSegment := LineBreakRules.Segment.ofTree child
   let childRule := LineBreakRules.formattingRuleFor child
+  let childInfixParentBase? :=
+    match segment.parent with
+    | .node (.infixChain _) _ =>
+        some
+        <| indentationLevelForColumn (indentationPastColumn state.segmentBaseColumn)
+    | _ => state.infixParentBaseIndentation?
   let inheritsBase := childRule.inheritBase childContext childSegment
   let suffixStop := suffixStop?.getD segment.stop
   let lineFitSuffix := lineFitSuffixForChild state segment index suffixStop child
@@ -1200,6 +1225,7 @@ partial def renderNestedSegment
         context := childContext
         segmentBaseColumn := childBase.column
         segmentIndentation := childBase.indentation
+        infixParentBaseIndentation? := childInfixParentBase?
         lineFitSuffixWidth := lineFitSuffix
         trace := state.trace.pushPath index
     }
