@@ -123,8 +123,7 @@ def formatSourceProfiledWithEnv
   let (moduleTree, syntaxTreeMs) ←
     timeIO <| pure <| Internal.buildModule normalizedSource rawSyntax
   let (formatted, renderMs) ←
-    timeIO
-    <| do
+    timeIO <| do
       let firstPass ← formatModuleWithEnv env moduleTree
       if firstPass == normalizedSource then
         pure firstPass

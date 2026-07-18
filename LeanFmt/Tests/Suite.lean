@@ -639,6 +639,40 @@ def assertDeclarationValueInfixBreaksAfterAssign (env : Lean.Environment)
     Formatter.formatSourceWithEnv env source "declaration-value-infix-break.lean"
   assertEq "declaration value infix breaks after assignment" expected formatted
 
+def assertDeclarationValueKeepsAttachedByBody (env : Lean.Environment) : IO Unit := do
+  let source :=
+    "instance {VeryLongTypeNameForAttachedBody : Type} [VeryLongClassNameForAttachedBody VeryLongTypeNameForAttachedBody] : Inhabited Nat := makeInhabited veryLongArgumentName <| by\n"
+    ++ "    exact 0\n"
+  let expected :=
+    "instance {VeryLongTypeNameForAttachedBody : Type}\n"
+    ++ "    [VeryLongClassNameForAttachedBody VeryLongTypeNameForAttachedBody]\n"
+    ++ "    : Inhabited Nat :=\n"
+    ++ "  makeInhabited veryLongArgumentName <| by\n"
+    ++ "    exact 0\n"
+  let formatted ←
+    Formatter.formatSourceWithEnv env source "declaration-value-attached-by.lean"
+  assertEq "declaration value keeps attached by body" expected formatted
+  let formattedAgain ←
+    Formatter.formatSourceWithEnv env formatted
+      "declaration-value-attached-by-formatted.lean"
+  assertEq "declaration value attached by is idempotent" formatted formattedAgain
+
+def assertDeclarationValueKeepsAttachedDoBody (env : Lean.Environment) : IO Unit := do
+  let source :=
+    "def declarationValueAttachedDoWithLongEnoughHeader : IO Nat := runWithLogging veryLongArgumentName <| do\n"
+    ++ "    pure 0\n"
+  let expected :=
+    "def declarationValueAttachedDoWithLongEnoughHeader : IO Nat :=\n"
+    ++ "  runWithLogging veryLongArgumentName <| do\n"
+    ++ "    pure 0\n"
+  let formatted ←
+    Formatter.formatSourceWithEnv env source "declaration-value-attached-do.lean"
+  assertEq "declaration value keeps attached do body" expected formatted
+  let formattedAgain ←
+    Formatter.formatSourceWithEnv env formatted
+      "declaration-value-attached-do-formatted.lean"
+  assertEq "declaration value attached do is idempotent" formatted formattedAgain
+
 def assertSignatureParametersUseLeadingSourceBreakAfterFlatFails
     (env : Lean.Environment)
     : IO Unit := do
@@ -3156,6 +3190,8 @@ def runBasicFormattingTests (env : Lean.Environment) : IO Unit := do
   assertTerminationProofSuffixUntouched env
   assertBasicDeclarationBreak env
   assertDeclarationValueInfixBreaksAfterAssign env
+  assertDeclarationValueKeepsAttachedByBody env
+  assertDeclarationValueKeepsAttachedDoBody env
   assertSignatureParametersUseLeadingSourceBreakAfterFlatFails env
   assertDefinitionSourceBreakAfterAssignOverridesFlat env
 

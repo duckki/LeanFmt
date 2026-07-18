@@ -108,6 +108,13 @@ def adjustOriginalTextIndent (sourceColumn targetColumn : Nat) (text : String)
       String.intercalate "\n"
       <| first :: rest.map (shiftLineIndent sourceColumn targetColumn)
 
+def adjustOriginalProofTextIndent (sourceColumn targetColumn : Nat) (text : String)
+    : String :=
+  if sourceColumn <= targetColumn then
+    adjustOriginalTextIndent sourceColumn targetColumn text
+  else
+    text
+
 structure SourceBreak where
   index : Nat
   indent : Nat
@@ -424,7 +431,7 @@ def RenderState.emitOriginalTree (state : RenderState) (tree : SyntaxTree.Tree)
       let targetColumn := lineWidth <| currentLineAfterAppend state.currentLine leading
       let emittedText :=
         if isProofTree tree then
-          adjustOriginalTextIndent sourceColumn targetColumn sourceText
+          adjustOriginalProofTextIndent sourceColumn targetColumn sourceText
         else
           sourceText
       {

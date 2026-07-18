@@ -490,21 +490,26 @@ def declarationValueBreaks (_context : RuleContext) (segment : Segment)
     : List BreakPoint :=
   [declarationValueBreak? segment].filterMap id
 
-def treeContainsAttachedBodyStart (tree : SyntaxTree.Tree) : Bool :=
-  treeContainsLexeme "by" tree || treeContainsLexeme "do" tree
+def attachedBodyInfixOperator (segment : Segment) (index : Nat) : Bool :=
+  childStartsWithLexeme segment index "<|"
+  && (childIsRawKind segment (index + 1) `Lean.Parser.Term.byTactic
+      || attachedBodyStart segment (index + 1))
 
-def declarationValueBreakWithoutNestedBody? (segment : Segment)
-    : Option BreakPoint := do
-  let valueIndex ← contentIndexAfterLexeme? segment ":="
-  let value ← segment.child? valueIndex
-  if attachedBodyStart segment valueIndex || treeContainsAttachedBodyStart value then
-    none
-  else
-    boundaryBreak? segment valueIndex 1
+partial def treeContainsAttachedBodyInfix : SyntaxTree.Tree → Bool
+  | .missing => false
+  | .leaf _ => false
+  | tree@(.node _ children) =>
+      let segment := Segment.ofTree tree
+      segment.indexes.any (attachedBodyInfixOperator segment)
+      || children.any treeContainsAttachedBodyInfix
 
-def declarationValueBreaksWithoutNestedBody (_context : RuleContext) (segment : Segment)
-    : List BreakPoint :=
-  [declarationValueBreakWithoutNestedBody? segment].filterMap id
+def declarationValueHasAttachedBodyInfix (segment : Segment) : Bool :=
+  match contentIndexAfterLexeme? segment ":=" with
+  | none => false
+  | some valueIndex =>
+      match segment.child? valueIndex with
+      | some value => treeContainsAttachedBodyInfix value
+      | none => false
 
 /-! ### Declarations, structures, and collections -/
 
@@ -1506,7 +1511,7 @@ def infixBreaks (_context : RuleContext) (segment : Segment) : List BreakPoint :
       | some children =>
           (List.range children.size).filterMap
             fun index =>
-              if index % 2 == 1 then
+              if index % 2 == 1 && !attachedBodyInfixOperator segment index then
                 boundaryBreak? segment index 0
               else
                 none
@@ -1645,8 +1650,9 @@ def declarationRule : LineBreakRule :=
 def declarationValueRule : LineBreakRule :=
   {
     name := "declarationValue"
+    mandatory := fun _ segment => declarationValueHasAttachedBodyInfix segment
     inheritBase := fun _ _ => true
-    breakPoints := declarationValueBreaksWithoutNestedBody
+    breakPoints := declarationValueBreaks
   }
 
 def letRecDeclarationRule : LineBreakRule :=
