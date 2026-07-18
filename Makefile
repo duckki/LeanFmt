@@ -3,24 +3,24 @@
 all: check
 
 build:
-	lake build --wfail
+	time lake build --wfail
 
 test:
-	lake test --wfail
+	time lake test --wfail
 
 lint:
-	lake lint
+	time lake lint
 
 fixtures:
-	lake exe fmt-test --update-fixture --check Tests/Fixtures/*/*.leanfmt
+	time lake exe fmt-test --update-fixture --check Tests/Fixtures/*/*.leanfmt
 
 shellcheck:
 	shellcheck --severity=warning scripts/*.sh
 
 check: build test lint fixtures
-	lake exe fmt --check --check-exception --check-idempotent -r LeanFmt
+	time lake exe fmt --check --check-exception --check-idempotent -r LeanFmt
 	git diff --check
 
 fmt:
-	lake exe fmt -r LeanFmt
+	time lake exe fmt -r LeanFmt
 	make check
