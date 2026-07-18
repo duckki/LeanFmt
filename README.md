@@ -119,21 +119,22 @@ including when the source is a local repository:
 scripts/validate-external-projects.sh graphql-lean=$HOME/work/apollo-graphql/graphql-lean
 ```
 
-Pass `--files GIT_PATHSPEC` to validate a subset of tracked Lean files. A project
-can also override the current file pattern with `NAME=GIT_URL_OR_PATH::GIT_PATHSPEC`.
-Quote patterns containing `*` so the shell does not expand them before `git
-ls-files` sees them:
+Pass `--files FILE_SELECTOR` to validate a subset of tracked Lean files. A project
+can also override the current selector with `NAME=GIT_URL_OR_PATH::FILE_SELECTOR`.
+When the selector names a tracked directory, every tracked `.lean` file under that
+directory is included. Other selectors are passed to `git ls-files`, so quote
+patterns containing `*` to keep the shell from expanding them first:
 
 ```sh
 scripts/validate-external-projects.sh \
-  --files 'Mathlib/**/*.lean' \
+  --files Mathlib/Combinatorics \
   mathlib=https://github.com/leanprover-community/mathlib4.git
 ```
 
 Clones are recreated under `.scratch/external-validation`. Set
 `LEANFMT_VALIDATION_DIR` to use another directory,
 `LEANFMT_VALIDATION_SKIP_CACHE=1` to build without downloading caches,
-`LEANFMT_VALIDATION_FILE_PATTERN` to change the default file pattern, or
+`LEANFMT_VALIDATION_FILE_PATTERN` to change the default file selector, or
 `LEANFMT_VALIDATION_BATCH_SIZE` to change the number of files passed to each formatter
 invocation. The script continues after individual phase failures so it can report all
 issues, then exits with a nonzero status if any phase failed. Each phase and the final

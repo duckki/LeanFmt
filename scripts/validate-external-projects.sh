@@ -10,13 +10,13 @@ readonly REPO_ROOT
 readonly FORMATTER="$REPO_ROOT/.lake/build/bin/fmt"
 readonly WORK_DIR="${LEANFMT_VALIDATION_DIR:-$REPO_ROOT/.scratch/external-validation}"
 readonly FILES_PER_BATCH="${LEANFMT_VALIDATION_BATCH_SIZE:-200}"
-readonly DEFAULT_FILE_PATTERN="${LEANFMT_VALIDATION_FILE_PATTERN:-*.lean}"
+readonly DEFAULT_FILE_SELECTOR="${LEANFMT_VALIDATION_FILE_PATTERN:-*.lean}"
 readonly CSLIB_URL="https://github.com/leanprover/cslib.git"
 readonly MATHLIB_URL="https://github.com/leanprover-community/mathlib4.git"
 
 declare -a DEFAULT_PROJECTS=(
-  "cslib|$CSLIB_URL|$DEFAULT_FILE_PATTERN"
-  "mathlib|$MATHLIB_URL|$DEFAULT_FILE_PATTERN"
+  "cslib|$CSLIB_URL|$DEFAULT_FILE_SELECTOR"
+  "mathlib|$MATHLIB_URL|$DEFAULT_FILE_SELECTOR"
 )
 
 failures=0
@@ -87,19 +87,37 @@ build_project() {
   (cd "$project_dir" && lake build)
 }
 
+tracked_lean_files() {
+  local project_dir="$1"
+  local file_selector="$2"
+  local file
+
+  if [[ -d "$project_dir/$file_selector" ]]; then
+    while IFS= read -r -d '' file; do
+      if [[ "$file" == *.lean ]]; then
+        printf '%s\0' "$project_dir/$file"
+      fi
+    done < <(git -C "$project_dir" ls-files -z -- "$file_selector")
+  else
+    while IFS= read -r -d '' file; do
+      printf '%s\0' "$project_dir/$file"
+    done < <(git -C "$project_dir" ls-files -z -- "$file_selector")
+  fi
+}
+
 run_formatter() {
   local project_dir="$1"
-  local file_pattern="$2"
+  local file_selector="$2"
   shift 2
   local -a files=()
   local file
 
   while IFS= read -r -d '' file; do
-    files+=("$project_dir/$file")
-  done < <(git -C "$project_dir" ls-files -z -- "$file_pattern")
+    files+=("$file")
+  done < <(tracked_lean_files "$project_dir" "$file_selector")
 
   if ((${#files[@]} == 0)); then
-    printf 'No files matched %q in %s.\n' "$file_pattern" "$project_dir"
+    printf 'No files matched %q in %s.\n' "$file_selector" "$project_dir"
     return 0
   fi
 
@@ -113,7 +131,7 @@ run_formatter() {
 main() {
   local started_at=$SECONDS
   local -a projects=("${DEFAULT_PROJECTS[@]}")
-  local default_file_pattern="$DEFAULT_FILE_PATTERN"
+  local default_file_selector="$DEFAULT_FILE_SELECTOR"
   if (($# > 0)); then
     projects=()
     local specification
@@ -125,26 +143,26 @@ main() {
           printf 'Missing value for --files.\n' >&2
           return 2
         fi
-        default_file_pattern="$1"
+        default_file_selector="$1"
         shift
         continue
       fi
       if [[ "$specification" != *=* ]]; then
-        printf 'Invalid project %q; expected NAME=GIT_URL_OR_PATH[::GIT_PATHSPEC].\n' \
+        printf 'Invalid project %q; expected NAME=GIT_URL_OR_PATH[::FILE_SELECTOR].\n' \
           "$specification" >&2
         return 2
       fi
       local project_spec="${specification%%::*}"
-      local file_pattern="$default_file_pattern"
+      local file_selector="$default_file_selector"
       if [[ "$specification" == *"::"* ]]; then
-        file_pattern="${specification#*::}"
+        file_selector="${specification#*::}"
       fi
-      projects+=("${project_spec%%=*}|${project_spec#*=}|$file_pattern")
+      projects+=("${project_spec%%=*}|${project_spec#*=}|$file_selector")
     done
     if ((${#projects[@]} == 0)); then
       projects=(
-        "cslib|$CSLIB_URL|$default_file_pattern"
-        "mathlib|$MATHLIB_URL|$default_file_pattern"
+        "cslib|$CSLIB_URL|$default_file_selector"
+        "mathlib|$MATHLIB_URL|$default_file_selector"
       )
     fi
   fi
@@ -157,9 +175,9 @@ main() {
     exit 1
   fi
 
-  local project name url file_pattern project_dir
+  local project name url file_selector project_dir
   for project in "${projects[@]}"; do
-    IFS='|' read -r name url file_pattern <<< "$project"
+    IFS='|' read -r name url file_selector <<< "$project"
     project_dir="$WORK_DIR/$name"
 
     run_phase "Clone $name" clone_project "$url" "$project_dir"
@@ -170,11 +188,11 @@ main() {
 
     run_optional_phase "Download $name build cache" get_build_cache "$project_dir"
     run_phase "Build $name before formatting" build_project "$project_dir"
-    if run_phase_result "Check $name formatting exceptions/idempotence ($file_pattern)" \
-        run_formatter "$project_dir" "$file_pattern" --check --check-exception \
+    if run_phase_result "Check $name formatting exceptions/idempotence ($file_selector)" \
+        run_formatter "$project_dir" "$file_selector" --check --check-exception \
           --check-idempotent; then
-      if run_phase_result "Format $name after clean diagnostics ($file_pattern)" \
-          run_formatter "$project_dir" "$file_pattern" --check-exception \
+      if run_phase_result "Format $name after clean diagnostics ($file_selector)" \
+          run_formatter "$project_dir" "$file_selector" --check-exception \
             --check-idempotent; then
         run_phase "Build $name after formatting" build_project "$project_dir"
       else

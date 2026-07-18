@@ -55,6 +55,11 @@ def formatPassWithEnv (env : Environment) (source fileName : String) : IO String
 
 def maxConvergencePasses : Nat := 4
 
+structure FormatResult where
+  formatted : String
+  fellBack : Bool := false
+deriving BEq, Repr
+
 def warnConvergenceFallback (fileName reason : String) : IO Unit :=
   IO.eprintln s!"leanfmt: warning: using original source for {fileName}: {reason}"
 
@@ -62,32 +67,37 @@ partial def convergeSourceWithEnv
     (env : Environment) (source fileName : String)
     (passesRemaining : Nat := maxConvergencePasses)
     (seen : List String := []) (fallback : String := source)
-    : IO String := do
+    : IO FormatResult := do
   if passesRemaining == 0 then
     warnConvergenceFallback fileName
       s!"formatting did not converge within {maxConvergencePasses} passes"
-    pure fallback
+    pure { formatted := fallback, fellBack := true }
   else
     let formatted ← formatPassWithEnv env source fileName
     if formatted == source then
-      pure formatted
+      pure { formatted }
     else if seen.contains formatted then
       warnConvergenceFallback fileName "formatting entered a layout cycle"
-      pure fallback
+      pure { formatted := fallback, fellBack := true }
     else
       try
         convergeSourceWithEnv env formatted fileName (passesRemaining - 1)
           (source :: seen) fallback
       catch _ =>
         warnConvergenceFallback fileName "an intermediate result did not parse"
-        pure fallback
+        pure { formatted := fallback, fellBack := true }
 
 end Internal
 
-def formatSourceWithEnv (env : Environment) (source fileName : String := "<input>")
-    : IO String :=
+def formatSourceWithEnvDetailed
+    (env : Environment) (source fileName : String := "<input>")
+    : IO Internal.FormatResult :=
   let normalized := Internal.normalizeSource source
   Internal.convergeSourceWithEnv env normalized fileName Internal.maxConvergencePasses
+
+def formatSourceWithEnv (env : Environment) (source fileName : String := "<input>")
+    : IO String := do
+  pure (← formatSourceWithEnvDetailed env source fileName).formatted
 
 def defaultEnvironment : IO Environment :=
   SyntaxTree.importLeanEnvironment
@@ -119,8 +129,10 @@ def formatSourceProfiledWithEnv
       if firstPass == normalizedSource then
         pure firstPass
       else
-        Internal.convergeSourceWithEnv env firstPass fileName
-          (Internal.maxConvergencePasses - 1) [normalizedSource] normalizedSource
+        pure
+          (← Internal.convergeSourceWithEnv env firstPass fileName
+              (Internal.maxConvergencePasses - 1) [normalizedSource]
+              normalizedSource).formatted
   let totalStop ← IO.monoMsNow
   pure
     (

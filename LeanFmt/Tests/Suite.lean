@@ -160,6 +160,13 @@ def assertFormatterConvergencePassLimit : IO Unit := do
   assertTrue "formatter convergence pass limit"
     (Formatter.Internal.maxConvergencePasses == 4)
 
+def assertFormatterFallbackResultIsObservable (env : Lean.Environment) : IO Unit := do
+  let result ←
+    Formatter.Internal.convergeSourceWithEnv env "def x := 1\n"
+      "forced-format-fallback.lean" 0
+  assertEq "formatter fallback returns original source" "def x := 1\n" result.formatted
+  assertTrue "formatter fallback is observable" result.fellBack
+
 def assertLayoutSensitiveTermsRemainParseableAndIdempotent (env : Lean.Environment)
     : IO Unit := do
   let source :=
@@ -620,6 +627,17 @@ def assertBasicDeclarationBreak (env : Lean.Environment) : IO Unit := do
     ++ "  veryLongIdentifierNameThatPushesTheDefinitionBodyPastTheWidthLimit\n"
   let formatted ← Formatter.formatSourceWithEnv env source "declaration-break.lean"
   assertEq "declaration body break" expected formatted
+
+def assertDeclarationValueInfixBreaksAfterAssign (env : Lean.Environment)
+    : IO Unit := do
+  let source :=
+    "def declarationValueInfixBreakWithLongEnoughHeader : Nat := inferInstanceAs <| OfNat Nat 0\n"
+  let expected :=
+    "def declarationValueInfixBreakWithLongEnoughHeader : Nat :=\n"
+    ++ "  inferInstanceAs <| OfNat Nat 0\n"
+  let formatted ←
+    Formatter.formatSourceWithEnv env source "declaration-value-infix-break.lean"
+  assertEq "declaration value infix breaks after assignment" expected formatted
 
 def assertSignatureParametersUseLeadingSourceBreakAfterFlatFails
     (env : Lean.Environment)
@@ -2542,7 +2560,13 @@ def assertFormattingExceptionChecks (env : Lean.Environment) : IO Unit := do
   assertTrue "atomic tree and trailing comma overflow is exempt"
     (Formatter.Diagnostics.overflowOccurrences atomicCommaModule).isEmpty
   let counts : LeanFmt.Cli.ExceptionCounts :=
-    { codeChanged := 1, lineOverflow := 2, missingRule := 3, notIdempotent := 4 }
+    {
+      codeChanged := 1,
+      lineOverflow := 2,
+      missingRule := 3,
+      formatFallback := 4,
+      notIdempotent := 5
+    }
   assertEq "CLI exception summary includes every kind"
     (String.intercalate "\n"
       [
@@ -2550,7 +2574,8 @@ def assertFormattingExceptionChecks (env : Lean.Environment) : IO Unit := do
         "  code changed: 1",
         "  line overflow: 2",
         "  missing rule: 3",
-        "  not idempotent: 4"
+        "  format fallback: 4",
+        "  not idempotent: 5"
       ])
     counts.summary
 
@@ -2834,6 +2859,7 @@ def assertMathlibLowRiskSyntaxKindsHaveRules : IO Unit := do
       `Parser.Attr.parity_simps,
       `Parser.Attr.nontriviality,
       `Mathlib.Tactic.ToAdditive.to_additive,
+      `Mathlib.Tactic.MkIff.mkIff,
       `Mathlib.Tactic.Translate.attrArgs,
       `Mathlib.Tactic.Translate.bracketedOption,
       `Mathlib.Tactic.Translate.translationHint,
@@ -3006,6 +3032,7 @@ def runBasicFormattingTests (env : Lean.Environment) : IO Unit := do
   assertCustomNotationBracketSpacing
   assertSetOptionInBreaksAfterIn env
   assertFormatterConvergencePassLimit
+  assertFormatterFallbackResultIsObservable env
   assertLayoutSensitiveTermsRemainParseableAndIdempotent env
   assertHardWhitespaceFormatting env
   assertImportsStayOnSeparateLines env
@@ -3037,6 +3064,7 @@ def runBasicFormattingTests (env : Lean.Environment) : IO Unit := do
   assertDefinitionContainingProofUntouched env
   assertTerminationProofSuffixUntouched env
   assertBasicDeclarationBreak env
+  assertDeclarationValueInfixBreaksAfterAssign env
   assertSignatureParametersUseLeadingSourceBreakAfterFlatFails env
   assertDefinitionSourceBreakAfterAssignOverridesFlat env
 

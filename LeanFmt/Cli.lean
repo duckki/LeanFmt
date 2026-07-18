@@ -23,6 +23,7 @@ structure ExceptionCounts where
   codeChanged : Nat := 0
   lineOverflow : Nat := 0
   missingRule : Nat := 0
+  formatFallback : Nat := 0
   notIdempotent : Nat := 0
 deriving DecidableEq, Repr
 
@@ -35,6 +36,7 @@ def ExceptionCounts.add (left right : ExceptionCounts) : ExceptionCounts :=
     codeChanged := left.codeChanged + right.codeChanged
     lineOverflow := left.lineOverflow + right.lineOverflow
     missingRule := left.missingRule + right.missingRule
+    formatFallback := left.formatFallback + right.formatFallback
     notIdempotent := left.notIdempotent + right.notIdempotent
   }
 
@@ -42,6 +44,7 @@ def ExceptionCounts.isEmpty (counts : ExceptionCounts) : Bool :=
   counts.codeChanged == 0
   && counts.lineOverflow == 0
   && counts.missingRule == 0
+  && counts.formatFallback == 0
   && counts.notIdempotent == 0
 
 def ExceptionCounts.addFormattingException (counts : ExceptionCounts)
@@ -57,6 +60,7 @@ def ExceptionCounts.summary (counts : ExceptionCounts) : String :=
       s!"  code changed: {counts.codeChanged}",
       s!"  line overflow: {counts.lineOverflow}",
       s!"  missing rule: {counts.missingRule}",
+      s!"  format fallback: {counts.formatFallback}",
       s!"  not idempotent: {counts.notIdempotent}"
     ]
 
@@ -207,8 +211,14 @@ def formatFile (cache : EnvironmentCache) (options : Options) (path : FilePath)
   try
     let source ← IO.FS.readFile path
     let env ← cache.environmentForSource source path.toString
-    let formatted ← Formatter.formatSourceWithEnv env source path.toString
-    let exceptionCounts ← runDiagnosticChecks env options path source formatted
+    let result ← Formatter.formatSourceWithEnvDetailed env source path.toString
+    let formatted := result.formatted
+    let exceptionCounts ←
+      if result.fellBack then
+        IO.eprintln s!"format fallback: {path}"
+        pure { formatFallback := 1 }
+      else
+        runDiagnosticChecks env options path source formatted
     if !exceptionCounts.isEmpty then
       pure { failed := true, exceptionCounts }
     else if formatted == source then

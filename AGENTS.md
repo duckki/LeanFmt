@@ -107,14 +107,16 @@ scripts/validate-external-projects.sh
 ```
 
 For an iterative single-project run, pass `NAME=GIT_URL_OR_PATH`; a local source
-is still cloned into a fresh scratch checkout. Pass `--files GIT_PATHSPEC` or append
-`::GIT_PATHSPEC` to one project spec to validate a tracked-file subset:
+is still cloned into a fresh scratch checkout. Pass `--files FILE_SELECTOR` or
+append `::FILE_SELECTOR` to one project spec to validate a tracked-file subset.
+When the selector names a tracked directory, every tracked `.lean` file under
+that directory is included:
 
 ```sh
 scripts/validate-external-projects.sh \
   cslib=$HOME/work/lean-libs/cslib
 scripts/validate-external-projects.sh \
-  --files 'Mathlib/**/*.lean' \
+  --files Mathlib/Combinatorics \
   mathlib=https://github.com/leanprover-community/mathlib4.git
 ```
 

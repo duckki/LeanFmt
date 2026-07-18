@@ -464,6 +464,26 @@ def delimiterValueBreak? (segment : Segment) (delimiter : String)
 def declarationValueBreak? (segment : Segment) : Option BreakPoint :=
   delimiterValueBreak? segment ":="
 
+def declarationValueBreaks (_context : RuleContext) (segment : Segment)
+    : List BreakPoint :=
+  [declarationValueBreak? segment].filterMap id
+
+def treeContainsAttachedBodyStart (tree : SyntaxTree.Tree) : Bool :=
+  treeContainsLexeme "by" tree || treeContainsLexeme "do" tree
+
+def declarationValueBreakWithoutNestedBody? (segment : Segment)
+    : Option BreakPoint := do
+  let valueIndex ← contentIndexAfterLexeme? segment ":="
+  let value ← segment.child? valueIndex
+  if attachedBodyStart segment valueIndex || treeContainsAttachedBodyStart value then
+    none
+  else
+    boundaryBreak? segment valueIndex 1
+
+def declarationValueBreaksWithoutNestedBody (_context : RuleContext) (segment : Segment)
+    : List BreakPoint :=
+  [declarationValueBreakWithoutNestedBody? segment].filterMap id
+
 /-! ### Declarations, structures, and collections -/
 
 def definitionBreaks (_context : RuleContext) (segment : Segment) : List BreakPoint :=
@@ -1588,6 +1608,13 @@ def arrayRule : LineBreakRule :=
 def declarationRule : LineBreakRule :=
   { name := "declaration" }
 
+def declarationValueRule : LineBreakRule :=
+  {
+    name := "declarationValue"
+    inheritBase := fun _ _ => true
+    breakPoints := declarationValueBreaksWithoutNestedBody
+  }
+
 def letRecDeclarationRule : LineBreakRule :=
   {
     name := "letRecDeclaration"
@@ -1900,7 +1927,8 @@ def ruleFor : SyntaxTree.Tree → Option LineBreakRule
   | .node (.raw `Lean.Parser.Term.nestedAction) _ => some nestedActionRule
   | .node (.raw `Lean.Parser.Term.unsafe) _ => some unsafeTermRule
   | .node (.raw `Lean.Parser.Term.typeSpec) _ => some transparentRule
-  | .node (.raw `Lean.Parser.Command.declValSimple) _ => some transparentRule
+  | .node (.raw `Lean.Parser.Command.declValSimple) _ =>
+      some declarationValueRule
   | .node (.raw `Lean.Parser.Command.instance) _ => some transparentRule
   | .node (.raw `Lean.Parser.Command.ctor) _ => some transparentRule
   | .node (.raw `Lean.Parser.Command.structSimpleBinder) _ => some transparentRule
@@ -2018,6 +2046,7 @@ def ruleFor : SyntaxTree.Tree → Option LineBreakRule
   | .node (.raw `Lean.deprecated) _ => some defaultRule
   | .node (.raw `token.existing) _ => some defaultRule
   | .node (.raw `Mathlib.Tactic.ToAdditive.to_additive) _ => some defaultRule
+  | .node (.raw `Mathlib.Tactic.MkIff.mkIff) _ => some defaultRule
   | .node (.raw `Mathlib.Tactic.Translate.attrArgs) _ => some defaultRule
   | .node (.raw `Mathlib.Tactic.Translate.bracketedOption) _ => some defaultRule
   | .node (.raw `Mathlib.Tactic.Translate.translationHint) _ => some defaultRule
