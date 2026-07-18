@@ -50,19 +50,40 @@ def cleanTrivia (text : String) : String :=
 def stripLeadingHorizontalWhitespace (line : String) : String :=
   (line.dropWhile isHorizontalWhitespace).toString
 
+def containsSubstring (text needle : String) : Bool :=
+  text.contains needle
+
+def lineOpensBlockComment (line : String) : Bool :=
+  let stripped := stripLeadingHorizontalWhitespace line
+  stripped.startsWith "/-" && !containsSubstring stripped "-/"
+
+def lineClosesBlockComment (line : String) : Bool :=
+  containsSubstring line "-/"
+
+def reindentCommentLine (insideBlock : Bool) (line indent : String) : String :=
+  if insideBlock then
+    line
+  else
+    let stripped := stripLeadingHorizontalWhitespace line
+    if stripped.isEmpty then indent else indent ++ stripped
+
+def reindentCommentLines (indent : String) : Bool → List String → List String
+  | _, [] => []
+  | insideBlock, line :: rest =>
+      let adjusted := reindentCommentLine insideBlock line indent
+      let insideBlock :=
+        if insideBlock then
+          !lineClosesBlockComment line
+        else
+          lineOpensBlockComment line
+      adjusted :: reindentCommentLines indent insideBlock rest
+
 def reindentCommentTrivia (text indent : String) : String :=
   match (cleanTrivia text).splitOn "\n" with
   | [] => ""
   | firstLine :: rest =>
       String.intercalate "\n"
-      <| firstLine
-          :: rest.map
-              (fun line =>
-                let stripped := stripLeadingHorizontalWhitespace line
-                if stripped.isEmpty then
-                  indent
-                else
-                  indent ++ stripped)
+      <| firstLine :: reindentCommentLines indent (lineOpensBlockComment firstLine) rest
 
 def commentTriviaForBreak (text indent : String) : String :=
   let adjusted := reindentCommentTrivia text indent
@@ -85,9 +106,6 @@ def normalizeFinalNewline (text : String) : String :=
   else
     withoutFinalNewlines ++ "\n"
 
-def containsSubstring (text needle : String) : Bool :=
-  text.contains needle
-
 def hasLineStructure (text : String) : Bool :=
   text.contains '\n'
 
@@ -103,11 +121,32 @@ def hasOnlyHorizontalTrivia (text : String) : Bool :=
 def stringIn (value : String) (values : List String) : Bool :=
   values.any fun candidate => candidate == value
 
+def stringEndsWithAny (value : String) (suffixes : List String) : Bool :=
+  suffixes.any fun suffix => value.endsWith suffix
+
+def stringStartsWithAny (value : String) (prefixes : List String) : Bool :=
+  prefixes.any fun candidate => value.startsWith candidate
+
 def noSpaceAfterToken (lexeme : String) : Bool :=
-  stringIn lexeme ["(", "[", "#[", "⟨", "⟪", "@", "@["]
+  lexeme == "@" || stringEndsWithAny lexeme ["(", "[", "⟨", "⟪", "⦃"]
+
+def charCodeIn (char : Char) (lower upper : Nat) : Bool :=
+  lower <= char.toNat && char.toNat <= upper
+
+def isPostfixMarkerStart (char : Char) : Bool :=
+  charCodeIn char 0x2070 0x209F
+  || charCodeIn char 0x1D00 0x1D7F
+  || charCodeIn char 0x1D80 0x1DBF
+
+def isPostfixMarkerToken (lexeme : String) : Bool :=
+  match lexeme.toList with
+  | [] => false
+  | first :: _ => isPostfixMarkerStart first
 
 def noSpaceBeforeToken (lexeme : String) : Bool :=
-  stringIn lexeme [")", "]", "⟩", "⟫", ",", ",*", ";", "@"]
+  stringIn lexeme [",", ",*", ";", "@"]
+  || stringStartsWithAny lexeme [")", "]", "⟩", "⟫", "⦄"]
+  || isPostfixMarkerToken lexeme
 
 def preservesTightBraceSpacing (left right : SyntaxTree.Token) : Bool :=
   left.lexeme == "{" || right.lexeme == "}"
@@ -146,14 +185,7 @@ def interTokenWhitespace
     cleanTrivia trivia
   else if preserveLines && hasLineStructure trivia then
     cleanTrivia trivia
-  else if trivia.isEmpty
-          && (left.lexeme == "!"
-              || noSpaceAfterToken left.lexeme
-              || noSpaceBeforeToken right.lexeme
-              || preservesTightBraceSpacing left right
-              || preservesTightDotSpacing left right
-              || preservesTightPostfixSpacing right
-              || preservesTightInterpolationSpacing left right) then
+  else if trivia.isEmpty then
     ""
   else
     spaceBetweenTokens left right

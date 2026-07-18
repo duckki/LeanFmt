@@ -65,8 +65,11 @@ namespace, so the namespace is explicit in the module names. The library explici
 Formatting a file follows this pipeline:
 
 1. Normalize line endings to `\n`.
-2. Parse the header and commands with Lean's module parser in an environment that
-   imports `Lean` with parser extensions enabled.
+2. Parse the header and commands with Lean's module parser. The default public API
+   uses an environment that imports `Lean` with parser extensions enabled. The CLI
+   first reads each file header and, when explicit imports are present, loads an
+   import-specific parser environment so project syntax is available while formatting
+   that file.
 3. Convert Lean `Syntax` to a `SyntaxTree.Tree` of tokens and raw parser nodes.
 4. Regroup selected raw nodes into logical `SyntaxTree.NodeKind` nodes.
 5. Render the resulting tree using line-break rules and space rules.
@@ -83,7 +86,9 @@ renderer is the only component that emits text.
 driver tracks previously seen results. A parse failure, cycle, or exhausted pass limit
 causes a warning and returns the original normalized source. Fallback is deliberately
 nonfatal so `--check-exception` and `--check-idempotent` can report formatter
-problems without replacing a file with an unsafe intermediate result.
+problems without replacing a file with an unsafe intermediate result. The CLI caches
+import-specific environments by the normalized import list to avoid reloading common
+project headers for every file.
 
 ## Syntax tree
 

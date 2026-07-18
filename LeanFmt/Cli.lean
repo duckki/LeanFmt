@@ -26,6 +26,10 @@ structure ExceptionCounts where
   notIdempotent : Nat := 0
 deriving DecidableEq, Repr
 
+structure EnvironmentCache where
+  default : Lean.Environment
+  entries : IO.Ref (List (String × Lean.Environment))
+
 def ExceptionCounts.add (left right : ExceptionCounts) : ExceptionCounts :=
   {
     codeChanged := left.codeChanged + right.codeChanged
@@ -104,9 +108,56 @@ def parseArgs (args : List String) : ParseResult :=
           loop options (FilePath.mk arg :: files) rest
   loop {} [] args
 
-def loadFormatterEnvironment : IO Lean.Environment := do
+def loadFormatterEnvironment : IO EnvironmentCache := do
   Lean.initSearchPath (← Lean.findSysroot)
-  Formatter.defaultEnvironment
+  let default ← Formatter.defaultEnvironment
+  let entries ← IO.mkRef []
+  pure { default, entries }
+
+def importKey (importDecl : Lean.Import) : String :=
+  s!"{importDecl.module}|all={importDecl.importAll}|exported={importDecl.isExported}|meta={importDecl.isMeta}"
+
+def importsKey (imports : Array Lean.Import) : String :=
+  String.intercalate "\n" (imports.toList.map importKey)
+
+def usesDefaultEnvironmentImports (imports : Array Lean.Import) : Bool :=
+  imports
+    == #[
+      { module := `Init : Lean.Import },
+      { module := `Init, isMeta := true : Lean.Import }
+    ]
+  || imports.isEmpty
+
+def importsForSource (source fileName : String) : IO (Array Lean.Import) := do
+  let inputContext := Lean.Parser.mkInputContext source fileName
+  let (header, _state, _messages) ← Lean.Parser.parseHeader inputContext
+  pure <| Lean.Elab.headerToImports header
+
+def EnvironmentCache.environmentForImports
+    (cache : EnvironmentCache) (imports : Array Lean.Import)
+    : IO Lean.Environment := do
+  if usesDefaultEnvironmentImports imports then
+    pure cache.default
+  else
+    let key := importsKey imports
+    let entries ← cache.entries.get
+    match entries.find? (fun entry => entry.1 == key) with
+    | some entry => pure entry.2
+    | none =>
+        let env ← SyntaxTree.importEnvironment imports
+        cache.entries.modify fun entries => (key, env) :: entries
+        pure env
+
+def EnvironmentCache.environmentForSource
+    (cache : EnvironmentCache) (source fileName : String)
+    : IO Lean.Environment := do
+  try
+    discard
+    <| Formatter.Internal.parseModuleWithEnv cache.default
+        (Formatter.Internal.normalizeSource source) fileName
+    pure cache.default
+  catch _ =>
+    cache.environmentForImports (← importsForSource source fileName)
 
 def reportFormattingException
     (path : FilePath) (exception : Formatter.Diagnostics.FormattingException)
@@ -151,10 +202,11 @@ def runDiagnosticChecks
         { exceptionCounts with notIdempotent := exceptionCounts.notIdempotent + 1 }
   pure exceptionCounts
 
-def formatFile (env : Lean.Environment) (options : Options) (path : FilePath)
+def formatFile (cache : EnvironmentCache) (options : Options) (path : FilePath)
     : IO FileOutcome := do
   try
     let source ← IO.FS.readFile path
+    let env ← cache.environmentForSource source path.toString
     let formatted ← Formatter.formatSourceWithEnv env source path.toString
     let exceptionCounts ← runDiagnosticChecks env options path source formatted
     if !exceptionCounts.isEmpty then
@@ -198,13 +250,13 @@ def expandInputPaths (options : Options) : IO (List FilePath) := do
   pure files
 
 def runOptions (options : Options) : IO UInt32 := do
-  let env ← loadFormatterEnvironment
+  let cache ← loadFormatterEnvironment
   let files ← expandInputPaths options
   let mut changed := false
   let mut failed := false
   let mut exceptionCounts : ExceptionCounts := {}
   for file in files do
-    let outcome ← formatFile env options file
+    let outcome ← formatFile cache options file
     changed := changed || outcome.changed
     failed := failed || outcome.failed
     exceptionCounts := exceptionCounts.add outcome.exceptionCounts

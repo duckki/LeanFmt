@@ -107,19 +107,23 @@ scripts/validate-external-projects.sh
 ```
 
 For an iterative single-project run, pass `NAME=GIT_URL_OR_PATH`; a local source
-is still cloned into a fresh scratch checkout:
+is still cloned into a fresh scratch checkout. Pass `--files GIT_PATHSPEC` or append
+`::GIT_PATHSPEC` to one project spec to validate a tracked-file subset:
 
 ```sh
 scripts/validate-external-projects.sh \
   cslib=$HOME/work/lean-libs/cslib
 scripts/validate-external-projects.sh \
+  --files 'Mathlib/**/*.lean' \
   mathlib=https://github.com/leanprover-community/mathlib4.git
 ```
 
 For each project the script builds LeanFmt, creates a fresh shallow clone under
 `.scratch/external-validation/`, optionally downloads the project's Lake cache,
-builds the project before formatting, formats every tracked `.lean` file with
-`--check-exception --check-idempotent`, and builds the formatted project again.
+builds the project before formatting, checks matching tracked `.lean` files with
+`--check --check-exception --check-idempotent` under the target project's
+`lake env`, formats only after those diagnostics pass, and builds the formatted
+project again.
 It times every phase, continues after individual failures, and returns failure
 when any required phase fails. A missing build-cache executable is only an
 optional-phase skip.

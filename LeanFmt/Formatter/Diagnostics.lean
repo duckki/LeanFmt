@@ -80,6 +80,11 @@ def missingRuleReportSkipsTree : SyntaxTree.Tree → Bool
   | .node (.raw `Lean.Parser.Termination.suffix) _ => true
   | tree => shouldEmitOriginalTree tree
 
+def missingRuleReportIgnoresKindName (kindName : String) : Bool :=
+  kindName.startsWith "token."
+  || kindName.startsWith "«term"
+  || SpaceRules.containsSubstring kindName ".«term"
+
 def treeStart? (tree : SyntaxTree.Tree) : Option String.Pos.Raw :=
   match tree.firstToken? with
   | some token => some token.span.start
@@ -104,11 +109,15 @@ partial def missingRuleOccurrences
           match LineBreakRules.ruleFor tree with
           | some _ => []
           | none =>
-              [{
-                kind := SyntaxTree.nodeKindName kind
-                line := currentStart?.map (lineNumberAt source ·) |>.getD 1
-                treeText := (treeSourceText? source tree).getD ""
-              }]
+              let kindName := SyntaxTree.nodeKindName kind
+              if missingRuleReportIgnoresKindName kindName then
+                []
+              else
+                [{
+                  kind := kindName
+                  line := currentStart?.map (lineNumberAt source ·) |>.getD 1
+                  treeText := (treeSourceText? source tree).getD ""
+                }]
         current ++ children.toList.flatMap (missingRuleOccurrences source currentStart?)
 
 def missingRuleOccurrencesForModule (moduleTree : SyntaxTree.Module)
@@ -135,11 +144,17 @@ inductive SyntaxSignature where
 deriving BEq, Inhabited, Repr
 
 /-- Converts Lean syntax into the source-information-free form used by preservation checks. -/
+def SyntaxSignature.isEmptyNull : SyntaxSignature → Bool
+  | .node `null children => children.isEmpty
+  | _ => false
+
 partial def syntaxSignature : Syntax → SyntaxSignature
   | .missing => .missing
   | .atom _ value => .atom value
   | .ident _ rawValue value _ => .ident rawValue.toString value
-  | .node _ kind children => .node kind (children.map syntaxSignature)
+  | .node _ kind children =>
+      .node kind
+      <| (children.map syntaxSignature).filter fun child => !child.isEmptyNull
 
 partial def takeLineCommentAux (reversed : List Char)
     : List Char → List Char × List Char

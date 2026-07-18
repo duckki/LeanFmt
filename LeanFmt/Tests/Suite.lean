@@ -1,6 +1,7 @@
 import LeanFmt
 import LeanFmt.Cli
 import LeanFmt.Tests.Cli
+import LeanFmt.Tests.ProjectSyntax
 
 open System
 
@@ -99,6 +100,61 @@ def assertSafeArrayIndexKeepsPostfixQuestion (env : Lean.Environment) : IO Unit 
   let formattedAgain ←
     Formatter.formatSourceWithEnv env formatted "safe-array-index-formatted.lean"
   assertEq "safe array index formatting is idempotent" formatted formattedAgain
+
+def assertPostfixSuperscriptSpacingPreservesParse (env : Lean.Environment)
+    : IO Unit := do
+  let source :=
+    "def applyInverse {G : Type} [Inv G] (f : G -> G -> G) (m n : G) :=\n"
+    ++ "  f m⁻¹ n\n"
+  let formatted ← Formatter.formatSourceWithEnv env source "postfix-superscript.lean"
+  assertTrue "postfix superscript formatting preserves code"
+    (← codePreservedIgnoringWhitespace env source formatted)
+  assertTextContains "postfix inverse stays attached" formatted "m⁻¹"
+  assertTextLacks "postfix inverse is not split" formatted "m ⁻¹"
+  let formattedAgain ←
+    Formatter.formatSourceWithEnv env formatted "postfix-superscript-formatted.lean"
+  assertEq "postfix superscript formatting is idempotent" formatted formattedAgain
+
+def assertBlockCommentInternalWhitespacePreservedByFormatting (env : Lean.Environment)
+    : IO Unit := do
+  let comment := "/-\n" ++ "Copyright line\n"
+  let comment := comment ++ "  Indented author line keeps spacing\n" ++ "-/\n"
+  let source := comment ++ "def commentAfterHeader := 0\n"
+  let formatted ← Formatter.formatSourceWithEnv env source "block-comment-spacing.lean"
+  assertTrue "block comment formatting preserves code"
+    (← codePreservedIgnoringWhitespace env source formatted)
+  assertTextContains "block comment indentation is preserved" formatted
+    "  Indented author line keeps spacing"
+
+def syntheticAtomToken (lexeme : String) : SyntaxTree.Token :=
+  SyntaxTree.tokenOfSynthetic .atom `token lexeme (String.Pos.Raw.mk 0)
+    (String.Pos.Raw.mk 0)
+
+def assertCustomNotationBracketSpacing : IO Unit := do
+  assertEq "custom notation open bracket keeps tight spacing" ""
+    (Formatter.SpaceRules.interTokenWhitespace ""
+      (syntheticAtomToken "→ₗ[") (syntheticAtomToken "R"))
+  assertEq "custom equivalence notation bracket keeps tight spacing" ""
+    (Formatter.SpaceRules.interTokenWhitespace ""
+      (syntheticAtomToken "≃ₗ[") (syntheticAtomToken "R"))
+  assertEq "strict implicit binder open keeps tight spacing" ""
+    (Formatter.SpaceRules.interTokenWhitespace ""
+      (syntheticAtomToken "⦃") (syntheticAtomToken "a"))
+  assertEq "strict implicit binder close keeps tight spacing" ""
+    (Formatter.SpaceRules.interTokenWhitespace ""
+      (syntheticAtomToken "a") (syntheticAtomToken "⦄"))
+
+def assertSetOptionInBreaksAfterIn (env : Lean.Environment) : IO Unit := do
+  let source :=
+    "set_option backward.isDefEq.respectTransparency false in\n"
+    ++ "theorem scopedOptionTheorem (veryLongArgumentNameForTheorem : Nat)\n"
+    ++ "    : True := by\n"
+    ++ "  trivial\n"
+  let formatted ← Formatter.formatSourceWithEnv env source "set-option-in.lean"
+  assertTrue "set_option in formatting preserves code"
+    (← codePreservedIgnoringWhitespace env source formatted)
+  assertTextContains "set_option keeps in before command break" formatted "false in\n"
+  assertTextLacks "set_option does not break before in" formatted "false\nin theorem"
 
 def assertFormatterConvergencePassLimit : IO Unit := do
   assertTrue "formatter convergence pass limit"
@@ -2385,6 +2441,10 @@ def assertFormattingExceptionChecks (env : Lean.Environment) : IO Unit := do
     (!(← codePreservedIgnoringWhitespace env
           "def value := 0 -- keep comment\n"
           "-- keep comment\ndef value := 0\n"))
+  assertTrue "layout-only empty syntax nodes are ignored"
+    (← codePreservedIgnoringWhitespace env
+        "def value := f <| { invFun := g }\n"
+        "def value := f <| {\n  invFun := g\n}\n")
   assertTrue "module-doc whitespace is preserved" (!(← codePreservedIgnoringWhitespace env
           "namespace X\n/-! keep  spaces -/\nend X\n"
           "namespace X\n/-!\n  keep  spaces -/\nend X\n"))
@@ -2602,6 +2662,16 @@ def assertCliFormatsDirectoryRecursively (env : Lean.Environment) : IO Unit := d
       throw
       <| IO.userError s!"CLI parser should accept recursive directory: {repr result}"
 
+def assertCliLoadsImportedSyntax : IO Unit := do
+  let root : FilePath := ".lake/leanfmt-cli-test/project-env"
+  IO.FS.createDirAll root
+  let file := root / "ImportedSyntax.lean"
+  let source := "import LeanFmt.Tests.ProjectSyntax\n\n#check project_syntax\n"
+  IO.FS.writeFile file source
+  let exitCode ← LeanFmt.Cli.runOptions { files := [file] }
+  assertTrue "CLI loads syntax from imported modules" (exitCode == 0)
+  assertEq "CLI preserves imported syntax source" source (← IO.FS.readFile file)
+
 def assertFmtExecutableConfigured : IO Unit := do
   let lakefile ← IO.FS.readFile "lakefile.toml"
   assertTextContains "lakefile uses namespaced test driver" lakefile
@@ -2682,6 +2752,132 @@ def assertDeclarationRuleTransparent : IO Unit := do
   assertTrue "declaration rule has no break points"
     (rule.breakPoints context segment == [])
 
+def assertMathlibLowRiskSyntaxKindsHaveRules : IO Unit := do
+  let kinds : List Lean.SyntaxNodeKind :=
+    [
+      `Lean.Parser.Command.attribute,
+      `Lean.Parser.Command.deprecated_module,
+      `Lean.Parser.Command.assertNotImported,
+      `Lean.Parser.Command.assertNotExists,
+      `Lean.Parser.Command.namedPrio,
+      `Lean.Parser.Command.abbrev,
+      `Lean.Parser.Command.classAbbrev,
+      `Lean.Parser.Command.nonrec,
+      `Lean.Parser.Command.notation,
+      `Lean.Parser.Command.identPrec,
+      `Lean.Parser.Command.grindPattern,
+      `Lean.Parser.Command.omit,
+      `Lean.Parser.Command.structParent,
+      `Lean.Parser.Command.structCtor,
+      `Lean.Parser.Command.structInstBinder,
+      `Lean.Parser.Command.extends,
+      `Lean.Parser.Command.initialize_simps_projections,
+      `Lean.Parser.Command.simpsProj,
+      `Lean.Parser.Command.simpsRule,
+      `Lean.Parser.Command.simpsRule.prefix,
+      `Lean.Parser.Command.simpsRule.erase,
+      `lemma,
+      `Lean.Parser.Term.explicit,
+      `Lean.Parser.Term.explicitUniv,
+      `Lean.Parser.Term.have,
+      `Lean.Parser.Term.haveI,
+      `Lean.Parser.Term.sort,
+      `Lean.Parser.Term.letI,
+      `Lean.Parser.Term.inferInstanceAs,
+      `Lean.Parser.Term.configItem,
+      `Lean.Parser.Term.negConfigItem,
+      `Lean.Parser.Term.strictImplicitBinder,
+      `Lean.Parser.Tactic.tacticSeq,
+      `Lean.Parser.Tactic.tacticSeq1Indented,
+      `Lean.bracketedExplicitBinders,
+      `termℕ,
+      `termℤ,
+      `termℚ,
+      `termℝ,
+      `coeNotation,
+      `coeSortNotation,
+      `coeFunNotation,
+      `Lean.calc,
+      `Lean.calcSteps,
+      `Lean.calcFirstStep,
+      `Lean.«binderPred∈_»,
+      `Lean.«binderPred≤_»,
+      `Lean.«binderPred∉_»,
+      `termDepIfThenElse,
+      `BigOperators.bigsum,
+      `BigOperators.bigprod,
+      `BigOperators.bigOpBinders,
+      `BigOperators.bigOpBinder,
+      `Batteries.ExtendedBinder.extBinders,
+      `Batteries.ExtendedBinder.extBinder,
+      `Batteries.ExtendedBinder.extBinderCollection,
+      `Batteries.ExtendedBinder.extBinderParenthesized,
+      `Batteries.Tactic.Alias.alias,
+      `Batteries.Tactic.Alias.aliasLR,
+      `Batteries.Tactic.Lint.nolint,
+      `Batteries.Util.LibraryNote.commandLibrary_note___,
+      `Lean.Parser.Attr.simple,
+      `Lean.Parser.Attr.simps,
+      `Lean.Parser.Attr.attrSimps!_,
+      `Lean.Parser.Attr.simpsArgsRest,
+      `Lean.Parser.Attr.simpsConfig,
+      `Lean.Parser.Attr.simpsConfigItem,
+      `Lean.Parser.Attr.norm_cast,
+      `Lean.Parser.Attr.ext,
+      `Lean.Parser.Attr.grindFwd,
+      `Lean.Parser.Attr.grindBwd,
+      `Lean.Parser.Attr.grindEqBoth,
+      `Lean.Attr.coe,
+      `Lean.Parser.Attr.instance,
+      `Lean.deprecated,
+      `token.existing,
+      `Parser.Attr.parity_simps,
+      `Parser.Attr.nontriviality,
+      `Mathlib.Tactic.ToAdditive.to_additive,
+      `Mathlib.Tactic.Translate.attrArgs,
+      `Mathlib.Tactic.Translate.bracketedOption,
+      `Mathlib.Tactic.Translate.translationHint,
+      `Mathlib.Tactic.scopedNS,
+      `Mathlib.Tactic.Push.pushAttr,
+      `Mathlib.Tactic.GCongr.gcongrAttr,
+      `Mathlib.Tactic.Monotonicity.Attr.mono,
+      `Mathlib.Elab.FastInstance.fastInstance,
+      `Mathlib.Meta.setBuilder,
+      `Mathlib.CrossRef.wikidataTag,
+      `Aesop.Frontend.Parser.aesop,
+      `Aesop.Frontend.Parser.attr_rules_,
+      `Aesop.Frontend.Parser.rule_expr_,
+      `Aesop.Frontend.Parser.rule_expr___,
+      `Aesop.Frontend.Parser.ruleSetsFeature,
+      `Aesop.Frontend.Parser.feature_,
+      `Aesop.Frontend.Parser.feature__1,
+      `Aesop.Frontend.Parser.feature__2,
+      `Aesop.Frontend.Parser.feature__4,
+      `Aesop.Frontend.Parser.phaseSafe,
+      `Aesop.Frontend.Parser.builder_nameApply,
+      `Aesop.Frontend.Parser.«priority_%»,
+      `Aesop.Frontend.Parser.«priority-_»,
+      `Lean.Parser.Level.hole,
+      `PiNotation.piNotation,
+      `prioLow,
+      `prioHigh,
+      `cfcTac,
+      `adaptationNoteCmd,
+      `wikidataId
+    ]
+  for kind in kinds do
+    let tree := SyntaxTree.Tree.node (.raw kind) #[]
+    assertTrue s!"mathlib low-risk syntax has rule: {kind}"
+      (Formatter.LineBreakRules.ruleFor tree).isSome
+  let ignoredKindNames :=
+    ["token.«←»", "«term⅟_»", "Set.«term⋃_,_»", "Batteries.ExtendedBinder.«term∀ᵉ_,_»"]
+  for kindName in ignoredKindNames do
+    assertTrue s!"custom syntax kind is ignored by missing-rule report: {kindName}"
+      (Formatter.Diagnostics.missingRuleReportIgnoresKindName kindName)
+  assertTrue "non-term custom syntax kind still needs an explicit rule"
+    (!Formatter.Diagnostics.missingRuleReportIgnoresKindName
+        "Aesop.Frontend.Parser.aesop")
+
 def assertMissingRuleCheckUsesDispatch (_env : Lean.Environment) : IO Unit := do
   let unknownTree :=
     SyntaxTree.Tree.node
@@ -2710,6 +2906,23 @@ def assertMissingRuleCheckUsesDispatch (_env : Lean.Environment) : IO Unit := do
         occurrence.kind == "Lean.Parser.Term.syntheticUnknownForTest"
         && occurrence.line == 1
         && occurrence.treeText == "foo")
+  let customTokenTree :=
+    SyntaxTree.Tree.node
+      (SyntaxTree.NodeKind.raw `token.syntheticUnknownForTest)
+      #[.leaf token]
+  assertTrue "custom token syntax is ignored by missing-rule report"
+    (Formatter.Diagnostics.missingRuleOccurrences source none customTokenTree).isEmpty
+  let customTermTree :=
+    SyntaxTree.Tree.node (SyntaxTree.NodeKind.raw `«term⅟_») #[.leaf token]
+  assertTrue "custom term syntax is ignored by missing-rule report"
+    (Formatter.Diagnostics.missingRuleOccurrences source none customTermTree).isEmpty
+  let customNonTermTree :=
+    SyntaxTree.Tree.node
+      (SyntaxTree.NodeKind.raw `Aesop.Frontend.Parser.syntheticUnknownForTest)
+      #[.leaf token]
+  assertTrue "non-term custom syntax is reported"
+    (!(Formatter.Diagnostics.missingRuleOccurrences source none
+        customNonTermTree).isEmpty)
   let moduleTree : SyntaxTree.Module :=
     { source, rawSyntax := .missing, tree := sourceTree, tokens := sourceTree.tokens }
   let exceptions := Formatter.Diagnostics.formattingExceptions moduleTree moduleTree
@@ -2788,6 +3001,10 @@ def runSyntaxTreeTests (env : Lean.Environment) : IO Unit := do
 
 def runBasicFormattingTests (env : Lean.Environment) : IO Unit := do
   assertSafeArrayIndexKeepsPostfixQuestion env
+  assertPostfixSuperscriptSpacingPreservesParse env
+  assertBlockCommentInternalWhitespacePreservedByFormatting env
+  assertCustomNotationBracketSpacing
+  assertSetOptionInBreaksAfterIn env
   assertFormatterConvergencePassLimit
   assertLayoutSensitiveTermsRemainParseableAndIdempotent env
   assertHardWhitespaceFormatting env
@@ -2910,11 +3127,13 @@ def runCliAndArchitectureTests (env : Lean.Environment) : IO Unit := do
   assertCliChecksStillFormatUnlessCheck env
   assertCliFormatsDirectory env
   assertCliFormatsDirectoryRecursively env
+  assertCliLoadsImportedSyntax
   assertFmtExecutableConfigured
   assertRendererTraceIncludesPathAndState env
   assertCliFixtureUpdate env
   assertFormatterArchitecture
   assertDeclarationRuleTransparent
+  assertMathlibLowRiskSyntaxKindsHaveRules
   assertMissingRuleCheckUsesDispatch env
   assertSyntaxDeclarationsHaveRules env
   assertPrefixedTermWrappersHaveRules env

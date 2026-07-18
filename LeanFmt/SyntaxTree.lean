@@ -538,9 +538,12 @@ def extractTree (source : String) (stx : Syntax) : Tree :=
 
 /-! ## Lean module parsing -/
 
-def importLeanEnvironment : IO Environment := do
+def importEnvironment (imports : Array Import) : IO Environment := do
   unsafe enableInitializersExecution
-  importModules (loadExts := true) #[{ module := `Lean }] {} 0
+  importModules (loadExts := true) imports {} 0
+
+def importLeanEnvironment : IO Environment := do
+  importEnvironment #[{ module := `Lean }]
 
 partial def parseModuleCommandsQuiet
     (env : Environment) (inputContext : Parser.InputContext)

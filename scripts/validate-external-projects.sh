@@ -10,10 +10,13 @@ readonly REPO_ROOT
 readonly FORMATTER="$REPO_ROOT/.lake/build/bin/fmt"
 readonly WORK_DIR="${LEANFMT_VALIDATION_DIR:-$REPO_ROOT/.scratch/external-validation}"
 readonly FILES_PER_BATCH="${LEANFMT_VALIDATION_BATCH_SIZE:-200}"
+readonly DEFAULT_FILE_PATTERN="${LEANFMT_VALIDATION_FILE_PATTERN:-*.lean}"
+readonly CSLIB_URL="https://github.com/leanprover/cslib.git"
+readonly MATHLIB_URL="https://github.com/leanprover-community/mathlib4.git"
 
 declare -a DEFAULT_PROJECTS=(
-  "cslib|https://github.com/leanprover/cslib.git"
-  "mathlib|https://github.com/leanprover-community/mathlib4.git"
+  "cslib|$CSLIB_URL|$DEFAULT_FILE_PATTERN"
+  "mathlib|$MATHLIB_URL|$DEFAULT_FILE_PATTERN"
 )
 
 failures=0
@@ -22,7 +25,7 @@ section() {
   printf '\n==> %s\n' "$1"
 }
 
-run_phase() {
+run_phase_result() {
   local description="$1"
   shift
   local started_at=$SECONDS
@@ -36,8 +39,13 @@ run_phase() {
     printf 'FAILED (exit %d, %ds): %s\n' \
       "$status" "$((SECONDS - started_at))" "$description" >&2
     failures=$((failures + 1))
-    return 0
+    return "$status"
   fi
+}
+
+run_phase() {
+  run_phase_result "$@"
+  return 0
 }
 
 run_optional_phase() {
@@ -81,41 +89,64 @@ build_project() {
 
 run_formatter() {
   local project_dir="$1"
-  shift
+  local file_pattern="$2"
+  shift 2
   local -a files=()
   local file
 
   while IFS= read -r -d '' file; do
     files+=("$project_dir/$file")
-  done < <(git -C "$project_dir" ls-files -z -- '*.lean')
+  done < <(git -C "$project_dir" ls-files -z -- "$file_pattern")
 
   if ((${#files[@]} == 0)); then
+    printf 'No files matched %q in %s.\n' "$file_pattern" "$project_dir"
     return 0
   fi
 
-  # Keep the formatter in this repository's toolchain context. Running it from
-  # the external project can make Elan select an incompatible Lean toolchain.
   (
-    cd "$REPO_ROOT" || exit 1
+    cd "$project_dir" || exit 1
     printf '%s\0' "${files[@]}" |
-      xargs -0 -n "$FILES_PER_BATCH" "$FORMATTER" "$@"
+      xargs -0 -n "$FILES_PER_BATCH" lake env "$FORMATTER" "$@"
   )
 }
 
 main() {
   local started_at=$SECONDS
   local -a projects=("${DEFAULT_PROJECTS[@]}")
+  local default_file_pattern="$DEFAULT_FILE_PATTERN"
   if (($# > 0)); then
     projects=()
     local specification
-    for specification in "$@"; do
+    while (($# > 0)); do
+      specification="$1"
+      shift
+      if [[ "$specification" == "--files" ]]; then
+        if (($# == 0)); then
+          printf 'Missing value for --files.\n' >&2
+          return 2
+        fi
+        default_file_pattern="$1"
+        shift
+        continue
+      fi
       if [[ "$specification" != *=* ]]; then
-        printf 'Invalid project %q; expected NAME=GIT_URL_OR_PATH.\n' \
+        printf 'Invalid project %q; expected NAME=GIT_URL_OR_PATH[::GIT_PATHSPEC].\n' \
           "$specification" >&2
         return 2
       fi
-      projects+=("${specification%%=*}|${specification#*=}")
+      local project_spec="${specification%%::*}"
+      local file_pattern="$default_file_pattern"
+      if [[ "$specification" == *"::"* ]]; then
+        file_pattern="${specification#*::}"
+      fi
+      projects+=("${project_spec%%=*}|${project_spec#*=}|$file_pattern")
     done
+    if ((${#projects[@]} == 0)); then
+      projects=(
+        "cslib|$CSLIB_URL|$default_file_pattern"
+        "mathlib|$MATHLIB_URL|$default_file_pattern"
+      )
+    fi
   fi
 
   mkdir -p "$WORK_DIR"
@@ -126,9 +157,9 @@ main() {
     exit 1
   fi
 
-  local project name url project_dir
+  local project name url file_pattern project_dir
   for project in "${projects[@]}"; do
-    IFS='|' read -r name url <<< "$project"
+    IFS='|' read -r name url file_pattern <<< "$project"
     project_dir="$WORK_DIR/$name"
 
     run_phase "Clone $name" clone_project "$url" "$project_dir"
@@ -139,9 +170,21 @@ main() {
 
     run_optional_phase "Download $name build cache" get_build_cache "$project_dir"
     run_phase "Build $name before formatting" build_project "$project_dir"
-    run_phase "Format $name and validate exceptions/idempotence" \
-      run_formatter "$project_dir" --check-exception --check-idempotent
-    run_phase "Build $name after formatting" build_project "$project_dir"
+    if run_phase_result "Check $name formatting exceptions/idempotence ($file_pattern)" \
+        run_formatter "$project_dir" "$file_pattern" --check --check-exception \
+          --check-idempotent; then
+      if run_phase_result "Format $name after clean diagnostics ($file_pattern)" \
+          run_formatter "$project_dir" "$file_pattern" --check-exception \
+            --check-idempotent; then
+        run_phase "Build $name after formatting" build_project "$project_dir"
+      else
+        printf 'Skipping post-format build for %s because formatting failed.\n' \
+          "$name" >&2
+      fi
+    else
+      printf 'Skipping formatter writes and post-format build for %s because diagnostics failed.\n' \
+        "$name" >&2
+    fi
   done
 
   section "Validation summary"

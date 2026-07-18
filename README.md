@@ -103,8 +103,9 @@ keeps token text and order and preserves proof regions.
 ## External validation
 
 The external validator clones CSLib and mathlib, downloads their Lake build caches,
-builds each project, reports unknown formatter rules, formats every tracked Lean file
-while checking code preservation and idempotence, and then builds each project again:
+builds each project, checks every tracked Lean file for preservation, unknown
+rules, and idempotence in dry-run mode from that project's `lake env`, formats only
+after those diagnostics pass, and then builds each project again:
 
 ```sh
 scripts/validate-external-projects.sh
@@ -118,12 +119,24 @@ including when the source is a local repository:
 scripts/validate-external-projects.sh graphql-lean=$HOME/work/apollo-graphql/graphql-lean
 ```
 
+Pass `--files GIT_PATHSPEC` to validate a subset of tracked Lean files. A project
+can also override the current file pattern with `NAME=GIT_URL_OR_PATH::GIT_PATHSPEC`.
+Quote patterns containing `*` so the shell does not expand them before `git
+ls-files` sees them:
+
+```sh
+scripts/validate-external-projects.sh \
+  --files 'Mathlib/**/*.lean' \
+  mathlib=https://github.com/leanprover-community/mathlib4.git
+```
+
 Clones are recreated under `.scratch/external-validation`. Set
 `LEANFMT_VALIDATION_DIR` to use another directory,
-`LEANFMT_VALIDATION_SKIP_CACHE=1` to build without downloading caches, or
-`LEANFMT_VALIDATION_BATCH_SIZE` to change the number of files passed to each
-formatter invocation. The script continues after individual phase failures so it
-can report all issues, then exits with a nonzero status if any phase failed. Each
-phase and the final summary include elapsed wall-clock time. Build-cache retrieval
-is an optional optimization: repositories without a `cache` executable are reported
-as skipped rather than failed.
+`LEANFMT_VALIDATION_SKIP_CACHE=1` to build without downloading caches,
+`LEANFMT_VALIDATION_FILE_PATTERN` to change the default file pattern, or
+`LEANFMT_VALIDATION_BATCH_SIZE` to change the number of files passed to each formatter
+invocation. The script continues after individual phase failures so it can report all
+issues, then exits with a nonzero status if any phase failed. Each phase and the final
+summary include elapsed wall-clock time. Build-cache retrieval is an optional
+optimization: repositories without a `cache` executable are reported as skipped rather
+than failed.

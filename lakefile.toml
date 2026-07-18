@@ -21,6 +21,7 @@ roots = ["LeanFmt.Tests.Suite"]
 [[lean_exe]]
 name = "fmt"
 root = "LeanFmt.Cli"
+supportInterpreter = true
 
 [[lean_exe]]
 name = "fmt-test"

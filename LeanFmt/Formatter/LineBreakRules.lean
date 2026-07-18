@@ -1174,6 +1174,11 @@ def whereStructInstBreaks (_context : RuleContext) (segment : Segment)
   | some breakPoint => [breakPoint]
   | none => []
 
+def setOptionBreaks (_context : RuleContext) (segment : Segment) : List BreakPoint :=
+  match breakAfterLexeme? segment "in" 0 with
+  | some breakPoint => [breakPoint]
+  | none => []
+
 /-! ### Declaration-suffix rule values -/
 
 def whereDeclsRule : LineBreakRule :=
@@ -1454,6 +1459,11 @@ def infixBreaks (_context : RuleContext) (segment : Segment) : List BreakPoint :
               else
                 none
 
+def commandInBreaks (_context : RuleContext) (segment : Segment) : List BreakPoint :=
+  match boundaryBreak? segment 2 0 with
+  | some breakPoint => [breakPoint]
+  | none => []
+
 def arrowInfixSegment (segment : Segment) : Bool :=
   match segment.parent with
   | .node (.infixChain `Lean.Parser.Term.arrow) _ => true
@@ -1595,6 +1605,13 @@ def letRecEquationRule : LineBreakRule :=
 def moduleRule : LineBreakRule :=
   { name := "module" }
 
+def setOptionRule : LineBreakRule :=
+  {
+    name := "setOption"
+    useExistingBreaks := fun _ _ => true
+    breakPoints := setOptionBreaks
+  }
+
 def transparentRule : LineBreakRule :=
   { name := "transparent" }
 
@@ -1628,6 +1645,12 @@ def infixChainRule : LineBreakRule :=
     flow := infixFlow
     accumulatesInfixLeftDepth := fun _ _ => true
     breakPoints := infixBreaks
+  }
+
+def commandInChainRule : LineBreakRule :=
+  {
+    name := "commandInChain"
+    breakPoints := commandInBreaks
   }
 
 def ifThenElseRule : LineBreakRule :=
@@ -1830,7 +1853,7 @@ def ruleFor : SyntaxTree.Tree → Option LineBreakRule
   | .node (.raw `Lean.Parser.Command.openSimple) _ => some defaultRule
   | .node (.raw `Lean.Parser.Command.openScoped) _ => some defaultRule
   | .node (.raw `Lean.Parser.Command.variable) _ => some defaultRule
-  | .node (.raw `Lean.Parser.Command.set_option) _ => some defaultRule
+  | .node (.raw `Lean.Parser.Command.set_option) _ => some setOptionRule
   | .node (.raw `Lean.Parser.Command.declModifiers) _ => some defaultRule
   | .node (.raw `Lean.Parser.Command.declId) _ => some transparentRule
   | .node (.raw `Lean.Parser.Command.declValEqns) _ => some defaultRule
@@ -1849,6 +1872,28 @@ def ruleFor : SyntaxTree.Tree → Option LineBreakRule
   | .node (.raw `Lean.Parser.Command.universe) _ => some defaultRule
   | .node (.raw `Lean.Parser.Command.syntax) _ => some defaultRule
   | .node (.raw `Lean.Parser.Command.macro_rules) _ => some defaultRule
+  | .node (.raw `Lean.Parser.Command.attribute) _ => some defaultRule
+  | .node (.raw `Lean.Parser.Command.deprecated_module) _ => some defaultRule
+  | .node (.raw `Lean.Parser.Command.assertNotImported) _ => some defaultRule
+  | .node (.raw `Lean.Parser.Command.assertNotExists) _ => some defaultRule
+  | .node (.raw `Lean.Parser.Command.namedPrio) _ => some defaultRule
+  | .node (.raw `Lean.Parser.Command.abbrev) _ => some defaultRule
+  | .node (.raw `Lean.Parser.Command.classAbbrev) _ => some defaultRule
+  | .node (.raw `Lean.Parser.Command.nonrec) _ => some defaultRule
+  | .node (.raw `Lean.Parser.Command.notation) _ => some defaultRule
+  | .node (.raw `Lean.Parser.Command.identPrec) _ => some defaultRule
+  | .node (.raw `Lean.Parser.Command.grindPattern) _ => some defaultRule
+  | .node (.raw `Lean.Parser.Command.omit) _ => some defaultRule
+  | .node (.raw `Lean.Parser.Command.structParent) _ => some defaultRule
+  | .node (.raw `Lean.Parser.Command.structCtor) _ => some defaultRule
+  | .node (.raw `Lean.Parser.Command.structInstBinder) _ => some defaultRule
+  | .node (.raw `Lean.Parser.Command.extends) _ => some defaultRule
+  | .node (.raw `Lean.Parser.Command.initialize_simps_projections) _ => some defaultRule
+  | .node (.raw `Lean.Parser.Command.simpsProj) _ => some defaultRule
+  | .node (.raw `Lean.Parser.Command.simpsRule) _ => some defaultRule
+  | .node (.raw `Lean.Parser.Command.simpsRule.prefix) _ => some defaultRule
+  | .node (.raw `Lean.Parser.Command.simpsRule.erase) _ => some defaultRule
+  | .node (.raw `lemma) _ => some defaultRule
   -- Transparent expression wrappers and atomic syntax.
   | .node (.raw `Lean.Parser.Term.paren) _ => some parenRule
   | .node (.raw `Lean.Parser.Term.fun) _ => some transparentRule
@@ -1870,10 +1915,19 @@ def ruleFor : SyntaxTree.Tree → Option LineBreakRule
   | .node (.raw `Lean.Parser.Term.prop) _ => some defaultRule
   | .node (.raw `Lean.Parser.Term.typeAscription) _ => some defaultRule
   | .node (.raw `Lean.Parser.Term.optEllipsis) _ => some defaultRule
+  | .node (.raw `Lean.Parser.Term.explicit) _ => some defaultRule
+  | .node (.raw `Lean.Parser.Term.explicitUniv) _ => some defaultRule
+  | .node (.raw `Lean.Parser.Term.have) _ => some defaultRule
+  | .node (.raw `Lean.Parser.Term.haveI) _ => some defaultRule
   | .node (.raw `Lean.Parser.Term.hole) _ => some defaultRule
   | .node (.raw `Lean.Parser.Term.syntheticHole) _ => some defaultRule
+  | .node (.raw `Lean.Parser.Term.sort) _ => some defaultRule
   | .node (.raw `Lean.Parser.Term.letConfig) _ => some defaultRule
   | .node (.raw `Lean.Parser.Term.letDecl) _ => some defaultRule
+  | .node (.raw `Lean.Parser.Term.letI) _ => some defaultRule
+  | .node (.raw `Lean.Parser.Term.inferInstanceAs) _ => some defaultRule
+  | .node (.raw `Lean.Parser.Term.configItem) _ => some defaultRule
+  | .node (.raw `Lean.Parser.Term.negConfigItem) _ => some defaultRule
   | .node (.raw `Lean.Parser.Term.letRecDecls) _ => some letRecDeclarationRule
   | .node (.raw `Lean.Parser.Term.letRecDecl) _ => some letRecDeclarationRule
   | .node (.raw `Lean.Parser.Term.letEqnsDecl) _ => some letRecEquationRule
@@ -1882,6 +1936,7 @@ def ruleFor : SyntaxTree.Tree → Option LineBreakRule
   | .node (.raw `Lean.Parser.Term.matchDiscr) _ => some transparentRule
   | .node (.raw `Lean.Parser.Term.binderDefault) _ => some defaultRule
   | .node (.raw `Lean.Parser.Term.namedArgument) _ => some defaultRule
+  | .node (.raw `Lean.Parser.Term.strictImplicitBinder) _ => some defaultRule
   | .node (.raw `Lean.Parser.Term.anonymousCtor) _ => some defaultRule
   | .node (.raw `Lean.Parser.Term.local) _ => some defaultRule
   | .node (.raw `Lean.Parser.Term.instBinder) _ => some defaultRule
@@ -1895,16 +1950,44 @@ def ruleFor : SyntaxTree.Tree → Option LineBreakRule
   | .node (.raw `Lean.Parser.Term.cdot) _ => some defaultRule
   | .node (.raw `Lean.Parser.Term.show) _ => some transparentRule
   | .node (.raw `Lean.Parser.Term.fromTerm) _ => some fromTermRule
+  | .node (.raw `Lean.Parser.Tactic.tacticSeq) _ => some defaultRule
+  | .node (.raw `Lean.Parser.Tactic.tacticSeq1Indented) _ => some defaultRule
   -- Known leaf-like parser nodes handled by generic spacing and layout.
   | .node (.raw `Lean.binderIdent) _ => some defaultRule
   | .node (.raw `Lean.explicitBinders) _ => some defaultRule
   | .node (.raw `Lean.unbracketedExplicitBinders) _ => some defaultRule
+  | .node (.raw `Lean.bracketedExplicitBinders) _ => some defaultRule
   | .node (.raw `num) _ => some defaultRule
   | .node (.raw `str) _ => some defaultRule
   | .node (.raw `name) _ => some defaultRule
   | .node (.raw `char) _ => some defaultRule
   | .node (.raw `fieldIdx) _ => some defaultRule
   | .node (.raw `patternIgnore) _ => some defaultRule
+  | .node (.raw `termℕ) _ => some defaultRule
+  | .node (.raw `termℤ) _ => some defaultRule
+  | .node (.raw `termℚ) _ => some defaultRule
+  | .node (.raw `termℝ) _ => some defaultRule
+  | .node (.raw `Lean.Elab.Term.«termType*») _ => some defaultRule
+  | .node (.raw `Lean.Elab.Term.«termSort*») _ => some defaultRule
+  | .node (.raw `coeNotation) _ => some defaultRule
+  | .node (.raw `coeSortNotation) _ => some defaultRule
+  | .node (.raw `Lean.calc) _ => some defaultRule
+  | .node (.raw `Lean.calcSteps) _ => some defaultRule
+  | .node (.raw `Lean.calcFirstStep) _ => some defaultRule
+  | .node (.raw `Lean.«term∀__,_») _ => some defaultRule
+  | .node (.raw `Lean.«term∃__,_») _ => some defaultRule
+  | .node (.raw `Lean.«binderPred∈_») _ => some defaultRule
+  | .node (.raw `Lean.«binderPred≤_») _ => some defaultRule
+  | .node (.raw `Lean.«binderPred∉_») _ => some defaultRule
+  | .node (.raw `termDepIfThenElse) _ => some defaultRule
+  | .node (.raw `BigOperators.bigsum) _ => some defaultRule
+  | .node (.raw `BigOperators.bigprod) _ => some defaultRule
+  | .node (.raw `BigOperators.bigOpBinders) _ => some defaultRule
+  | .node (.raw `BigOperators.bigOpBinder) _ => some defaultRule
+  | .node (.raw `Batteries.ExtendedBinder.extBinders) _ => some defaultRule
+  | .node (.raw `Batteries.ExtendedBinder.extBinder) _ => some defaultRule
+  | .node (.raw `Batteries.ExtendedBinder.extBinderCollection) _ => some defaultRule
+  | .node (.raw `Batteries.ExtendedBinder.extBinderParenthesized) _ => some defaultRule
   | .node (.raw `choice) _ => some transparentRule
   | .node (.raw `Lean.Parser.Syntax.atom) _ => some transparentRule
   | .node (.raw `Lean.Parser.Syntax.cat) _ => some transparentRule
@@ -1917,9 +2000,77 @@ def ruleFor : SyntaxTree.Tree → Option LineBreakRule
   | .node (.raw `Lean.Parser.Attr.grind) _ => some defaultRule
   | .node (.raw `Lean.Parser.Attr.grindMod) _ => some defaultRule
   | .node (.raw `Lean.Parser.Attr.grindEq) _ => some defaultRule
+  | .node (.raw `Lean.Parser.Attr.grindEqBoth) _ => some defaultRule
   | .node (.raw `Lean.Parser.Attr.grindDef) _ => some defaultRule
   | .node (.raw `Lean.Parser.Attr.grindLR) _ => some defaultRule
+  | .node (.raw `Lean.Parser.Attr.grindFwd) _ => some defaultRule
+  | .node (.raw `Lean.Parser.Attr.grindBwd) _ => some defaultRule
+  | .node (.raw `Lean.Parser.Attr.simple) _ => some defaultRule
+  | .node (.raw `Lean.Parser.Attr.simps) _ => some defaultRule
+  | .node (.raw `Lean.Parser.Attr.attrSimps!_) _ => some defaultRule
+  | .node (.raw `Lean.Parser.Attr.simpsArgsRest) _ => some defaultRule
+  | .node (.raw `Lean.Parser.Attr.simpsConfig) _ => some defaultRule
+  | .node (.raw `Lean.Parser.Attr.simpsConfigItem) _ => some defaultRule
+  | .node (.raw `Lean.Parser.Attr.norm_cast) _ => some defaultRule
+  | .node (.raw `Lean.Parser.Attr.ext) _ => some defaultRule
+  | .node (.raw `Lean.Attr.coe) _ => some defaultRule
+  | .node (.raw `Lean.Parser.Attr.instance) _ => some defaultRule
+  | .node (.raw `Lean.deprecated) _ => some defaultRule
+  | .node (.raw `token.existing) _ => some defaultRule
+  | .node (.raw `Mathlib.Tactic.ToAdditive.to_additive) _ => some defaultRule
+  | .node (.raw `Mathlib.Tactic.Translate.attrArgs) _ => some defaultRule
+  | .node (.raw `Mathlib.Tactic.Translate.bracketedOption) _ => some defaultRule
+  | .node (.raw `Mathlib.Tactic.Translate.translationHint) _ => some defaultRule
   | .node (.raw `«term{}») _ => some defaultRule
+  | .node (.raw `Lean.Parser.Level.hole) _ => some defaultRule
+  | .node (.raw `«term∅») _ => some defaultRule
+  | .node (.raw `«term⊤») _ => some defaultRule
+  | .node (.raw `«term⊥») _ => some defaultRule
+  | .node (.raw `«term-_») _ => some defaultRule
+  | .node (.raw `«term_⁻¹») _ => some defaultRule
+  | .node (.raw `«term_ˣ») _ => some defaultRule
+  | .node (.raw `«term_ᵐᵒᵖ») _ => some defaultRule
+  | .node (.raw `«term__[_]») _ => some defaultRule
+  | .node (.raw `«term_→ₗ[_]_») _ => some defaultRule
+  | .node (.raw `«term_≃ₗ[_]_») _ => some defaultRule
+  | .node (.raw `«term_→ₐ[_]_») _ => some defaultRule
+  | .node (.raw `«term_≡_[MOD_]») _ => some defaultRule
+  | .node (.raw `«term_≡_[ZMOD_]») _ => some defaultRule
+  | .node (.raw `«term⨆_,_») _ => some defaultRule
+  | .node (.raw `PiNotation.piNotation) _ => some defaultRule
+  | .node (.raw `coeFunNotation) _ => some defaultRule
+  | .node (.raw `Mathlib.Meta.setBuilder) _ => some defaultRule
+  | .node (.raw `Mathlib.Elab.FastInstance.fastInstance) _ => some defaultRule
+  | .node (.raw `Mathlib.Tactic.scopedNS) _ => some defaultRule
+  | .node (.raw `Mathlib.Tactic.Push.pushAttr) _ => some defaultRule
+  | .node (.raw `Mathlib.Tactic.GCongr.gcongrAttr) _ => some defaultRule
+  | .node (.raw `Mathlib.Tactic.Monotonicity.Attr.mono) _ => some defaultRule
+  | .node (.raw `Mathlib.CrossRef.wikidataTag) _ => some defaultRule
+  | .node (.raw `Parser.Attr.parity_simps) _ => some defaultRule
+  | .node (.raw `Parser.Attr.nontriviality) _ => some defaultRule
+  | .node (.raw `Batteries.Tactic.Alias.alias) _ => some defaultRule
+  | .node (.raw `Batteries.Tactic.Alias.aliasLR) _ => some defaultRule
+  | .node (.raw `Batteries.Tactic.Lint.nolint) _ => some defaultRule
+  | .node (.raw `Batteries.Util.LibraryNote.commandLibrary_note___) _ =>
+      some defaultRule
+  | .node (.raw `Aesop.Frontend.Parser.aesop) _ => some defaultRule
+  | .node (.raw `Aesop.Frontend.Parser.attr_rules_) _ => some defaultRule
+  | .node (.raw `Aesop.Frontend.Parser.rule_expr_) _ => some defaultRule
+  | .node (.raw `Aesop.Frontend.Parser.rule_expr___) _ => some defaultRule
+  | .node (.raw `Aesop.Frontend.Parser.ruleSetsFeature) _ => some defaultRule
+  | .node (.raw `Aesop.Frontend.Parser.feature_) _ => some defaultRule
+  | .node (.raw `Aesop.Frontend.Parser.feature__1) _ => some defaultRule
+  | .node (.raw `Aesop.Frontend.Parser.feature__2) _ => some defaultRule
+  | .node (.raw `Aesop.Frontend.Parser.feature__4) _ => some defaultRule
+  | .node (.raw `Aesop.Frontend.Parser.phaseSafe) _ => some defaultRule
+  | .node (.raw `Aesop.Frontend.Parser.builder_nameApply) _ => some defaultRule
+  | .node (.raw `Aesop.Frontend.Parser.«priority_%») _ => some defaultRule
+  | .node (.raw `Aesop.Frontend.Parser.«priority-_») _ => some defaultRule
+  | .node (.raw `prioLow) _ => some defaultRule
+  | .node (.raw `prioHigh) _ => some defaultRule
+  | .node (.raw `cfcTac) _ => some defaultRule
+  | .node (.raw `adaptationNoteCmd) _ => some defaultRule
+  | .node (.raw `wikidataId) _ => some defaultRule
   | .node (.raw `«term{_}») _ => some structInstRule
   | .node (.raw `«term[_]») _ => some arrayRule
   | .node (.raw `«term#[_,]») _ => some arrayRule
@@ -1953,6 +2104,7 @@ def ruleFor : SyntaxTree.Tree → Option LineBreakRule
   | .node (.raw `Lean.Parser.Term.whereDecls) _ => some whereDeclsRule
   | .node (.raw `Lean.Parser.Command.whereStructInst) _ => some whereStructInstRule
   | .node (.raw `Lean.Parser.Command.mutual) _ => some mutualRule
+  | .node (.infixChain `Lean.Parser.Command.in) _ => some commandInChainRule
   | .node (.infixChain _) _ => some infixChainRule
   | .node (.raw `termIfThenElse) _ => some ifThenElseRule
   | .node (.raw `Lean.Parser.Term.match) _ => some matchExpressionRule
