@@ -78,11 +78,11 @@ environment linter. The complete local review gate is `make check`; run
 `make shellcheck` when changing shell scripts. CI runs these checks for every
 pull request.
 
-`scripts/nolints.json` records findings that predate the lint gate, principally
-missing documentation on internal declarations. New findings fail the gate.
-After paying down existing findings, refresh the baseline with
-`lake lint -- --update LeanFmt.Cli`; specifying the executable root ensures the
-baseline covers both the library and CLI modules.
+The project linter driver runs the enabled Batteries environment linters except
+`docBlame`. LeanFmt exposes a small public formatter API, but most declarations
+are internal implementation details for syntax analysis, layout, diagnostics,
+and the CLI. Other linter findings fail the gate and should be fixed rather than
+added to a baseline.
 
 These options are intended for formatter development, not everyday user formatting:
 

@@ -30,13 +30,10 @@ make shellcheck
 environment linters, checks generated fixtures, verifies code preservation and
 formatter idempotency, and rejects whitespace errors.
 
-Existing environment-linter debt is recorded in `scripts/nolints.json`. Do not
-add entries merely to make a change pass. Fix new findings, and remove stale
-entries after fixing old findings with:
-
-```sh
-lake lint -- --update LeanFmt.Cli
-```
+The environment-linter driver omits `docBlame`: most declarations implement the
+formatter internally rather than forming a documented public API. Other
+Batteries linters remain enabled, and new findings should be fixed rather than
+suppressed merely to make a change pass.
 
 If formatter output changes intentionally, regenerate fixtures first and review
 the resulting diff:

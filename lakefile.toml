@@ -4,7 +4,7 @@ description = "A structure-preserving code formatter for Lean"
 keywords = ["lean4", "formatter", "devtool", "development-tools"]
 defaultTargets = ["LeanFmt", "fmt"]
 testDriver = "LeanFmt.Tests"
-lintDriver = "batteries/runLinter"
+lintDriver = "runLinter"
 
 [[require]]
 name = "batteries"
@@ -26,3 +26,8 @@ supportInterpreter = true
 [[lean_exe]]
 name = "fmt-test"
 root = "LeanFmt.Tests.Main"
+
+[[lean_exe]]
+name = "runLinter"
+srcDir = "scripts"
+supportInterpreter = true
