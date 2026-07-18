@@ -306,8 +306,17 @@ def shapeExample (arg1 : VeryLongTypeNameUsedForLayout)
       -> VeryLongReturnOutputTypeWithEnoughCharactersForLayoutTesting :=
   body
 ```
-* Grouping inside a binder remains intact, such as `(x y : Nat)` and
-`{ObjectRef : Type}`.
+Grouping inside a binder remains logically intact, such as `(x y : Nat)` and
+`{ObjectRef : Type}`. A long sequence of names may wrap within the same pair of
+delimiters; it is not rewritten into separate binders.
+
+```lean
+def compareSelections
+    (rootSelectionSet leftInitialSelectionSet rightInitialSelectionSet
+      leftCurrentSelectionSet rightCurrentSelectionSet
+      : List Selection) :=
+  body
+```
 
 If one binder is too long, it may break before its type annotation:
 
@@ -629,9 +638,17 @@ def mixedAdjacentQuantifiers : Prop :=
       predicate objectType typeCondition
 ```
 
-Long binder sequences can flow between binders. Source breaks between fitting
-adjacent quantifiers are not preserved merely because they appeared in the
-input.
+Long binder sequences can flow between binders and between names belonging to
+one untyped binder sequence.
+
+```lean
+∃ leftPrefixFields leftPrefixErrors rightPrefixFields rightPrefixErrors
+    leftSuffixFields leftSuffixErrors rightSuffixFields rightSuffixErrors,
+  predicate
+```
+
+Source breaks between fitting adjacent quantifiers are not preserved merely
+because they appeared in the input.
 
 A lambda breaks after `=>` and indents its body one level:
 

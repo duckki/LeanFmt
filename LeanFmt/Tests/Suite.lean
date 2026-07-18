@@ -1257,6 +1257,57 @@ def assertExplicitBinderTypeBreak (env : Lean.Environment) : IO Unit := do
     Formatter.formatSourceWithEnv env source "explicit-binder-type-break.lean"
   assertEq "explicit binder type break" expected formatted
 
+def assertGroupedBinderIdentifiersFlow (env : Lean.Environment) : IO Unit := do
+  let explicitSource :=
+    "def groupedExplicitBinder (rootSelectionSet leftInitialSelectionSet "
+    ++ "rightInitialSelectionSet leftCurrentSelectionSet rightCurrentSelectionSet "
+    ++ ": List Nat) := 0\n"
+  let explicitExpected :=
+    "def groupedExplicitBinder\n"
+    ++ "    (rootSelectionSet leftInitialSelectionSet rightInitialSelectionSet\n"
+    ++ "      leftCurrentSelectionSet rightCurrentSelectionSet\n"
+    ++ "      : List Nat) :=\n"
+    ++ "  0\n"
+  let explicitFormatted ←
+    Formatter.formatSourceWithEnv env explicitSource "grouped-explicit-binder.lean"
+  assertEq "grouped explicit binder identifiers flow" explicitExpected explicitFormatted
+  let implicitSource :=
+    "def groupedImplicitBinder {rootSelectionSet leftInitialSelectionSet "
+    ++ "rightInitialSelectionSet leftCurrentSelectionSet rightCurrentSelectionSet "
+    ++ ": List Nat} := 0\n"
+  let implicitExpected :=
+    "def groupedImplicitBinder\n"
+    ++ "    {rootSelectionSet leftInitialSelectionSet rightInitialSelectionSet\n"
+    ++ "      leftCurrentSelectionSet rightCurrentSelectionSet\n"
+    ++ "      : List Nat} :=\n"
+    ++ "  0\n"
+  let implicitFormatted ←
+    Formatter.formatSourceWithEnv env implicitSource "grouped-implicit-binder.lean"
+  assertEq "grouped implicit binder identifiers flow" implicitExpected implicitFormatted
+  let suffixWidthSource :=
+    "def groupedImplicitBinderSuffixWidth\n"
+    ++ "    {leftParentType rightParentType rightRuntimeType targetParent leftField "
+    ++ "rightField : Name} := 0\n"
+  let suffixWidthExpected :=
+    "def groupedImplicitBinderSuffixWidth\n"
+    ++ "    {leftParentType rightParentType rightRuntimeType targetParent leftField rightField\n"
+    ++ "      : Name} :=\n"
+    ++ "  0\n"
+  let suffixWidthFormatted ←
+    Formatter.formatSourceWithEnv env suffixWidthSource
+      "grouped-implicit-binder-suffix-width.lean"
+  assertEq "grouped binder flow leaves type break to parent"
+    suffixWidthExpected suffixWidthFormatted
+  for (path, formatted)
+      in [
+        ("grouped-explicit-binder.lean", explicitFormatted),
+        ("grouped-implicit-binder.lean", implicitFormatted),
+        ("grouped-implicit-binder-suffix-width.lean", suffixWidthFormatted)
+      ] do
+    let moduleTree ← SyntaxTree.parseModuleStringWithEnv env formatted path
+    assertTrue s!"{path} has no overflow"
+      (Formatter.Diagnostics.overflowOccurrences moduleTree).isEmpty
+
 def assertSignatureParametersFitBeforeSourceBreaks (env : Lean.Environment)
     : IO Unit := do
   let source :=
@@ -1991,6 +2042,46 @@ def assertQuantifierBreaksAfterComma (env : Lean.Environment) : IO Unit := do
     ++ "    -> targetField ∈ targetFields\n"
   let formatted ← Formatter.formatSourceWithEnv env source "quantifier-comma-break.lean"
   assertEq "quantifier breaks after comma" expected formatted
+
+def assertQuantifierIdentifierSequenceFlows (env : Lean.Environment) : IO Unit := do
+  let source :=
+    "def quantifiedPrefixes : Prop := ∃ leftPrefixFields leftPrefixErrors "
+    ++ "rightPrefixFields rightPrefixErrors leftSuffixFields leftSuffixErrors "
+    ++ "rightSuffixFields rightSuffixErrors, True\n"
+  let expected :=
+    "def quantifiedPrefixes : Prop :=\n"
+    ++ "  ∃ leftPrefixFields leftPrefixErrors rightPrefixFields rightPrefixErrors\n"
+    ++ "      leftSuffixFields leftSuffixErrors rightSuffixFields rightSuffixErrors,\n"
+    ++ "    True\n"
+  let formatted ←
+    Formatter.formatSourceWithEnv env source "quantifier-identifier-sequence.lean"
+  assertEq "quantifier identifier sequence flows" expected formatted
+  let moduleTree ←
+    SyntaxTree.parseModuleStringWithEnv env formatted
+      "quantifier-identifier-sequence.lean"
+  assertTrue "quantifier identifier sequence has no overflow"
+    (Formatter.Diagnostics.overflowOccurrences moduleTree).isEmpty
+
+def assertCheckCommandHasRule (env : Lean.Environment) : IO Unit := do
+  let fittingSource :=
+    "#check CompleteNormalization.completeNormalizeOperation_uniqueUpToReordering\n"
+  let moduleTree ←
+    SyntaxTree.parseModuleStringWithEnv env fittingSource "check-command.lean"
+  assertTrue "check command has complete rule coverage"
+    (Formatter.Diagnostics.missingRuleOccurrencesForModule moduleTree).isEmpty
+  let fittingFormatted ←
+    Formatter.formatSourceWithEnv env fittingSource "check-command.lean"
+  assertEq "fitting check command stays flat" fittingSource fittingFormatted
+  let overflowingSource :=
+    "#check CompleteNormalization."
+    ++ "completeNormalizeOperation_uniqueUpToReorderingWithAdditionalLayoutText\n"
+  let overflowingFormatted ←
+    Formatter.formatSourceWithEnv env overflowingSource "long-check-command.lean"
+  let expected :=
+    "#check\n"
+    ++ "  CompleteNormalization."
+    ++ "completeNormalizeOperation_uniqueUpToReorderingWithAdditionalLayoutText\n"
+  assertEq "overflowing check command breaks after check" expected overflowingFormatted
 
 def assertArrowQuantifierKeepsQuantifierOnArrowLine (env : Lean.Environment)
     : IO Unit := do
@@ -3083,6 +3174,7 @@ def runExpressionAndRendererTests (env : Lean.Environment) : IO Unit := do
   assertDeclarationTypeBreak env
   assertImplicitBinderPreservesTightBraces env
   assertExplicitBinderTypeBreak env
+  assertGroupedBinderIdentifiersFlow env
   assertSignatureParametersFitBeforeSourceBreaks env
   assertSignatureParametersStayOnHeaderWhenTheyFit env
   assertSignatureParameterSourceBreakFallback env
@@ -3129,6 +3221,7 @@ def runControlFlowTests (env : Lean.Environment) : IO Unit := do
   assertLambdaBodyUsesOperandAnchor env
   assertLambdaBinderSequenceBreaksBetweenBinders env
   assertQuantifierBreaksAfterComma env
+  assertQuantifierIdentifierSequenceFlows env
   assertArrowQuantifierKeepsQuantifierOnArrowLine env
   assertArrowMatchKeepsMatchOnArrowLine env
   assertArrowMatchInMatchAltIdempotent env
@@ -3163,6 +3256,7 @@ def runCliAndArchitectureTests (env : Lean.Environment) : IO Unit := do
   assertDeclarationRuleTransparent
   assertMathlibLowRiskSyntaxKindsHaveRules
   assertMissingRuleCheckUsesDispatch env
+  assertCheckCommandHasRule env
   assertSyntaxDeclarationsHaveRules env
   assertPrefixedTermWrappersHaveRules env
   assertCslibStyleCoreSyntaxHasRules env

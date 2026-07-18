@@ -436,6 +436,28 @@ def quantifierBinderSequence (context : RuleContext) : Bool :=
       | none => false
   | _ => false
 
+def groupedBinderIdentifierSequence (context : RuleContext) : Bool :=
+  match context.ancestors with
+  | parent :: _ =>
+      (parent.rawKind? == some `Lean.Parser.Term.explicitBinder
+        || parent.rawKind? == some `Lean.Parser.Term.implicitBinder)
+      && parent.childIndex == 1
+  | _ => false
+
+def quantifierIdentifierSequence (context : RuleContext) : Bool :=
+  match context.ancestors with
+  | unbracketedBinders :: explicitBinders :: quantifier :: _ =>
+      unbracketedBinders.rawKind? == some `Lean.unbracketedExplicitBinders
+      && unbracketedBinders.childIndex == 0
+      && explicitBinders.rawKind? == some `Lean.explicitBinders
+      && explicitBinders.childIndex == 0
+      && (quantifier.rawKind?.map rawKindIsQuantifier).getD false
+      && quantifier.childIndex == 1
+  | _ => false
+
+def binderIdentifierSequence (context : RuleContext) : Bool :=
+  groupedBinderIdentifierSequence context || quantifierIdentifierSequence context
+
 def exportIdentifierList (context : RuleContext) : Bool :=
   match context.ancestors with
   | parent :: _ =>
@@ -779,6 +801,16 @@ def quantifierBinderBreaks (context : RuleContext) (segment : Segment)
     | [] => []
     | [_] => []
     | _ :: rest => rest.filterMap fun index => boundaryBreak? segment index 2
+  else
+    []
+
+def binderIdentifierBreaks (context : RuleContext) (segment : Segment)
+    : List BreakPoint :=
+  if binderIdentifierSequence context then
+    match nonemptyChildIndexes segment with
+    | [] => []
+    | [_] => []
+    | _ :: rest => rest.filterMap fun index => boundaryBreak? segment index 1
   else
     []
 
@@ -1561,6 +1593,7 @@ def nullBreaks (context : RuleContext) (segment : Segment) : List BreakPoint :=
   ++ arrayItemBreaks context segment
   ++ inductiveAlternativeBreaks context segment
   ++ quantifierBinderBreaks context segment
+  ++ binderIdentifierBreaks context segment
   ++ exportItemBreaks context segment
   ++ doSeqItemBreaks context segment
   ++ doElseBreaks context segment
@@ -1593,6 +1626,7 @@ def nullRule : LineBreakRule :=
     flow :=
       fun context segment =>
         !(quantifierBinderBreaks context segment).isEmpty
+        || !(binderIdentifierBreaks context segment).isEmpty
         || !(exportItemBreaks context segment).isEmpty
     inheritBase := nullInheritBase
     breakPoints := nullBreaks
@@ -1895,6 +1929,7 @@ def ruleFor : SyntaxTree.Tree → Option LineBreakRule
   | .node (.raw `Lean.Parser.Command.protected) _ => some defaultRule
   | .node (.raw `Lean.Parser.Command.partial) _ => some defaultRule
   | .node (.raw `Lean.Parser.Command.eval) _ => some defaultRule
+  | .node (.raw `Lean.Parser.Command.check) _ => some defaultRule
   | .node (.raw `Lean.Parser.Command.example) _ => some defaultRule
   | .node (.raw `Lean.Parser.Command.universe) _ => some defaultRule
   | .node (.raw `Lean.Parser.Command.syntax) _ => some defaultRule

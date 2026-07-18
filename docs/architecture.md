@@ -189,6 +189,14 @@ shape is stable enough. Examples include:
 - structure instances, arrays, tuples, and parser `null` wrappers under known parents,
 - proof escape hatches such as `Lean.Parser.Term.byTactic`.
 
+Binder-name lists are exposed as flow opportunities by rules on their lossless
+wrapper segments. Explicit and implicit binders can therefore wrap names before
+their type annotation, while untyped quantifier binders can wrap before the
+comma. The renderer receives ordinary break points; it does not need to know
+which parser wrappers represent binder lists. The enclosing binder rule owns a
+separate break before `:`; the name-list flow does not reserve the type as a
+same-line suffix.
+
 The full dispatch table lives in `LineBreakRules.ruleFor`. If a raw node is not
 recognized, `ruleFor` returns `none`, the renderer uses `defaultRule`, and
 `--check-exception` reports the missing rule.
