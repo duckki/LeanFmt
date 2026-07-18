@@ -126,6 +126,7 @@ inductive PreservationFragment where
   | space
 deriving BEq, Repr
 
+/-- A syntax-tree representation that omits source positions and other source metadata. -/
 inductive SyntaxSignature where
   | missing
   | atom (value : String)
@@ -133,6 +134,7 @@ inductive SyntaxSignature where
   | node (kind : SyntaxNodeKind) (children : Array SyntaxSignature)
 deriving BEq, Inhabited, Repr
 
+/-- Converts Lean syntax into the source-information-free form used by preservation checks. -/
 partial def syntaxSignature : Syntax → SyntaxSignature
   | .missing => .missing
   | .atom _ value => .atom value
@@ -233,6 +235,7 @@ def preservationFragments (moduleTree : SyntaxTree.Module)
           moduleTree.source.endPos.offset
   (fragments ++ commentFragments trailingSource).intersperse .space
 
+/-- Checks whether two modules have the same parsed syntax after discarding source metadata. -/
 def preservesSyntaxIgnoringSourceInfo (before after : SyntaxTree.Module) : Bool :=
   syntaxSignature before.rawSyntax == syntaxSignature after.rawSyntax
 
