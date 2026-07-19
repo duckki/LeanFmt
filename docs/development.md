@@ -315,3 +315,45 @@ Before asking for review, summarize:
 - any missing-rule exceptions intentionally left unresolved.
 
 Do not commit before review unless the reviewer explicitly asks for a commit.
+
+## External validation
+
+The external validator clones CSLib and mathlib, downloads their Lake build caches,
+builds each project, checks every tracked Lean file for preservation, unknown
+rules, and idempotence in dry-run mode from that project's `lake env`, formats only
+after those diagnostics pass, and then builds each project again:
+
+```sh
+scripts/validate-external-projects.sh
+```
+
+To validate one or more other Git repositories instead of the defaults, pass each
+one as `NAME=GIT_URL_OR_PATH`. The validator always makes a fresh scratch clone,
+including when the source is a local repository:
+
+```sh
+scripts/validate-external-projects.sh my-project=$HOME/target-repo
+```
+
+Pass `--files FILE_SELECTOR` to validate a subset of tracked Lean files. A project
+can also override the current selector with `NAME=GIT_URL_OR_PATH::FILE_SELECTOR`.
+When the selector names a tracked directory, every tracked `.lean` file under that
+directory is included. Other selectors are passed to `git ls-files`, so quote
+patterns containing `*` to keep the shell from expanding them first:
+
+```sh
+scripts/validate-external-projects.sh \
+  --files Mathlib/Combinatorics \
+  mathlib=https://github.com/leanprover-community/mathlib4.git
+```
+
+Clones are recreated under `.scratch/external-validation`. Set
+`LEANFMT_VALIDATION_DIR` to use another directory,
+`LEANFMT_VALIDATION_SKIP_CACHE=1` to build without downloading caches,
+`LEANFMT_VALIDATION_FILE_PATTERN` to change the default file selector, or
+`LEANFMT_VALIDATION_BATCH_SIZE` to change the number of files passed to each formatter
+invocation. The script continues after individual phase failures so it can report all
+issues, then exits with a nonzero status if any phase failed. Each phase and the final
+summary include elapsed wall-clock time. Build-cache retrieval is an optional
+optimization: repositories without a `cache` executable are reported as skipped rather
+than failed.
