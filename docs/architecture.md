@@ -462,19 +462,81 @@ Child segment bases are derived from renderer state, not from token spelling. If
 rule says `inheritBase`, the surrounding segment base is reused. Otherwise the child base
 comes from the column where its first visible token will be emitted.
 
+### Tail indentation
+
+Tail indentation generalizes the indentation needed for a multiline left operand of an
+infix operator. A rule establishes a tail for its non-final children through
+`liftsTailIndentation`. A child that inherits that tail then adjusts its own balanced,
+infix-like, or flow layout. The same mechanism therefore covers applications, binders,
+structure updates, and other syntax whose continuation must remain visibly inside a
+following boundary.
+
+The model has three terms:
+
+- A segment's **start column** is the physical column of its first visible token.
+- Its **head indentation** is
+  `indentationLevelForColumn (indentationPastColumn startColumn)`. Rounding is inclusive:
+  a start already on the indentation grid stays there; an off-column start moves to the
+  next grid column.
+- Its **tail indentation** is an absolute logical indentation floor for later lines if
+  the segment renders across more than one line. It is not a depth count and is not added
+  to a rule's requested indentation.
+
 When a rule sets `liftsTailIndentation`, the renderer caches the complete segment's final
 child boundary. Every earlier child inherits the indentation of the following rule
 boundary as its tail indentation. Thus a `for` binder is anchored by `in`, an infix
 operand by its following operator, and an off-column child by the already-rounded
 boundary rather than by the width of its prefix.
 
-Each segment first computes its natural breakpoint indentations. The least natural
-indentation is the profile's base. A balanced segment raises that base to its inherited
-tail; an infix-like or flow segment raises it to the greater of its rounded head
-indentation and one level beyond the inherited tail. The resulting difference is stored
-as one `breakIndentationShift` and added to every breakpoint. Because all breakpoints
-move together, fields, items, and closing delimiters retain their relative indentation.
-Nested child rendering is scoped, so a child's tail does not leak into its siblings.
+For example, an inner operator is lifted beyond the operator that follows its containing
+operand:
+
+```lean
+- f firstLongArgument
+    nextArgument
+  - g
+:: h
+```
+
+Here `::` establishes the outer tail. The left child containing `- g` lifts beyond it,
+and the application inside that child retains its own continuation indentation. The
+result is a hierarchy of absolute floors, not a sum of operator widths or nesting depths.
+
+At complete-segment entry, the renderer computes the natural indentation of every rule
+breakpoint. The least natural indentation is the base of that breakpoint profile. It then
+computes the required profile base:
+
+```text
+balanced segment:       inherited tail
+infix-like/flow segment: max(rounded head, inherited tail + 1)
+```
+
+If the required base is higher than the natural base, their difference becomes one
+`breakIndentationShift`. The renderer applies that translation to every breakpoint in
+the segment. For a zero-level breakpoint, it shifts the final rounded natural
+indentation; applying the shift before rounding could make a one-level shift disappear.
+
+Translating the whole profile is essential for balanced syntax. A structure can assign
+one natural level to fields and zero to its closing brace:
+
+```lean
+-> {
+      field1 := value1,
+      field2 := value2
+    }
+    :: rest
+```
+
+Shifting those breakpoints together preserves the one-level difference. Clamping each
+breakpoint independently to the tail would incorrectly align the fields with the closing
+brace.
+
+`tailIndentationStop?` records the final-child boundary of the complete segment, even
+while balanced rendering visits slices of that segment. `tailIndentationAnchors` records
+the already-computed indentation of each following rule boundary. A non-final child takes
+the first anchor after it, merges that floor with an inherited outer tail, and receives
+the result in `tailIndentation?`. Nested child rendering is scoped, so this state does not
+leak into later siblings.
 
 The renderer computes each child's rule and breakpoints once before recursive rendering
 and passes that prepared pair into the child call. Layout decisions therefore reuse rule

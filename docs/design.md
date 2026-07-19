@@ -543,17 +543,19 @@ This applies consistently to logical negation `¬`, compact bang `!`, numeric
 negation `-`, and bitwise complement `~~~`. Postfix operators follow their own
 right-attached layout.
 
-## Infix expressions
+## Tail indentation
 
-LeanFmt combines consecutive operators of the same parser kind into a chain.
-When a chain breaks, operators lead continuation lines:
+LeanFmt breaks before an infix operator so the operator visually connects the
+lines in its chain:
 
 ```lean
-veryLongLeftHandSideExpressionWithEnoughCharactersForLayoutTesting
-= veryLongRightHandSideExpressionWithEnoughCharactersForLayoutTesting
+  f argumentOne argumentTwo
+  + g argumentOne argumentTwo
+  + h argumentOne argumentTwo
 ```
 
-Inside an indented declaration body, that becomes:
+Consecutive operators of the same parser kind are formatted as one chain. The
+same leading-operator layout applies inside an indented declaration body:
 
 ```lean
 def equality : Prop :=
@@ -561,27 +563,96 @@ def equality : Prop :=
   = veryLongRightHandSideExpressionWithEnoughCharactersForLayoutTesting
 ```
 
-The operator line follows the expression's local base. Nested operators gain
-continuation indentation when needed to distinguish an inner expression from
-its surrounding chain:
+A multiline operand needs a visible local hierarchy. A match keeps its normal
+internal arm indentation, but the whole block moves inward when it is the
+non-final operand of an infix expression:
 
 ```lean
-Schema.lookupFieldDefinition implementationFields interfaceField.name
-  = some implementationField
-∧ fieldDefinitionImplements schema implementationField interfaceField
+  match value with
+    | first => firstResult
+    | second => secondResult
+  + other
 ```
 
-Parentheses stay tight around the expression. The expression inside them owns
-the breaks:
+The formatter describes this with a segment's **head indentation** and **tail
+indentation**:
+
+- A segment starts at a physical column. Its head indentation is the nearest
+  indentation column at or after that start column.
+- Its tail indentation is the minimum indentation for later lines when the
+  segment becomes multiline.
+- A non-final infix operand lifts its tail one level beyond the following
+  operator. Other infix-like syntax and flow layout use the same principle.
+
+When a segment begins between indentation columns, its head rounds up. This
+keeps a nested block clear of the following operator:
 
 ```lean
-(schema.isLeafType implementation
-  ∧ schema.isLeafType expected
-  ∧ implementation = expected)
+  -> match value with
+        | first => firstResult
+        | second => secondResult
+      ∧ other
 ```
 
-When a parenthesized chain is the left operand of another chain, its operators
-remain one level deeper than the outer operator:
+Tail indentation is a floor, not an amount added to every rule indentation. An
+application already asks for one continuation level, so a tail at that level
+does not push it farther:
+
+```lean
+  someFunction firstLongArgument
+    nextArgument
+  + g
+```
+
+The floor accumulates through nested non-final operands. This makes each inner
+operator deeper than the operator containing it, while the application keeps
+its own continuation relationship:
+
+```lean
+  someFunction firstLongArgument
+      nextArgument
+    + g
+  :: h
+```
+
+In real code, an application inside `::`, itself inside `++`, follows the same
+hierarchy:
+
+```lean
+  (Selection.field responseName fieldName arguments fieldDirectives
+        fieldSelectionSet
+      :: inlineSelectionSet
+    ++ rest)
+```
+
+Some constructs have several relative indentation levels. A multiline
+structure places fields one level inside its braces while its closing brace
+returns to the brace level:
+
+```lean
+something
++ {
+    field1 := value1,
+    field2 := value2
+  }
+  - g
+```
+
+When tail indentation raises such a construct, LeanFmt shifts the complete
+break profile together. It does not independently clamp every line, because
+that would flatten the difference between fields and the closing brace:
+
+```lean
+-> {
+      field1 := value1,
+      field2 := value2
+    }
+    :: g
+```
+
+Parentheses stay tight around their expression, and the expression inside owns
+the breaks. When a parenthesized chain is a non-final operand, its operators
+remain one level deeper than the surrounding chain:
 
 ```lean
 ((executableFieldSelections [first]
