@@ -526,6 +526,23 @@ def postfixProjection (schema : Schema) (typeName objectName : Name) :=
   (schema.getPossibleTypes typeName).contains objectName
 ```
 
+## Unary prefix operators
+
+A unary prefix operator stays on the first line of its operand. If the operand
+is a long application, the application wraps at its own argument boundaries;
+the formatter does not leave the prefix on a line by itself.
+
+```lean
+theorem duplicateArgumentNamesRejected
+    : ¬ GraphQL.Validation.argumentsValid sampleSchema
+          [testEpisodeArgumentDefinition] [] duplicateEpisodeArguments := by
+  exact proof
+```
+
+This applies consistently to logical negation `¬`, compact bang `!`, numeric
+negation `-`, and bitwise complement `~~~`. Postfix operators follow their own
+right-attached layout.
+
 ## Infix expressions
 
 LeanFmt combines consecutive operators of the same parser kind into a chain.

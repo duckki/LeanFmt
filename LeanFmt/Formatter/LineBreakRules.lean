@@ -1757,8 +1757,8 @@ def prefixedTermRule (name : String) : LineBreakRule :=
     inheritBase := fun _ _ => true
   }
 
-def bangPrefixRule : LineBreakRule :=
-  prefixedTermRule "bangPrefix"
+def unaryPrefixRule : LineBreakRule :=
+  prefixedTermRule "unaryPrefix"
 
 def nestedActionRule : LineBreakRule :=
   prefixedTermRule "nestedAction"
@@ -2064,8 +2064,8 @@ def ruleFor : SyntaxTree.Tree → Option LineBreakRule
   | .node (.raw `Lean.Parser.Syntax.cat) _ => some transparentRule
   | .node (.raw `«stx_,*») _ => some transparentRule
   | .node (.raw `Lean.Parser.Term.quot) _ => some defaultRule
-  | .node (.raw `term!_) _ => some bangPrefixRule
-  | .node (.raw `«term¬_») _ => some defaultRule
+  | .node (.raw `term!_) _ => some unaryPrefixRule
+  | .node (.raw `«term¬_») _ => some unaryPrefixRule
   | .node (.raw `token.«← ») _ => some defaultRule
   | .node (.raw `Lean.Parser.Attr.simp) _ => some defaultRule
   | .node (.raw `Lean.Parser.Attr.grind) _ => some defaultRule
@@ -2098,7 +2098,8 @@ def ruleFor : SyntaxTree.Tree → Option LineBreakRule
   | .node (.raw `«term∅») _ => some defaultRule
   | .node (.raw `«term⊤») _ => some defaultRule
   | .node (.raw `«term⊥») _ => some defaultRule
-  | .node (.raw `«term-_») _ => some defaultRule
+  | .node (.raw `«term-_») _ => some unaryPrefixRule
+  | .node (.raw `«term~~~_») _ => some unaryPrefixRule
   | .node (.raw `«term_⁻¹») _ => some defaultRule
   | .node (.raw `«term_ˣ») _ => some defaultRule
   | .node (.raw `«term_ᵐᵒᵖ») _ => some defaultRule
