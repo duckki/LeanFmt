@@ -66,6 +66,7 @@ inductive NodeKind where
   | matchDiscriminants
   | matchPatterns
   | doForHeader
+  | structureUpdate
 deriving BEq, Inhabited, Repr
 
 def nodeKindName : NodeKind → String
@@ -78,6 +79,7 @@ def nodeKindName : NodeKind → String
   | .matchDiscriminants => "LeanFmt.SyntaxTree.NodeKind.matchDiscriminants"
   | .matchPatterns => "LeanFmt.SyntaxTree.NodeKind.matchPatterns"
   | .doForHeader => "LeanFmt.SyntaxTree.NodeKind.doForHeader"
+  | .structureUpdate => "LeanFmt.SyntaxTree.NodeKind.structureUpdate"
 
 inductive Tree where
   | missing
@@ -404,9 +406,9 @@ def regroupLetEquationSignature (children : Array Tree) : Option (Array Tree) :=
   let typeSpec ← children[2]?
   some
   <| #[
-      name,
-      .node (.raw `Lean.Parser.Command.optDeclSig)
-        #[regroupSignatureParameters parameters, typeSpec]
+        name,
+        .node (.raw `Lean.Parser.Command.optDeclSig)
+          #[regroupSignatureParameters parameters, typeSpec]
       ]
       ++ childrenRange children 3 children.size
 
@@ -429,6 +431,19 @@ def regroupDeclarationChildren (children : Array Tree) : Option (Array Tree) := 
         ++ childrenRange children 2 children.size
   else
     none
+
+def regroupStructureUpdateSource : Tree → Tree
+  | .node (.raw `null) children => .node .structureUpdate children
+  | tree => .node .structureUpdate #[tree]
+
+def regroupStructInstChildren (children : Array Tree) : Array Tree :=
+  match children[1]? with
+  | some source =>
+      if source.lastToken?.map (·.lexeme) == some "with" then
+        children.set! 1 (regroupStructureUpdateSource source)
+      else
+        children
+  | none => children
 
 def regroupRawNode (kind : SyntaxNodeKind) (children : Array Tree) : Tree :=
   if kind == `Lean.Parser.Term.app && children.size == 2 then
@@ -471,6 +486,8 @@ def regroupRawNode (kind : SyntaxNodeKind) (children : Array Tree) : Tree :=
     match regroupDeclarationChildren children with
     | some declarationChildren => .node (.raw kind) declarationChildren
     | none => .node (.raw kind) children
+  else if kind == `Lean.Parser.Term.structInst then
+    .node (.raw kind) (regroupStructInstChildren children)
   else if kind == `Lean.Parser.Command.optDeclSig
           || kind == `Lean.Parser.Command.declSig then
     match children[0]?, children[1]? with

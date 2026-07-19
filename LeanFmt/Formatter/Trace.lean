@@ -54,7 +54,7 @@ def segmentLineNumber
 def segmentMessage
     (state : State) (segment : LineBreakRules.Segment) (ruleName : String)
     (currentColumn currentIndent segmentIndentation : Nat)
-    (pendingIndent? : Option Nat) (infixLeftDepth : Nat)
+    (pendingIndent? tailIndentation? : Option Nat)
     : String :=
   s!"path={segmentPathString state.segmentPath} "
   ++ s!"segment=[{segment.start},{segment.stop}) "
@@ -64,20 +64,20 @@ def segmentMessage
   ++ s!"currentIndent={currentIndent} "
   ++ s!"segmentIndentation={segmentIndentation} "
   ++ s!"pendingIndent={optionNatString pendingIndent?} "
-  ++ s!"infixLeftDepth={infixLeftDepth}"
+  ++ s!"tailIndentation={optionNatString tailIndentation?}"
 
 def segmentEntry
     (state : State) (output : String)
     (defaultWhitespace : SyntaxTree.Token → String)
     (segment : LineBreakRules.Segment) (ruleName : String)
     (currentColumn currentIndent segmentIndentation : Nat)
-    (pendingIndent? : Option Nat) (infixLeftDepth : Nat)
+    (pendingIndent? tailIndentation? : Option Nat)
     : Entry :=
   {
     lineNumber := segmentLineNumber output defaultWhitespace segment
     message :=
       segmentMessage state segment ruleName currentColumn currentIndent
-        segmentIndentation pendingIndent? infixLeftDepth
+        segmentIndentation pendingIndent? tailIndentation?
   }
 
 def State.recordSegment
@@ -85,7 +85,7 @@ def State.recordSegment
     (defaultWhitespace : SyntaxTree.Token → String)
     (segment : LineBreakRules.Segment) (ruleName : String)
     (currentColumn currentIndent segmentIndentation : Nat)
-    (pendingIndent? : Option Nat) (infixLeftDepth : Nat)
+    (pendingIndent? tailIndentation? : Option Nat)
     : State :=
   if state.enabled then
     {
@@ -93,7 +93,7 @@ def State.recordSegment
         entries :=
           state.entries
           ++ [segmentEntry state output defaultWhitespace segment ruleName currentColumn
-                currentIndent segmentIndentation pendingIndent? infixLeftDepth]
+                currentIndent segmentIndentation pendingIndent? tailIndentation?]
     }
   else
     state

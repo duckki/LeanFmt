@@ -135,6 +135,8 @@ inductive NodeKind where
   | signatureParameters
   | matchDiscriminants
   | matchPatterns
+  | doForHeader
+  | structureUpdate
 
 inductive Tree where
   | missing
@@ -173,6 +175,8 @@ Current logical regroupings are:
 | `.signatureParameters` | Parameter sequences need flow behavior at binder boundaries without forcing rules to inspect raw `null` wrappers. | Direct binder/parameter children from `optDeclSig` or `declSig`. |
 | `.matchDiscriminants` | Multiple match scrutinees need peer flow boundaries after commas, aligned under the first scrutinee, rather than generic nested parser wrapping. | Children of the discriminant sequence immediately before `with`, preserving alternating discriminants and commas. |
 | `.matchPatterns` | Multiple patterns in one alternative need peer/balanced wrapping rather than raw nested `null` behavior. | Pattern children from the `matchAlt` pattern wrapper, with a redundant single `null` wrapper removed. |
+| `.doForHeader` | A `for` binder and its collection need separate LHS and `in` layout without teaching the renderer about `do` syntax. | The `for` keyword and declaration children before the loop body. |
+| `.structureUpdate` | The source before `with` behaves as an LHS expression, while the surrounding braces remain an ordinary balanced structure. | The original lossless source wrapper, including the final `with` token. |
 
 Regrouping deliberately avoids semantic interpretation. For example, it flattens only
 same-kind infix parser nodes; it does not decide operator precedence itself.
@@ -253,8 +257,9 @@ structure LineBreakRule where
   mandatory : RuleContext -> Segment -> Bool := fun _ _ => false
   flow : RuleContext -> Segment -> Bool := fun _ _ => false
   inheritBase : RuleContext -> Segment -> Bool := defaultInheritBase
-  accumulatesInfixLeftDepth : RuleContext -> Segment -> Bool := fun _ _ => false
+  liftsTailIndentation : RuleContext -> Segment -> Bool := fun _ _ => false
   alignStartToIndentation : RuleContext -> Segment -> Bool := fun _ _ => false
+  roundUpBaseIndentation : Bool := false
   breakPoints : RuleContext -> Segment -> List BreakPoint := fun _ _ => []
 ```
 
@@ -284,14 +289,18 @@ Rule methods mean:
   source breaks, then computed wrapping.
 - `inheritBase`: this segment uses the surrounding base indentation instead of its
   rendered start column.
-- `accumulatesInfixLeftDepth`: broken rendering of prefix pieces contributes to nested
-  infix continuation depth. Each broken prefix adds one depth; physical breakpoint
-  indentation does not affect this structural count.
+- `liftsTailIndentation`: while rendering every child except the final child, establish
+  the indentation of the following rule boundary as that child's tail indentation.
+  Infix-like and flow rules lift continuations one level beyond that tail. Rules never
+  encode prefix widths or variable depth contributions.
 - `alignStartToIndentation`: renderer may insert spaces before the first token to move
   a multiline segment to an indentation boundary. Fitting flat segments do not need
   alignment. The `let` rule uses this because Lean's layout parser requires a stable
   indentation column; conditionals use it to keep `if`, `then`, and `else` on a stable
   grid.
+- `roundUpBaseIndentation`: positive structural breaks start from the indentation boundary
+  after the segment's physical start. Delimited structures, tuples, and arrays use this
+  so contents are one full level past an off-column opening delimiter.
 - `breakPoints`: logical child boundaries. Rules must not read renderer state.
 
 The default rule is deliberately shape-only. It distinguishes missing children, empty
@@ -316,8 +325,10 @@ structure RenderState where
   pendingIndent? : Option Nat := none
   segmentBaseColumn : Nat := 0
   segmentIndentation : Nat := 0
-  infixLeftDepth : Nat := 0
-  infixParentBaseIndentation? : Option Nat := none
+  tailIndentation? : Option Nat := none
+  tailIndentationStop? : Option Nat := none
+  tailIndentationAnchors : List TailIndentationAnchor := []
+  breakIndentationShift : Nat := 0
   lineFitSuffixWidth : Nat := 0
   context : LineBreakRules.RuleContext := {}
   trace : Trace.State := {}
@@ -330,11 +341,18 @@ Key fields:
 - `pendingIndent?` records a scheduled newline before the next emitted token.
 - `segmentBaseColumn` and `segmentIndentation` are the current segment's physical and
   logical bases.
-- `infixLeftDepth` accounts for nested broken infix prefixes.
-- `infixParentBaseIndentation?` carries a rounded infix parent's break base through
-  child rendering. Nested chains combine physical movement from that base with
-  structural left depth using their maximum, avoiding both double indentation and
-  collapsed inner and outer operators.
+- `tailIndentation?` is the indentation floor inherited by continuation lines in the
+  current segment. It is a single absolute indentation, not an infix depth counter.
+  Child rendering restores the surrounding tail when it returns.
+- `tailIndentationStop?` caches the complete segment's final child boundary. Balanced
+  slices reuse that boundary instead of treating the slice's final child as the node's
+  final child.
+- `tailIndentationAnchors` caches each rule boundary's already-computed indentation. A
+  non-final child uses the first boundary after it as the base for its contribution,
+  falling back to the segment base when no boundary follows it.
+- `breakIndentationShift` is the one upward translation shared by every breakpoint in
+  the current segment. Computing it once preserves relative indentation and avoids
+  recomputing the breakpoint profile during emission.
 - `lineFitSuffixWidth` is trailing same-line width that a recursive child must leave
   room for.
 - `context` is the rule ancestor stack.
@@ -424,29 +442,43 @@ Indentation uses two concepts:
 Breaks are computed by:
 
 ```lean
-def breakIndent
-    (baseColumn baseIndentation infixDepth : Nat) (breakPoint : BreakPoint) : Nat :=
-  let addedLevels := infixDepth + breakPoint.indentLevels
-  if addedLevels == 0 then
-    indentationPastColumn baseColumn
+def breakIndent (baseColumn baseIndentation : Nat) (breakPoint : BreakPoint) : Nat :=
+  if breakPoint.indentLevels == 0 then
+    max (indentationPastColumn baseColumn) (baseIndentation * indentationSpaces)
   else
-    (baseIndentation + addedLevels) * indentationSpaces
+    (baseIndentation + breakPoint.indentLevels) * indentationSpaces
 ```
 
-Zero-added-level breaks round the physical base column up to an indentation boundary.
+Zero-level breaks round the physical base column up to an indentation boundary while
+respecting a larger logical base.
 This keeps constructs such as match alternatives past a `match` that starts at an odd
 column. Breaks with added levels use the floored logical base plus those levels. That is
 more conservative for continuations such as application arguments.
+
+For rules with `roundUpBaseIndentation`, positive breaks first round the physical start
+to an indentation boundary. Flow rules retain the conservative logical base instead.
 
 Child segment bases are derived from renderer state, not from token spelling. If a child
 rule says `inheritBase`, the surrounding segment base is reused. Otherwise the child base
 comes from the column where its first visible token will be emitted.
 
-An infix parent also passes its rounded break-base indentation into child state. For a
-nested infix chain, effective depth is
-`max (currentIndentation - parentIndentation) infixLeftDepth`. Physical movement caused
-by parentheses can therefore satisfy structural depth, but an inner operator in the
-outer chain's left operand still remains deeper than the outer operator.
+When a rule sets `liftsTailIndentation`, the renderer caches the complete segment's final
+child boundary. Every earlier child inherits the indentation of the following rule
+boundary as its tail indentation. Thus a `for` binder is anchored by `in`, an infix
+operand by its following operator, and an off-column child by the already-rounded
+boundary rather than by the width of its prefix.
+
+Each segment first computes its natural breakpoint indentations. The least natural
+indentation is the profile's base. A balanced segment raises that base to its inherited
+tail; an infix-like or flow segment raises it to the greater of its rounded head
+indentation and one level beyond the inherited tail. The resulting difference is stored
+as one `breakIndentationShift` and added to every breakpoint. Because all breakpoints
+move together, fields, items, and closing delimiters retain their relative indentation.
+Nested child rendering is scoped, so a child's tail does not leak into its siblings.
+
+The renderer computes each child's rule and breakpoints once before recursive rendering
+and passes that prepared pair into the child call. Layout decisions therefore reuse rule
+facts without inferring semantic behavior from the presence or shape of breakpoints.
 
 ### Suffix width
 
@@ -530,7 +562,7 @@ the renderer.
 Rules know syntax. The renderer knows columns. Keeping those concerns separate prevents
 renderer code from asking what token or tree kind it is rendering in order to choose an
 anchor. Anchors remain render-state facts, while rules expose small predicates such as
-`inheritBase` and `accumulatesInfixLeftDepth`.
+`inheritBase`, `liftsTailIndentation`, and `roundUpBaseIndentation`.
 
 ### Why preserve proofs?
 

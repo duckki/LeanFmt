@@ -145,8 +145,9 @@ structure LineBreakRule where
   mandatory : RuleContext → Segment → Bool := fun _ _ => false
   flow : RuleContext → Segment → Bool := fun _ _ => false
   inheritBase : RuleContext → Segment → Bool := defaultInheritBase
-  accumulatesInfixLeftDepth : RuleContext → Segment → Bool := fun _ _ => false
+  liftsTailIndentation : RuleContext → Segment → Bool := fun _ _ => false
   alignStartToIndentation : RuleContext → Segment → Bool := fun _ _ => false
+  roundUpBaseIndentation : Bool := false
   breakPoints : RuleContext → Segment → List BreakPoint := fun _ _ => []
 
 def boundaryBreak? (segment : Segment) (index indentLevels : Nat) : Option BreakPoint :=
@@ -410,7 +411,7 @@ def defaultRule : LineBreakRule :=
     flow :=
       fun context segment =>
         !(defaultBreaks context segment).isEmpty && !defaultIsInfix context segment
-    accumulatesInfixLeftDepth := defaultIsInfix
+    liftsTailIndentation := defaultIsInfix
     breakPoints := defaultBreaks
   }
 
@@ -616,28 +617,14 @@ def hasMissingCommaBetweenFields (segment : Segment) : List Nat → Bool
       || hasMissingCommaBetweenFields segment (right :: rest)
   | _ => false
 
-def inStructureUpdateFields (context : RuleContext) : Bool :=
-  match context.ancestors with
-  | parent :: grandparent :: _ =>
-      parent.rawKind? == some `Lean.Parser.Term.structInstFields
-      && grandparent.rawKind? == some `Lean.Parser.Term.structInst
-      && structInstHasWith (Segment.ofTree grandparent.segment.parent)
-  | _ => false
-
 def structInstFieldBreaks (context : RuleContext) (segment : Segment)
     : List BreakPoint :=
   if parentIsRawKind context `Lean.Parser.Term.structInstFields then
     match structInstFieldIndexes segment with
     | [] => []
     | [_] => []
-    | first :: rest =>
-        let indentLevels := if inStructureUpdateFields context then 0 else 1
-        let firstBreak :=
-          match leadingBreak? segment first indentLevels with
-          | some breakPoint => [breakPoint]
-          | none => []
-        firstBreak
-        ++ rest.filterMap fun index => boundaryBreak? segment index indentLevels
+    | _ :: rest =>
+        rest.filterMap fun index => boundaryBreak? segment index 0
   else
     []
 
@@ -749,21 +736,6 @@ def structInstFieldsMandatory (context : RuleContext) (segment : Segment) : Bool
 def structInstBreaks (_context : RuleContext) (segment : Segment) : List BreakPoint :=
   if 1 < structInstFieldCount segment || structInstHasWith segment then
     let hasWith := structInstHasWith segment
-    let updateSourceBreak :=
-      if hasWith then
-        match segment.indexes.find?
-                fun index => childStartsWithLexeme segment index "{" with
-        | some openIndex =>
-            match (nonemptyChildIndexes segment).find?
-                    fun index => openIndex < index with
-            | some index =>
-                match boundaryBreak? segment index 1 with
-                | some breakPoint => [breakPoint]
-                | none => []
-            | none => []
-        | none => []
-      else
-        []
     let fieldBreak :=
       if hasWith then
         match firstChildRawKind? segment `Lean.Parser.Term.structInstFields with
@@ -774,17 +746,28 @@ def structInstBreaks (_context : RuleContext) (segment : Segment) : List BreakPo
         | none => []
       else
         []
-    let closeBreak :=
-      match segment.indexes.find?
-              fun index => childStartsWithLexeme segment index "}" with
-      | some index =>
-          match boundaryBreak? segment index 0 with
-          | some breakPoint => [breakPoint]
+    match segment.indexes.find? fun index => childStartsWithLexeme segment index "{",
+          segment.indexes.find?
+            fun index => childStartsWithLexeme segment index "}" with
+    | some openIndex, some closeIndex =>
+        let openBreak :=
+          match (nonemptyChildIndexes segment).find? fun index => openIndex < index with
+          | some index => [boundaryBreak? segment index 1].filterMap id
           | none => []
-      | none => []
-    updateSourceBreak ++ fieldBreak ++ closeBreak
+        let closeBreak := [boundaryBreak? segment closeIndex 0].filterMap id
+        openBreak ++ fieldBreak ++ closeBreak
+    | _, _ => []
   else
     []
+
+def typeAscriptionBreaks (_context : RuleContext) (segment : Segment)
+    : List BreakPoint :=
+  match segment.indexes.find? fun index => childStartsWithLexeme segment index ":" with
+  | some index =>
+      match boundaryBreak? segment index 1 with
+      | some breakPoint => [breakPoint]
+      | none => []
+  | none => []
 
 /-! ### Declaration lists and module commands -/
 
@@ -1328,14 +1311,30 @@ def theoremRule : LineBreakRule :=
 def structInstRule : LineBreakRule :=
   {
     name := "structInst"
-    accumulatesInfixLeftDepth := fun _ segment => structInstHasWith segment
+    liftsTailIndentation := fun _ segment => structInstHasWith segment
+    roundUpBaseIndentation := true
     breakPoints := structInstBreaks
+  }
+
+def structureUpdateRule : LineBreakRule :=
+  {
+    name := "structureUpdate"
+    flow := fun _ _ => true
+    liftsTailIndentation := fun _ _ => true
+  }
+
+def typeAscriptionRule : LineBreakRule :=
+  {
+    name := "typeAscription"
+    liftsTailIndentation := fun _ _ => true
+    breakPoints := typeAscriptionBreaks
   }
 
 def tupleRule : LineBreakRule :=
   {
     name := "tuple"
     inheritBase := fun _ _ => true
+    roundUpBaseIndentation := true
     breakPoints := tupleBreaks
   }
 
@@ -1641,6 +1640,7 @@ def arrayRule : LineBreakRule :=
   {
     name := "array"
     inheritBase := fun _ segment => 1 < arrayItemCount segment
+    roundUpBaseIndentation := true
     breakPoints := arrayBreaks
   }
 
@@ -1710,7 +1710,8 @@ def infixChainRule : LineBreakRule :=
   {
     name := "infixChain"
     flow := infixFlow
-    accumulatesInfixLeftDepth := fun _ _ => true
+    liftsTailIndentation :=
+      fun context segment => !(infixBreaks context segment).isEmpty
     breakPoints := infixBreaks
   }
 
@@ -1831,7 +1832,7 @@ def doForHeaderRule : LineBreakRule :=
   {
     name := "doForHeader"
     inheritBase := fun _ _ => true
-    accumulatesInfixLeftDepth := fun _ _ => true
+    liftsTailIndentation := fun _ _ => true
     breakPoints := doForHeaderBreaks
   }
 
@@ -1875,7 +1876,7 @@ def groupRule : LineBreakRule :=
         (doElseIfBreaks context segment).isEmpty
         && !(defaultBreaks context segment).isEmpty
         && !defaultIsInfix context segment
-    accumulatesInfixLeftDepth :=
+    liftsTailIndentation :=
       fun context segment =>
         (doElseIfBreaks context segment).isEmpty && defaultIsInfix context segment
     breakPoints := groupBreaks
@@ -1983,7 +1984,7 @@ def ruleFor : SyntaxTree.Tree → Option LineBreakRule
   | .node (.raw `hygieneInfo) _ => some defaultRule
   | .node (.raw `Lean.Parser.Term.type) _ => some defaultRule
   | .node (.raw `Lean.Parser.Term.prop) _ => some defaultRule
-  | .node (.raw `Lean.Parser.Term.typeAscription) _ => some defaultRule
+  | .node (.raw `Lean.Parser.Term.typeAscription) _ => some typeAscriptionRule
   | .node (.raw `Lean.Parser.Term.optEllipsis) _ => some defaultRule
   | .node (.raw `Lean.Parser.Term.explicit) _ => some defaultRule
   | .node (.raw `Lean.Parser.Term.explicitUniv) _ => some defaultRule
@@ -2164,6 +2165,7 @@ def ruleFor : SyntaxTree.Tree → Option LineBreakRule
   | .node .matchPatterns _ => some matchPatternsRule
   | .node .matchDiscriminants _ => some matchDiscriminantsRule
   | .node .doForHeader _ => some doForHeaderRule
+  | .node .structureUpdate _ => some structureUpdateRule
   | .node (.raw `Lean.Parser.Command.optDeclSig) _ => some signatureRule
   | .node (.raw `Lean.Parser.Command.declSig) _ => some signatureRule
   | .node (.raw `Lean.Parser.Term.explicitBinder) _ => some binderRule

@@ -1017,7 +1017,7 @@ def assertSelfFormattingRulePriorities (env : Lean.Environment) : IO Unit := do
     ++ "    entries := state.entries\n"
     ++ "                ++ [segmentEntry state output defaultWhitespace segment ruleName\n"
     ++ "                    currentColumn currentIndent segmentIndentation pendingIndent?\n"
-    ++ "                    infixLeftDepth]\n"
+    ++ "                    tailIndentation?]\n"
     ++ "  }\n"
   let tracedApplicationExpected :=
     "def record state :=\n"
@@ -1027,7 +1027,7 @@ def assertSelfFormattingRulePriorities (env : Lean.Environment) : IO Unit := do
     ++ "        state.entries\n"
     ++ "        ++ [segmentEntry state output defaultWhitespace segment ruleName\n"
     ++ "              currentColumn currentIndent segmentIndentation pendingIndent?\n"
-    ++ "              infixLeftDepth]\n"
+    ++ "              tailIndentation?]\n"
     ++ "  }\n"
   let tracedApplicationFormatted ←
     Formatter.formatSourceWithEnv env tracedApplication "traced-application-flow.lean"
@@ -1490,12 +1490,10 @@ def assertChildFitCountsParentSuffix (env : Lean.Environment) : IO Unit := do
 def assertColumnIndentationIsConservative : IO Unit := do
   assertTrue "column 3 needs only one indentation level"
     (Formatter.indentationLevelForColumn 3 == 1)
-  assertTrue "unmoved infix uses structural depth"
-    (Formatter.combinedInfixDepth 1 1 1 == 1)
-  assertTrue "physical movement subsumes smaller infix depth"
-    (Formatter.combinedInfixDepth 1 3 1 == 2)
-  assertTrue "larger infix depth subsumes physical movement"
-    (Formatter.combinedInfixDepth 1 2 3 == 3)
+  assertTrue "column 3 rounds forward to the next indentation level"
+    (Formatter.indentationPastColumn 3 == 4)
+  assertTrue "ordinary breaks indent from their rounded base"
+    (Formatter.breakIndent 3 2 { index := 0, indentLevels := 1 } == 6)
 
 def tokenAt (lexeme : String) (start stop : String.Pos.Raw) : SyntaxTree.Token :=
   {
@@ -1581,6 +1579,22 @@ def assertMultiItemArrayBreaksBalanced (env : Lean.Environment) : IO Unit := do
   let formatted ←
     Formatter.formatSourceWithEnv env source "multi-item-array-balanced.lean"
   assertEq "multi-item array breaks balanced" expected formatted
+
+def assertOffColumnArrayRoundsOneLevel (env : Lean.Environment) : IO Unit := do
+  let source :=
+    "def offColumnArray := some <| #[firstExceptionallyLongItemNameForOffColumnArrayLayout, secondExceptionallyLongItemNameForOffColumnArrayLayout] ++ remainingItemsForOffColumnArrayLayout\n"
+  let expected :=
+    "def offColumnArray :=\n"
+    ++ "  some\n"
+    ++ "  <| #[\n"
+    ++ "        firstExceptionallyLongItemNameForOffColumnArrayLayout,\n"
+    ++ "        secondExceptionallyLongItemNameForOffColumnArrayLayout\n"
+    ++ "      ]\n"
+    ++ "      ++ remainingItemsForOffColumnArrayLayout\n"
+  let formatted ←
+    Formatter.formatSourceWithEnv env source "off-column-array-balanced.lean"
+  assertEq "off-column array items indent one level past the rounded opener" expected
+    formatted
 
 def assertInstanceWhereStaysWithHeader (env : Lean.Environment) : IO Unit := do
   let source :=
@@ -1791,7 +1805,7 @@ def assertNestedInfixDoesNotDoubleCountOperatorWidth (env : Lean.Environment)
     Formatter.formatSourceWithEnv env source "nested-infix-operator-width.lean"
   assertEq "nested infix does not double-count operator width" expected formatted
 
-def assertNestedInfixLhsKeepsHierarchy (env : Lean.Environment) : IO Unit := do
+def assertNestedInfixKeepsHierarchy (env : Lean.Environment) : IO Unit := do
   let source :=
     "def nestedAppendLhs :=\n"
     ++ "  ((executableFieldSelectionsWithEnoughCharactersForLayoutTesting [first] ++ middle ++ executableFieldSelectionsWithEnoughCharactersForLayoutTesting [later]) ++ suffix)\n"
@@ -1807,23 +1821,73 @@ def assertNestedInfixLhsKeepsHierarchy (env : Lean.Environment) : IO Unit := do
     ++ "\n"
     ++ "def nestedConsLhs :=\n"
     ++ "  (({\n"
-    ++ "      parentType := parentType,\n"
-    ++ "      responseName := responseName,\n"
-    ++ "      fieldName := fieldName,\n"
-    ++ "      arguments := arguments,\n"
-    ++ "      selectionSet := selectionSet\n"
-    ++ "    }\n"
-    ++ "      :: fields)\n"
-    ++ "    ++ [{\n"
     ++ "        parentType := parentType,\n"
     ++ "        responseName := responseName,\n"
     ++ "        fieldName := fieldName,\n"
-    ++ "        arguments := laterArguments,\n"
-    ++ "        selectionSet := laterSelectionSet\n"
+    ++ "        arguments := arguments,\n"
+    ++ "        selectionSet := selectionSet\n"
+    ++ "      }\n"
+    ++ "      :: fields)\n"
+    ++ "    ++ [{\n"
+    ++ "          parentType := parentType,\n"
+    ++ "          responseName := responseName,\n"
+    ++ "          fieldName := fieldName,\n"
+    ++ "          arguments := laterArguments,\n"
+    ++ "          selectionSet := laterSelectionSet\n"
     ++ "        }])\n"
   let formatted ←
     Formatter.formatSourceWithEnv env source "nested-infix-lhs-hierarchy.lean"
-  assertEq "nested infix LHS keeps hierarchy" expected formatted
+  assertEq "nested infix keeps hierarchy" expected formatted
+
+def assertApplicationInNestedInfixKeepsHierarchy (env : Lean.Environment)
+    : IO Unit := do
+  let source :=
+    "def nestedApplicationConsAppend : Prop :=\n"
+    ++ "  premise\n"
+    ++ "  -> VisitSubfieldsFlatCollectsFreshPrefixes schema resolvers variableValues\n"
+    ++ "      depth parentType source\n"
+    ++ "      (Selection.field responseName fieldName arguments fieldDirectives\n"
+    ++ "          fieldSelectionSet\n"
+    ++ "        :: inlineSelectionSet\n"
+    ++ "        ++ rest)\n"
+  let expected :=
+    "def nestedApplicationConsAppend : Prop :=\n"
+    ++ "  premise\n"
+    ++ "  -> VisitSubfieldsFlatCollectsFreshPrefixes schema resolvers variableValues\n"
+    ++ "      depth parentType source\n"
+    ++ "      (Selection.field responseName fieldName arguments fieldDirectives\n"
+    ++ "            fieldSelectionSet\n"
+    ++ "          :: inlineSelectionSet\n"
+    ++ "        ++ rest)\n"
+  let formatted ←
+    Formatter.formatSourceWithEnv env source
+      "application-in-nested-infix-hierarchy.lean"
+  assertEq "application in nested infix keeps hierarchy" expected formatted
+
+def assertNestedLogicalApplicationLhsKeepsHierarchy (env : Lean.Environment)
+    : IO Unit := do
+  let source :=
+    "theorem nestedLogicalApplicationLhs\n"
+    ++ "    : schema.lookupField parentType fieldName = some fieldDefinition\n"
+    ++ "      -> ((objectTypeNameBool schema fieldDefinition.outputType.namedType = true\n"
+    ++ "            ∧ runtimeType = fieldDefinition.outputType.namedType)\n"
+    ++ "          ∨ ((TypeRef.named fieldDefinition.outputType.namedType).isCompositeBool schema\n"
+    ++ "              = true\n"
+    ++ "              ∧ objectTypeNameBool schema fieldDefinition.outputType.namedType = false)) := by\n"
+    ++ "  exact proof\n"
+  let expected :=
+    "theorem nestedLogicalApplicationLhs\n"
+    ++ "    : schema.lookupField parentType fieldName = some fieldDefinition\n"
+    ++ "      -> ((objectTypeNameBool schema fieldDefinition.outputType.namedType = true\n"
+    ++ "            ∧ runtimeType = fieldDefinition.outputType.namedType)\n"
+    ++ "          ∨ ((TypeRef.named fieldDefinition.outputType.namedType).isCompositeBool schema\n"
+    ++ "                = true\n"
+    ++ "              ∧ objectTypeNameBool schema fieldDefinition.outputType.namedType\n"
+    ++ "                = false)) := by\n"
+    ++ "  exact proof\n"
+  let formatted ←
+    Formatter.formatSourceWithEnv env source "nested-logical-application-lhs.lean"
+  assertEq "nested logical application LHS keeps hierarchy" expected formatted
 
 def assertSubtypeBreaksBeforeProperty (env : Lean.Environment) : IO Unit := do
   let source :=
@@ -2400,6 +2464,25 @@ def assertStructInstanceFieldsBreakBalanced (env : Lean.Environment) : IO Unit :
     Formatter.formatSourceWithEnv env source "struct-instance-fields-balanced.lean"
   assertEq "structure constructor fields break balanced" expected formatted
 
+def assertTypedStructInstanceBreaksBalanced (env : Lean.Environment) : IO Unit := do
+  let source :=
+    "def responseWitness : Prop := response = ({ data := exceptionallyLongResponseObjectConstructorNameUsedToForceBalancedStructureLayout rightFields, errors := rightErrors }\n"
+    ++ "  : Execution.Response)\n"
+  let expected :=
+    "def responseWitness : Prop :=\n"
+    ++ "  response\n"
+    ++ "  = ({\n"
+    ++ "        data :=\n"
+    ++ "          exceptionallyLongResponseObjectConstructorNameUsedToForceBalancedStructureLayout\n"
+    ++ "            rightFields,\n"
+    ++ "        errors := rightErrors\n"
+    ++ "      }\n"
+    ++ "      : Execution.Response)\n"
+  let formatted ←
+    Formatter.formatSourceWithEnv env source "typed-struct-instance-balanced.lean"
+  assertEq "typed structure constructor breaks braces and keeps ascribed type together"
+    expected formatted
+
 def assertStructInstanceFieldBindersPreserved (env : Lean.Environment) : IO Unit := do
   let source :=
     "instance : Coe Nat Nat where\n"
@@ -2937,6 +3020,7 @@ def assertRendererTraceIncludesPathAndState (env : Lean.Environment) : IO Unit :
   assertTextContains "renderer trace includes current column" trace "currentColumn="
   assertTextContains "renderer trace includes segment indentation" trace
     "segmentIndentation="
+  assertTextContains "renderer trace includes tail indentation" trace "tailIndentation="
 
 def assertCliFixtureUpdate (env : Lean.Environment) : IO Unit := do
   let separator :=
@@ -3310,6 +3394,7 @@ def runExpressionAndRendererTests (env : Lean.Environment) : IO Unit := do
   assertListApplicationSourceBreakIndent env
   assertSingletonArrayKeepsBodyBase env
   assertMultiItemArrayBreaksBalanced env
+  assertOffColumnArrayRoundsOneLevel env
   assertInstanceWhereStaysWithHeader env
   assertInfixLeftDepth env
   assertInfixIgnoresFittingSourceBreaks env
@@ -3321,7 +3406,9 @@ def runExpressionAndRendererTests (env : Lean.Environment) : IO Unit := do
   assertQuantifierBodyIgnoresParentInfixLeftDepth env
   assertParenthesizedQuantifierBlockIgnoresParentInfixLeftDepth env
   assertNestedInfixDoesNotDoubleCountOperatorWidth env
-  assertNestedInfixLhsKeepsHierarchy env
+  assertNestedInfixKeepsHierarchy env
+  assertApplicationInNestedInfixKeepsHierarchy env
+  assertNestedLogicalApplicationLhsKeepsHierarchy env
   assertSubtypeBreaksBeforeProperty env
   assertAdjacentQuantifiersFitBeforeSourceBreaks env
 
@@ -3359,6 +3446,7 @@ def runCollectionAndDeclarationTests (env : Lean.Environment) : IO Unit := do
   assertStructInstanceFieldsBreakMandatory env
   assertStructInstanceFieldsBreakMandatoryBetweenFields env
   assertStructInstanceFieldsBreakBalanced env
+  assertTypedStructInstanceBreaksBalanced env
   assertStructInstanceFieldBindersPreserved env
   assertStructUpdateWithFieldsBreaks env
   assertTupleBreakBalanced env

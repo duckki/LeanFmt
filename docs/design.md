@@ -931,6 +931,18 @@ before `}`. Comma-separated fields remain flat when they fit. Newline-separated
 fields without commas are structurally multiline because Lean's layout syntax
 requires those boundaries.
 
+The opening and closing brace breaks are balanced. A type ascription following a
+multiline structure keeps `:` with its type:
+
+```lean
+response
+  = ({
+        data := ResponseValue.object fields,
+        errors := errors
+      }
+      : Response)
+```
+
 A fitting constructor remains completely flat, including a nested constructor
 used as a field value. If a constructor argument is too wide, its containing
 application breaks before `{`. In a declaration body, the declaration first

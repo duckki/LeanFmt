@@ -41,10 +41,6 @@ def indentationLevelForColumn (column : Nat) : Nat :=
 def indentationPastColumn (column : Nat) : Nat :=
   indentationLevelForColumn (column + indentationSpaces - 1) * indentationSpaces
 
-def combinedInfixDepth (parentIndentation currentIndentation infixLeftDepth : Nat)
-    : Nat :=
-  max (currentIndentation - parentIndentation) infixLeftDepth
-
 def leadingWhitespace (line : String) : String :=
   (line.takeWhile SpaceRules.isHorizontalWhitespace).toString
 
@@ -124,6 +120,11 @@ structure SourceBreak where
   indent : Nat
 deriving BEq, Repr
 
+structure TailIndentationAnchor where
+  stop : Nat
+  indentation : Nat
+deriving Repr
+
 structure RenderState where
   source : String
   output : String := ""
@@ -134,8 +135,10 @@ structure RenderState where
   pendingIndent? : Option Nat := none
   segmentBaseColumn : Nat := 0
   segmentIndentation : Nat := 0
-  infixLeftDepth : Nat := 0
-  infixParentBaseIndentation? : Option Nat := none
+  tailIndentation? : Option Nat := none
+  tailIndentationStop? : Option Nat := none
+  tailIndentationAnchors : List TailIndentationAnchor := []
+  breakIndentationShift : Nat := 0
   lineFitSuffixWidth : Nat := 0
   context : LineBreakRules.RuleContext := {}
   trace : Trace.State := {}
@@ -150,7 +153,10 @@ structure ChildRenderScope where
   context : LineBreakRules.RuleContext
   segmentBaseColumn : Nat
   segmentIndentation : Nat
-  infixParentBaseIndentation? : Option Nat
+  tailIndentation? : Option Nat
+  tailIndentationStop? : Option Nat
+  tailIndentationAnchors : List TailIndentationAnchor
+  breakIndentationShift : Nat
   lineFitSuffixWidth : Nat
   trace : Trace.State
 
@@ -159,7 +165,10 @@ def ChildRenderScope.capture (state : RenderState) : ChildRenderScope :=
     context := state.context
     segmentBaseColumn := state.segmentBaseColumn
     segmentIndentation := state.segmentIndentation
-    infixParentBaseIndentation? := state.infixParentBaseIndentation?
+    tailIndentation? := state.tailIndentation?
+    tailIndentationStop? := state.tailIndentationStop?
+    tailIndentationAnchors := state.tailIndentationAnchors
+    breakIndentationShift := state.breakIndentationShift
     lineFitSuffixWidth := state.lineFitSuffixWidth
     trace := state.trace
   }
@@ -171,7 +180,10 @@ def ChildRenderScope.restore (scope : ChildRenderScope) (rendered : RenderState)
       context := scope.context
       segmentBaseColumn := scope.segmentBaseColumn
       segmentIndentation := scope.segmentIndentation
-      infixParentBaseIndentation? := scope.infixParentBaseIndentation?
+      tailIndentation? := scope.tailIndentation?
+      tailIndentationStop? := scope.tailIndentationStop?
+      tailIndentationAnchors := scope.tailIndentationAnchors
+      breakIndentationShift := scope.breakIndentationShift
       lineFitSuffixWidth := scope.lineFitSuffixWidth
       trace := rendered.trace.restorePathFrom scope.trace
   }
@@ -275,7 +287,7 @@ def RenderState.traceSegment
         state.trace.recordSegment state.output
           (fun token => state.defaultWhitespace token) segment ruleName
           (state.segmentStartColumn segment) state.currentIndent
-          state.segmentIndentation state.pendingIndent? state.infixLeftDepth
+          state.segmentIndentation state.pendingIndent? state.tailIndentation?
   }
 
 def RenderState.nextTokenColumn (state : RenderState) (token : SyntaxTree.Token)
@@ -301,27 +313,24 @@ def RenderState.withPendingIndent (state : RenderState) (indent : Nat) : RenderS
   {
     state with
       pendingIndent? := some indent
-      infixLeftDepth := 0
+      tailIndentation? := none
       segmentBaseColumn := indent
       segmentIndentation := indentationLevelForColumn indent
   }
 
-def breakIndent
-    (baseColumn baseIndentation infixDepth : Nat)
+def breakIndent (baseColumn baseIndentation : Nat)
     (breakPoint : LineBreakRules.BreakPoint)
     : Nat :=
-  let addedLevels := infixDepth + breakPoint.indentLevels
-  if addedLevels == 0 then
-    indentationPastColumn baseColumn
+  if breakPoint.indentLevels == 0 then
+    max (indentationPastColumn baseColumn) (baseIndentation * indentationSpaces)
   else
-    (baseIndentation + addedLevels) * indentationSpaces
+    (baseIndentation + breakPoint.indentLevels) * indentationSpaces
 
 def RenderState.withRuleBreakIndent
-    (state : RenderState) (baseColumn baseIndentation infixDepth : Nat)
+    (state : RenderState) (baseColumn baseIndentation : Nat)
     (breakPoint : LineBreakRules.BreakPoint)
     : RenderState :=
-  state.withPendingIndent
-  <| breakIndent baseColumn baseIndentation infixDepth breakPoint
+  state.withPendingIndent <| breakIndent baseColumn baseIndentation breakPoint
 
 def outputIntroducedLineBreak (before after : RenderState) : Bool :=
   before.outputLineBreakCount < after.outputLineBreakCount
@@ -924,42 +933,88 @@ def segmentFirstTokenColumn (state : RenderState) (segment : LineBreakRules.Segm
   | some token => state.nextTokenColumn token
   | none => state.currentColumn
 
-def ruleBreakDepth
-    (state : RenderState) (segment : LineBreakRules.Segment)
-    (rule : LineBreakRules.LineBreakRule)
-    : Nat :=
-  if rule.accumulatesInfixLeftDepth state.context segment then
-    state.infixLeftDepth
-  else
-    0
+def RenderState.extendTailIndentation
+    (state : RenderState) (_segment : LineBreakRules.Segment) (parentIndentation : Nat)
+    : RenderState :=
+  let inheritedIndentation :=
+    match state.tailIndentation? with
+    | some indentation => max indentation parentIndentation
+    | none => parentIndentation
+  { state with tailIndentation? := some inheritedIndentation }
 
-def ruleBreakBase
-    (state : RenderState) (segment : LineBreakRules.Segment)
+def naturalRuleBreakBase
     (rule : LineBreakRules.LineBreakRule)
     (baseColumn baseIndentation : Nat)
     (breakPoint : LineBreakRules.BreakPoint)
     : SegmentBase :=
-  if rule.accumulatesInfixLeftDepth state.context segment
-      && 0 < state.infixLeftDepth then
-    match state.infixParentBaseIndentation? with
-    | some parentIndentation =>
-        let currentIndentation :=
-          indentationLevelForColumn (indentationPastColumn baseColumn)
-        let combinedDepth :=
-          combinedInfixDepth parentIndentation currentIndentation state.infixLeftDepth
-        let indentation := parentIndentation + combinedDepth - state.infixLeftDepth
-        { column := baseColumn, indentation }
-    | none => { column := baseColumn, indentation := baseIndentation }
-  else if !rule.accumulatesInfixLeftDepth state.context segment
-          && rule.flow state.context segment
-          && 0 < state.infixLeftDepth
-          && 0 < breakPoint.indentLevels then
-    let roundedIndentation :=
-      indentationLevelForColumn (indentationPastColumn baseColumn)
-    let indentation := roundedIndentation + (state.infixLeftDepth - 1)
-    { column := indentation * indentationSpaces, indentation }
+  let naturalIndentation :=
+    if rule.roundUpBaseIndentation && 0 < breakPoint.indentLevels then
+      max baseIndentation (indentationLevelForColumn (indentationPastColumn baseColumn))
+    else
+      baseIndentation
+  { column := baseColumn, indentation := naturalIndentation }
+
+def naturalBreakIndentation
+    (rule : LineBreakRules.LineBreakRule)
+    (baseColumn baseIndentation : Nat)
+    (breakPoint : LineBreakRules.BreakPoint)
+    : Nat :=
+  let base := naturalRuleBreakBase rule baseColumn baseIndentation breakPoint
+  indentationLevelForColumn <| breakIndent base.column base.indentation breakPoint
+
+def leastNaturalBreakIndentation?
+    (rule : LineBreakRules.LineBreakRule)
+    (baseColumn baseIndentation : Nat)
+    : List LineBreakRules.BreakPoint → Option Nat
+  | [] => none
+  | breakPoint :: rest =>
+      let indentation :=
+        naturalBreakIndentation rule baseColumn baseIndentation breakPoint
+      match leastNaturalBreakIndentation? rule baseColumn baseIndentation rest with
+      | some minimum => some (min indentation minimum)
+      | none => some indentation
+
+def requiredTailIndentation
+    (state : RenderState) (segment : LineBreakRules.Segment)
+    (rule : LineBreakRules.LineBreakRule)
+    (baseColumn tailIndentation : Nat)
+    : Nat :=
+  if rule.liftsTailIndentation state.context segment
+      || rule.flow state.context segment then
+    let headIndentation := indentationLevelForColumn (indentationPastColumn baseColumn)
+    max headIndentation (tailIndentation + 1)
   else
-    { column := baseColumn, indentation := baseIndentation }
+    tailIndentation
+
+def computeRuleBreakShift
+    (state : RenderState) (segment : LineBreakRules.Segment)
+    (rule : LineBreakRules.LineBreakRule)
+    (baseColumn baseIndentation : Nat)
+    (points : List LineBreakRules.BreakPoint)
+    : Nat :=
+  match state.tailIndentation? with
+  | some tailIndentation =>
+      let required :=
+        requiredTailIndentation state segment rule baseColumn tailIndentation
+      let minimum? :=
+        leastNaturalBreakIndentation? rule baseColumn baseIndentation points
+      required - minimum?.getD required
+  | none => 0
+
+def ruleBreakBase
+    (state : RenderState) (_segment : LineBreakRules.Segment)
+    (rule : LineBreakRules.LineBreakRule)
+    (baseColumn baseIndentation : Nat)
+    (breakPoint : LineBreakRules.BreakPoint)
+    : SegmentBase :=
+  let base := naturalRuleBreakBase rule baseColumn baseIndentation breakPoint
+  let shiftedIndentation :=
+    if breakPoint.indentLevels == 0 then
+      indentationLevelForColumn (breakIndent base.column base.indentation breakPoint)
+      + state.breakIndentationShift
+    else
+      base.indentation + state.breakIndentationShift
+  { base with indentation := shiftedIndentation }
 
 def breakPointIndent
     (state : RenderState) (segment : LineBreakRules.Segment)
@@ -973,8 +1028,7 @@ def breakPointIndent
     else
       baseIndentation * indentationSpaces
   let base := ruleBreakBase state segment rule baseColumn baseIndentation breakPoint
-  breakIndent base.column base.indentation
-    (ruleBreakDepth state segment rule) breakPoint
+  breakIndent base.column base.indentation breakPoint
 
 def sourceBreaksForRule?
     (state : RenderState) (segment : LineBreakRules.Segment)
@@ -1059,8 +1113,7 @@ def FlowRenderContext.withBreak
   let base :=
     ruleBreakBase flow.entryState flow.segment flow.rule
       entryBaseColumn entryIndentation breakPoint
-  state.withRuleBreakIndent base.column base.indentation
-    (ruleBreakDepth flow.entryState flow.segment flow.rule) breakPoint
+  state.withRuleBreakIndent base.column base.indentation breakPoint
 
 def FlowRenderContext.stateForForcedNestedChild?
     (flow : FlowRenderContext) (state : RenderState) (index : Nat)
@@ -1091,21 +1144,75 @@ def FlowRenderContext.stateForForcedNestedChild?
 mutual
 
   partial def renderSegment (state : RenderState) (segment : LineBreakRules.Segment)
+      (prepared?
+        : Option (LineBreakRules.LineBreakRule × List LineBreakRules.BreakPoint) :=
+                                                                                  none)
       : RenderState :=
-    let rule := LineBreakRules.formattingRuleFor segment.parent
+    let (rule, breakPoints) :=
+      match prepared? with
+      | some prepared => prepared
+      | none =>
+          let rule := LineBreakRules.formattingRuleFor segment.parent
+          (rule, ruleBreakPoints state.context segment rule)
+    let tailIndentationStop? :=
+      match segment.parent with
+      | .node _ children =>
+          if segment.start == 0 && segment.stop == children.size then
+            if rule.liftsTailIndentation state.context segment
+                && segment.start < segment.stop then
+              some (segment.stop - 1)
+            else
+              none
+          else
+            state.tailIndentationStop?
+      | _ => none
     let state :=
       match segment.parent with
       | .node _ _ =>
-          if rule.accumulatesInfixLeftDepth state.context segment then
-            let baseColumn := segmentFirstTokenColumn state segment
+          if rule.liftsTailIndentation state.context segment then
+            match segmentFirstToken? segment with
+            | some token =>
+                let baseColumn := state.nextTokenColumn token
+                {
+                  state with
+                    segmentBaseColumn := baseColumn
+                    segmentIndentation := indentationLevelForColumn baseColumn
+                }
+            | none => state
+          else
+            state
+      | _ => state
+    let state :=
+      match segment.parent with
+      | .node _ children =>
+          if segment.start == 0 && segment.stop == children.size then
             {
               state with
-                segmentBaseColumn := baseColumn
-                segmentIndentation := indentationLevelForColumn baseColumn
+                breakIndentationShift :=
+                  computeRuleBreakShift state segment rule state.segmentBaseColumn
+                    state.segmentIndentation breakPoints
             }
           else
             state
       | _ => state
+    let tailIndentationAnchors :=
+      match segment.parent with
+      | .node _ children =>
+          if segment.start == 0
+              && segment.stop == children.size
+              && tailIndentationStop?.isSome then
+            breakPoints.map
+              fun breakPoint =>
+                {
+                  stop := breakPoint.index
+                  indentation :=
+                    indentationLevelForColumn
+                      (breakPointIndent state segment rule breakPoint)
+                }
+          else
+            state.tailIndentationAnchors
+      | _ => []
+    let state := { state with tailIndentationStop?, tailIndentationAnchors }
     let state := state.traceSegment segment rule.name
     match segment.parent with
     | .missing => state
@@ -1116,12 +1223,12 @@ mutual
             && shouldEmitOriginalTree segment.parent then
           state.emitOriginalTree segment.parent
         else
-          renderSegmentByRule state segment rule
+          renderSegmentByRule state segment rule breakPoints
 
 partial def renderSegmentByRule (state : RenderState) (segment : LineBreakRules.Segment)
     (rule : LineBreakRules.LineBreakRule)
+    (breakPoints : List LineBreakRules.BreakPoint)
     : RenderState :=
-  let breakPoints := ruleBreakPoints state.context segment rule
   let isFlow := rule.flow state.context segment
   let useExistingBreaks := rule.useExistingBreaks state.context segment
   if rule.atomic then
@@ -1190,12 +1297,9 @@ partial def renderNestedSegment
   let childContext := state.context.push segment index
   let childSegment := LineBreakRules.Segment.ofTree child
   let childRule := LineBreakRules.formattingRuleFor child
-  let childInfixParentBase? :=
-    match segment.parent with
-    | .node (.infixChain _) _ =>
-        some
-        <| indentationLevelForColumn (indentationPastColumn state.segmentBaseColumn)
-    | _ => state.infixParentBaseIndentation?
+  let emitOriginal := shouldEmitOriginalChild segment.parent index child
+  let childBreakPoints :=
+    if emitOriginal then [] else ruleBreakPoints childContext childSegment childRule
   let inheritsBase := childRule.inheritBase childContext childSegment
   let suffixStop := suffixStop?.getD segment.stop
   let lineFitSuffix := lineFitSuffixForChild state segment index suffixStop child
@@ -1225,15 +1329,23 @@ partial def renderNestedSegment
         context := childContext
         segmentBaseColumn := childBase.column
         segmentIndentation := childBase.indentation
-        infixParentBaseIndentation? := childInfixParentBase?
         lineFitSuffixWidth := lineFitSuffix
         trace := state.trace.pushPath index
     }
+  let childState :=
+    if state.tailIndentationStop?.any fun stop => index < stop then
+      let anchorIndentation :=
+        match state.tailIndentationAnchors.find? fun anchor => index < anchor.stop with
+        | some anchor => anchor.indentation
+        | none => state.segmentIndentation
+      childState.extendTailIndentation childSegment anchorIndentation
+    else
+      childState
   let rendered :=
-    if shouldEmitOriginalChild segment.parent index child then
+    if emitOriginal then
       childState.emitOriginalTree child
     else
-      renderSegment childState childSegment
+      renderSegment childState childSegment (some (childRule, childBreakPoints))
   scope.restore rendered
 
 partial def renderChildren (state : RenderState) (segment : LineBreakRules.Segment)
@@ -1384,42 +1496,38 @@ partial def renderBalancedSegment
   else
     let entryIndentation := state.segmentIndentation
     let entryBaseColumn := state.segmentBaseColumn
-    let entryDepth := state.infixLeftDepth
-    let accumulatesInfixLeftDepth :=
-      rule.accumulatesInfixLeftDepth state.context segment
-    let entryBreakDepth :=
-      if accumulatesInfixLeftDepth then
-        entryDepth
-      else
-        0
-    let renderPiece (state : RenderState) (start stop pieceIndentLevels : Nat)
+    let entryTailIndentation? := state.tailIndentation?
+    let stateForPiece (state : RenderState) (_start _stop : Nat) (firstPiece : Bool)
         : RenderState :=
-      let depth :=
-        if accumulatesInfixLeftDepth then
-          entryDepth + pieceIndentLevels + 1
-        else
-          entryDepth
+      if firstPiece then
+        { state with tailIndentation? := entryTailIndentation? }
+      else
+        { state with tailIndentation? := none }
+    let renderPiece (state : RenderState) (start stop : Nat) (firstPiece : Bool)
+        (preserveSuffix : Bool := false)
+        : RenderState :=
+      let state := stateForPiece state start stop firstPiece
       let rendered :=
-        renderSegmentRange
-          { state with infixLeftDepth := depth, lineFitSuffixWidth := 0 } segment start
-          stop
+        if preserveSuffix then
+          renderSegmentRange state segment start stop
+        else
+          renderSegmentRange { state with lineFitSuffixWidth := 0 } segment start stop
       {
         rendered with
-          infixLeftDepth := entryDepth, lineFitSuffixWidth := state.lineFitSuffixWidth
+          tailIndentation? := entryTailIndentation?
+          lineFitSuffixWidth := state.lineFitSuffixWidth
       }
-    let rec loop (state : RenderState) (start pieceIndentLevels : Nat)
+    let rec loop (state : RenderState) (start : Nat) (firstPiece : Bool)
         : List LineBreakRules.BreakPoint → RenderState
-      | [] => renderSegmentRange state segment start segment.stop
+      | [] => renderPiece state start segment.stop firstPiece true
       | breakPoint :: rest =>
-          let state := renderPiece state start breakPoint.index pieceIndentLevels
+          let state := renderPiece state start breakPoint.index firstPiece
           let base :=
             ruleBreakBase state segment rule entryBaseColumn entryIndentation breakPoint
-          let state :=
-            state.withRuleBreakIndent base.column base.indentation entryBreakDepth
-              breakPoint
+          let state := state.withRuleBreakIndent base.column base.indentation breakPoint
           let rest := rest.dropWhile fun next => next.index == breakPoint.index
-          loop state breakPoint.index breakPoint.indentLevels rest
-    loop state segment.start 0 breakPoints
+          loop state breakPoint.index false rest
+    loop state segment.start true breakPoints
 
 end
 

@@ -206,7 +206,7 @@ The trace interleaves formatted output lines with segment entries. Each entry in
 - current column and indentation,
 - segment indentation,
 - pending indentation,
-- `infixLeftDepth`.
+- `tailIndentation`.
 
 Use traces to answer questions like "which rule introduced this break?" or "what base
 indentation did this child receive?" Keep renderer fixes state-based; avoid adding token
