@@ -367,12 +367,9 @@ def isQuotationTree : SyntaxTree.Tree → Bool
   | .node (.raw `Qq.«termQ(__)») _ => true
   | _ => false
 
-def rawKindStartsWith (leading : String) : Lean.SyntaxNodeKind → Bool :=
-  fun kind => (toString kind).startsWith leading
-
 def isQqSyntaxTree : SyntaxTree.Tree → Bool
-  | .node (.raw kind) _ => rawKindStartsWith "Qq." kind
-  | .node (.infixChain kind) _ => rawKindStartsWith "Qq." kind
+  | .node (.raw `Qq.«termQ(__)») _ => true
+  | .node (.infixChain `Qq.«term_=Q_») _ => true
   | _ => false
 
 def isLayoutSensitiveCommand : SyntaxTree.Tree → Bool
