@@ -121,8 +121,12 @@ def missingRuleReportSkipsTree : SyntaxTree.Tree → Bool
 
 def missingRuleReportIgnoresKindName (kindName : String) : Bool :=
   kindName.startsWith "token."
+  || kindName.startsWith "_private."
   || kindName.startsWith "«term"
   || SpaceRules.containsSubstring kindName ".«term"
+  || kindName.startsWith "«stx"
+  || SpaceRules.containsSubstring kindName ".«stx"
+  || kindName.startsWith "Lean.Elab.Command.command_"
 
 def treeStart? (tree : SyntaxTree.Tree) : Option String.Pos.Raw :=
   match tree.firstToken? with

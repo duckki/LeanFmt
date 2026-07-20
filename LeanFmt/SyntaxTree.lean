@@ -562,11 +562,60 @@ def importEnvironment (imports : Array Import) : IO Environment := do
 def importLeanEnvironment : IO Environment := do
   importEnvironment #[{ module := `Lean }]
 
+def parserStateCommandKind : SyntaxNodeKind → Bool
+  | `Lean.Parser.Command.open
+  | `Lean.Parser.Command.namespace
+  | `Lean.Parser.Command.syntax
+  | `Lean.Parser.Command.macro
+  | `Lean.Parser.Command.notation
+  | `Lean.Parser.Command.mixfix
+  | `Lean.Parser.Command.infix
+  | `Lean.Parser.Command.infixl
+  | `Lean.Parser.Command.infixr
+  | `Lean.Parser.Command.prefix
+  | `Lean.Parser.Command.postfix
+  | `Mathlib.Notation3.notation3
+  | `Mathlib.Tactic.scopedNS => true
+  | _ => false
+
+partial def syntaxContainsParserStateCommandKind : Syntax → Bool
+  | Syntax.node _ kind children =>
+      parserStateCommandKind kind || children.any syntaxContainsParserStateCommandKind
+  | _ => false
+
+def commandUpdatesParserState (command : Syntax) : Bool :=
+  syntaxContainsParserStateCommandKind command
+
+def parserStateCommandContext (inputContext : Parser.InputContext)
+    : Elab.Command.Context :=
+  {
+    fileName := inputContext.fileName
+    fileMap := inputContext.fileMap
+    snap? := none
+    cancelTk? := none
+  }
+
+def elaborateParserStateCommand
+    (inputContext : Parser.InputContext)
+    (commandState : Elab.Command.State)
+    (command : Syntax)
+    : IO Elab.Command.State := do
+  let context := parserStateCommandContext inputContext
+  let (_, (_, commandState)) ←
+    IO.FS.withIsolatedStreams (isolateStderr := true)
+      do
+        EIO.toIO (fun _ => IO.userError "failed to update parser command state")
+          ((Elab.Command.elabCommand command).run context |>.run commandState)
+  pure commandState
+
 partial def parseModuleCommandsQuiet
-    (env : Environment) (inputContext : Parser.InputContext)
+    (inputContext : Parser.InputContext)
     (state : Parser.ModuleParserState) (messages : MessageLog)
+    (commandState : Elab.Command.State)
+    (updateParserState : Bool)
     (commands : Array Syntax)
     : IO (Array Syntax) := do
+  let env := commandState.env
   let (command, state, messages) :=
     Parser.parseCommand inputContext { env, options := {} } state messages
   if Parser.isTerminalCommand command then
@@ -575,16 +624,36 @@ partial def parseModuleCommandsQuiet
     else
       pure commands
   else
-    parseModuleCommandsQuiet env inputContext state messages (commands.push command)
+    do
+      let commandState ←
+        if updateParserState && commandUpdatesParserState command then
+          elaborateParserStateCommand inputContext commandState command
+        else
+          pure commandState
+      parseModuleCommandsQuiet inputContext state messages commandState
+        updateParserState (commands.push command)
 
-def parseModuleSyntaxWithEnv (env : Environment) (source fileName : String)
+def parseModuleSyntaxWithEnvCore
+    (env : Environment) (source fileName : String) (updateParserState : Bool)
     : IO Syntax := do
   let inputContext := Parser.mkInputContext source fileName
   let (header, state, messages) ← Parser.parseHeader inputContext
-  let commands ← parseModuleCommandsQuiet env inputContext state messages #[]
+  let commandState := Elab.Command.mkState env
+  let commands ←
+    parseModuleCommandsQuiet inputContext state messages commandState
+      updateParserState #[]
   pure
   <| (mkNode `Lean.Parser.Module.module
         #[header, mkListNode commands]).raw.updateLeading
+
+def parseModuleSyntaxWithEnv (env : Environment) (source fileName : String)
+    : IO Syntax :=
+  parseModuleSyntaxWithEnvCore env source fileName (updateParserState := true)
+
+def parseModuleSyntaxWithoutParserStateUpdates
+    (env : Environment) (source fileName : String)
+    : IO Syntax :=
+  parseModuleSyntaxWithEnvCore env source fileName (updateParserState := false)
 
 def parseModuleSyntax (source fileName : String) : IO Syntax := do
   parseModuleSyntaxWithEnv (← importLeanEnvironment) source fileName

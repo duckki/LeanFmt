@@ -120,9 +120,16 @@ def RuleContext.parentIsStructureWhereWrapper (context : RuleContext) : Bool :=
       parent.rawKind? == some `Lean.Parser.Command.structure && parent.childIndex == 4
   | _ => false
 
+def RuleContext.parentIsVariableBinderList (context : RuleContext) : Bool :=
+  match context.ancestors with
+  | parent :: _ =>
+      parent.rawKind? == some `Lean.Parser.Command.variable && parent.childIndex == 1
+  | _ => false
+
 def defaultInheritBase (context : RuleContext) (segment : Segment) : Bool :=
   context.parentIsSingletonArrayItemWrapper
   || segment.rawKind? == some `Lean.Parser.Term.letDecl
+  || (segment.rawKind? == some `null && context.parentIsVariableBinderList)
   || (segment.rawKind? == some `null && context.parentIsStructureWhereWrapper)
 
 def parentIsSignatureParameters (context : RuleContext) : Bool :=
@@ -459,6 +466,9 @@ def quantifierIdentifierSequence (context : RuleContext) : Bool :=
 def binderIdentifierSequence (context : RuleContext) : Bool :=
   groupedBinderIdentifierSequence context || quantifierIdentifierSequence context
 
+def variableBinderSequence (context : RuleContext) : Bool :=
+  context.parentIsVariableBinderList
+
 def exportIdentifierList (context : RuleContext) : Bool :=
   match context.ancestors with
   | parent :: _ =>
@@ -526,14 +536,23 @@ def definitionBreaks (_context : RuleContext) (segment : Segment) : List BreakPo
     | none => []
   valueBreak ++ whereBreak
 
-def annotatedDeclarationBreaks (_context : RuleContext) (segment : Segment)
-    : List BreakPoint :=
-  if childStartsWithLexeme segment 0 "@[" then
-    match boundaryBreak? segment 1 0 with
-    | some breakPoint => [breakPoint]
-    | none => []
+def leadingAnnotationBreak? (segment : Segment) : Option BreakPoint := do
+  let firstIndex ← (nonemptyChildIndexes segment).head?
+  let firstChild ← segment.child? firstIndex
+  if !(childStartsWithLexeme segment firstIndex "@["
+        || treeContainsLexeme "@[" firstChild) then
+    none
   else
-    []
+    let commandIndex ←
+      (nonemptyChildIndexes segment).find? fun index => firstIndex < index
+    boundaryBreak? segment commandIndex 0
+
+def leadingAnnotationBreaks (_context : RuleContext) (segment : Segment)
+    : List BreakPoint :=
+  [leadingAnnotationBreak? segment].filterMap id
+
+def annotatedDeclarationBreaks : RuleContext → Segment → List BreakPoint :=
+  leadingAnnotationBreaks
 
 def derivingBreaks (_context : RuleContext) (segment : Segment) : List BreakPoint :=
   match segment.indexes.find?
@@ -545,6 +564,7 @@ def derivingBreaks (_context : RuleContext) (segment : Segment) : List BreakPoin
   | none => []
 
 def structureBreaks (context : RuleContext) (segment : Segment) : List BreakPoint :=
+  let annotationBreaks := leadingAnnotationBreaks context segment
   let fieldsBreak :=
     match firstChildRawKind? segment `Lean.Parser.Command.structFields with
     | some index =>
@@ -552,7 +572,7 @@ def structureBreaks (context : RuleContext) (segment : Segment) : List BreakPoin
         | some breakPoint => [breakPoint]
         | none => []
     | none => []
-  fieldsBreak ++ derivingBreaks context segment
+  annotationBreaks ++ fieldsBreak ++ derivingBreaks context segment
 
 def structFieldsBreaks (_context : RuleContext) (segment : Segment) : List BreakPoint :=
   match leadingBreak? segment segment.start 1 with
@@ -687,8 +707,55 @@ def tupleItemBreaks (context : RuleContext) (segment : Segment) : List BreakPoin
   else
     []
 
+def anonymousCtorItemIndexes (segment : Segment) : List Nat :=
+  tupleItemIndexes segment
+
+def anonymousCtorItemCount (segment : Segment) : Nat :=
+  match firstChildRawKind? segment `null with
+  | some index =>
+      match segment.child? index with
+      | some child => anonymousCtorItemIndexes (Segment.ofTree child) |>.length
+      | none => 0
+  | none => 0
+
+def anonymousCtorBreaks (_context : RuleContext) (segment : Segment)
+    : List BreakPoint :=
+  if 1 < anonymousCtorItemCount segment then
+    let itemBreak :=
+      match firstChildRawKind? segment `null with
+      | some index =>
+          match boundaryBreak? segment index 1 with
+          | some breakPoint => [breakPoint]
+          | none => []
+      | none => []
+    let closeBreak :=
+      match segment.indexes.find?
+              fun index => childStartsWithLexeme segment index "⟩" with
+      | some index =>
+          match boundaryBreak? segment index 0 with
+          | some breakPoint => [breakPoint]
+          | none => []
+      | none => []
+    itemBreak ++ closeBreak
+  else
+    []
+
+def anonymousCtorItemBreaks (context : RuleContext) (segment : Segment)
+    : List BreakPoint :=
+  if parentIsRawKind context `Lean.Parser.Term.anonymousCtor then
+    match anonymousCtorItemIndexes segment with
+    | [] => []
+    | [_] => []
+    | _ :: rest =>
+        rest.filterMap fun index => boundaryBreak? segment index 0
+  else
+    []
+
 def arrayItemIndexes (segment : Segment) : List Nat :=
   tupleItemIndexes segment
+
+def isArrayLikeKind (kind : Lean.SyntaxNodeKind) : Bool :=
+  kind == `«term[_]» || kind == `«term#[_,]» || kind == `Matrix.vecNotation
 
 def arrayItemCount (segment : Segment) : Nat :=
   match firstChildRawKind? segment `null with
@@ -720,14 +787,17 @@ def arrayBreaks (_context : RuleContext) (segment : Segment) : List BreakPoint :
     []
 
 def arrayItemBreaks (context : RuleContext) (segment : Segment) : List BreakPoint :=
-  if parentIsRawKind context `«term[_]» || parentIsRawKind context `«term#[_,]» then
-    match arrayItemIndexes segment with
-    | [] => []
-    | [_] => []
-    | _ :: rest =>
-        rest.filterMap fun index => boundaryBreak? segment index 0
-  else
-    []
+  match context.parentRawKind? with
+  | some kind =>
+      if isArrayLikeKind kind then
+        match arrayItemIndexes segment with
+        | [] => []
+        | [_] => []
+        | _ :: rest =>
+            rest.filterMap fun index => boundaryBreak? segment index 0
+      else
+        []
+  | none => []
 
 def structInstFieldsMandatory (context : RuleContext) (segment : Segment) : Bool :=
   parentIsRawKind context `Lean.Parser.Term.structInstFields
@@ -795,6 +865,16 @@ def quantifierBinderBreaks (context : RuleContext) (segment : Segment)
 def binderIdentifierBreaks (context : RuleContext) (segment : Segment)
     : List BreakPoint :=
   if binderIdentifierSequence context then
+    match nonemptyChildIndexes segment with
+    | [] => []
+    | [_] => []
+    | _ :: rest => rest.filterMap fun index => boundaryBreak? segment index 1
+  else
+    []
+
+def variableBinderBreaks (context : RuleContext) (segment : Segment)
+    : List BreakPoint :=
+  if variableBinderSequence context then
     match nonemptyChildIndexes segment with
     | [] => []
     | [_] => []
@@ -1092,30 +1172,45 @@ def letPatternDeclBreaks (_context : RuleContext) (segment : Segment)
     : List BreakPoint :=
   [breakAfterLexeme? segment ":=" 1].filterMap id
 
-def doIdDeclBreaks (_context : RuleContext) (segment : Segment) : List BreakPoint :=
-  match segment.indexes.find? fun index => childStartsWithLexeme segment index "←" with
-  | some assignmentIndex =>
-      match (nonemptyChildIndexes segment).find?
-              fun index => assignmentIndex < index with
-      | some rhsIndex =>
-          match boundaryBreak? segment rhsIndex 1 with
-          | some breakPoint => [breakPoint]
-          | none => []
-      | none => []
-  | none => []
-
-def doPatternDeclBreaks (_context : RuleContext) (segment : Segment)
+def doLetArrowDeclBreaks (_context : RuleContext) (segment : Segment)
     : List BreakPoint :=
-  match segment.indexes.find? fun index => childStartsWithLexeme segment index "←" with
-  | some assignmentIndex =>
-      match (nonemptyChildIndexes segment).find?
-              fun index => assignmentIndex < index with
-      | some rhsIndex =>
-          match boundaryBreak? segment rhsIndex 1 with
-          | some breakPoint => [breakPoint]
-          | none => []
-      | none => []
-  | none => []
+  let valueBreak :=
+    match segment.indexes.find?
+            fun index => childStartsWithLexeme segment index "←" with
+    | some assignmentIndex =>
+        match (nonemptyChildIndexes segment).find?
+                fun index => assignmentIndex < index with
+        | some rhsIndex => boundaryBreak? segment rhsIndex 1
+        | none => none
+    | none => none
+  [valueBreak, breakBeforeLexeme? segment "|" 0].filterMap id
+
+def doIdDeclBreaks (context : RuleContext) (segment : Segment) : List BreakPoint :=
+  doLetArrowDeclBreaks context segment
+
+def doPatternDeclBreaks (context : RuleContext) (segment : Segment) : List BreakPoint :=
+  doLetArrowDeclBreaks context segment
+
+def parentIsDoLetArrowDecl (context : RuleContext) : Bool :=
+  match context.ancestors with
+  | parent :: _ =>
+      parent.rawKind? == some `Lean.Parser.Term.doIdDecl
+      || parent.rawKind? == some `Lean.Parser.Term.doPatDecl
+  | _ => false
+
+-- Lean's `let pattern ← action | fallback` parser stores the fallback and the
+-- following `do` continuation in one wrapper.  Once the fallback tail contains
+-- continuation commands, that boundary is semantic layout and must not flatten.
+def doLetArrowFallbackTailBreaks (context : RuleContext) (segment : Segment)
+    : List BreakPoint :=
+  if parentIsDoLetArrowDecl context then
+    match (nonemptyChildIndexes segment).dropWhile
+            (fun index => !childStartsWithLexeme segment index "|") with
+    | _pipeIndex :: _fallbackIndex :: continuationIndex :: _ =>
+        [boundaryBreak? segment continuationIndex 0].filterMap id
+    | _ => []
+  else
+    []
 
 def doLetElseBreaks (_context : RuleContext) (segment : Segment) : List BreakPoint :=
   let continuationBreak := do
@@ -1268,6 +1363,7 @@ def annotatedDeclarationRule : LineBreakRule :=
     name := "annotatedDeclaration"
     mandatory :=
       fun context segment => !(annotatedDeclarationBreaks context segment).isEmpty
+    inheritBase := fun _ _ => true
     breakPoints := annotatedDeclarationBreaks
   }
 
@@ -1337,6 +1433,18 @@ def tupleRule : LineBreakRule :=
     roundUpBaseIndentation := true
     breakPoints := tupleBreaks
   }
+
+def anonymousCtorRule : LineBreakRule :=
+  {
+    name := "anonymousCtor"
+    inheritBase := fun _ segment => 1 < anonymousCtorItemCount segment
+    roundUpBaseIndentation := true
+    breakPoints := anonymousCtorBreaks
+  }
+
+def isVerticalBarDelimitedTermKind (kind : Lean.SyntaxNodeKind) : Bool :=
+  let name := toString kind
+  name.startsWith "«term|" && name.endsWith "|»"
 
 def structInstFieldsRule : LineBreakRule :=
   {
@@ -1594,12 +1702,15 @@ def nullBreaks (context : RuleContext) (segment : Segment) : List BreakPoint :=
   structureFieldBreaks context segment
   ++ structInstFieldBreaks context segment
   ++ tupleItemBreaks context segment
+  ++ anonymousCtorItemBreaks context segment
   ++ arrayItemBreaks context segment
   ++ inductiveAlternativeBreaks context segment
   ++ quantifierBinderBreaks context segment
   ++ binderIdentifierBreaks context segment
+  ++ variableBinderBreaks context segment
   ++ exportItemBreaks context segment
   ++ doSeqItemBreaks context segment
+  ++ doLetArrowFallbackTailBreaks context segment
   ++ doElseBreaks context segment
   ++ doElseIfBreaks context segment
   ++ doElseIfChainBreaks context segment
@@ -1611,6 +1722,7 @@ def nullBreaksMandatory (context : RuleContext) (segment : Segment) : Bool :=
   || structInstFieldsMandatory context segment
   || !(inductiveAlternativeBreaks context segment).isEmpty
   || !(doSeqItemBreaks context segment).isEmpty
+  || !(doLetArrowFallbackTailBreaks context segment).isEmpty
   || !(doElseBreaks context segment).isEmpty
   || !(doElseIfBreaks context segment).isEmpty
   || !(doElseIfChainBreaks context segment).isEmpty
@@ -1631,6 +1743,7 @@ def nullRule : LineBreakRule :=
       fun context segment =>
         !(quantifierBinderBreaks context segment).isEmpty
         || !(binderIdentifierBreaks context segment).isEmpty
+        || !(variableBinderBreaks context segment).isEmpty
         || !(exportItemBreaks context segment).isEmpty
     inheritBase := nullInheritBase
     breakPoints := nullBreaks
@@ -1646,6 +1759,9 @@ def arrayRule : LineBreakRule :=
 
 def declarationRule : LineBreakRule :=
   { name := "declaration" }
+
+def variableCommandRule : LineBreakRule :=
+  { name := "variableCommand" }
 
 def declarationValueRule : LineBreakRule :=
   {
@@ -1681,6 +1797,12 @@ def setOptionRule : LineBreakRule :=
 
 def transparentRule : LineBreakRule :=
   { name := "transparent" }
+
+def dotIdentRule : LineBreakRule :=
+  {
+    name := "dotIdent"
+    atomic := true
+  }
 
 def interpolatedStringRule : LineBreakRule :=
   {
@@ -1718,6 +1840,7 @@ def infixChainRule : LineBreakRule :=
 def commandInChainRule : LineBreakRule :=
   {
     name := "commandInChain"
+    useExistingBreaks := fun _ _ => true
     breakPoints := commandInBreaks
   }
 
@@ -1921,7 +2044,8 @@ def ruleFor : SyntaxTree.Tree → Option LineBreakRule
   | .node (.raw `Lean.Parser.Command.open) _ => some defaultRule
   | .node (.raw `Lean.Parser.Command.openSimple) _ => some defaultRule
   | .node (.raw `Lean.Parser.Command.openScoped) _ => some defaultRule
-  | .node (.raw `Lean.Parser.Command.variable) _ => some defaultRule
+  | .node (.raw `Lean.Parser.Command.openOnly) _ => some defaultRule
+  | .node (.raw `Lean.Parser.Command.variable) _ => some variableCommandRule
   | .node (.raw `Lean.Parser.Command.set_option) _ => some setOptionRule
   | .node (.raw `Lean.Parser.Command.declModifiers) _ => some defaultRule
   | .node (.raw `Lean.Parser.Command.declId) _ => some transparentRule
@@ -1943,30 +2067,45 @@ def ruleFor : SyntaxTree.Tree → Option LineBreakRule
   | .node (.raw `Lean.Parser.Command.example) _ => some defaultRule
   | .node (.raw `Lean.Parser.Command.universe) _ => some defaultRule
   | .node (.raw `Lean.Parser.Command.syntax) _ => some defaultRule
+  | .node (.raw `Lean.Parser.Command.macro) _ => some defaultRule
   | .node (.raw `Lean.Parser.Command.macro_rules) _ => some defaultRule
+  | .node (.raw `Lean.Parser.Command.namedName) _ => some defaultRule
+  | .node (.raw `Lean.Parser.Command.macroArg) _ => some defaultRule
+  | .node (.raw `Lean.Parser.Command.macroTail) _ => some defaultRule
+  | .node (.raw `Lean.Parser.Command.macroRhs) _ => some defaultRule
   | .node (.raw `Lean.Parser.Command.attribute) _ => some defaultRule
   | .node (.raw `Lean.Parser.Command.deprecated_module) _ => some defaultRule
   | .node (.raw `Lean.Parser.Command.assertNotImported) _ => some defaultRule
   | .node (.raw `Lean.Parser.Command.assertNotExists) _ => some defaultRule
   | .node (.raw `Lean.Parser.Command.namedPrio) _ => some defaultRule
-  | .node (.raw `Lean.Parser.Command.namedName) _ => some defaultRule
   | .node (.raw `Lean.Parser.Command.abbrev) _ => some defaultRule
   | .node (.raw `Lean.Parser.Command.classAbbrev) _ => some defaultRule
   | .node (.raw `Lean.Parser.Command.nonrec) _ => some defaultRule
   | .node (.raw `Lean.Parser.Command.notation) _ => some defaultRule
+  | .node (.raw `Lean.Parser.Command.mixfix) _ => some defaultRule
+  | .node (.raw `Lean.Parser.Command.infix) _ => some defaultRule
+  | .node (.raw `Lean.Parser.Command.infixl) _ => some defaultRule
+  | .node (.raw `Lean.Parser.Command.infixr) _ => some defaultRule
+  | .node (.raw `Lean.Parser.Command.prefix) _ => some defaultRule
+  | .node (.raw `Lean.Parser.Command.postfix) _ => some defaultRule
   | .node (.raw `Lean.Parser.Command.identPrec) _ => some defaultRule
   | .node (.raw `Lean.Parser.Command.grindPattern) _ => some defaultRule
   | .node (.raw `Lean.Parser.Command.omit) _ => some defaultRule
+  | .node (.raw `Lean.Parser.Command.include) _ => some defaultRule
   | .node (.raw `Lean.Parser.Command.structParent) _ => some defaultRule
   | .node (.raw `Lean.Parser.Command.structCtor) _ => some defaultRule
   | .node (.raw `Lean.Parser.Command.structInstBinder) _ => some defaultRule
+  | .node (.raw `Lean.Parser.Command.structExplicitBinder) _ =>
+      some transparentRule
   | .node (.raw `Lean.Parser.Command.extends) _ => some defaultRule
   | .node (.raw `Lean.Parser.Command.initialize_simps_projections) _ => some defaultRule
   | .node (.raw `Lean.Parser.Command.simpsProj) _ => some defaultRule
   | .node (.raw `Lean.Parser.Command.simpsRule) _ => some defaultRule
+  | .node (.raw `Lean.Parser.Command.simpsRule.add) _ => some defaultRule
   | .node (.raw `Lean.Parser.Command.simpsRule.prefix) _ => some defaultRule
   | .node (.raw `Lean.Parser.Command.simpsRule.erase) _ => some defaultRule
-  | .node (.raw `lemma) _ => some defaultRule
+  | .node (.raw `Lean.Parser.Command.eraseAttr) _ => some defaultRule
+  | .node (.raw `lemma) _ => some annotatedDeclarationRule
   -- Transparent expression wrappers and atomic syntax.
   | .node (.raw `Lean.Parser.Term.paren) _ => some parenRule
   | .node (.raw `Lean.Parser.Term.fun) _ => some transparentRule
@@ -1980,6 +2119,8 @@ def ruleFor : SyntaxTree.Tree → Option LineBreakRule
   | .node (.raw `Lean.Parser.Command.structSimpleBinder) _ => some transparentRule
   | .node (.raw `Lean.Parser.Term.structInstField) _ => some structInstFieldRule
   | .node (.raw `Lean.Parser.Term.structInstFieldDef) _ => some transparentRule
+  | .node (.raw `Lean.Parser.Term.structInstFieldEqns) _ =>
+      some transparentRule
   | .node (.raw `Lean.Parser.Term.structInstLVal) _ => some transparentRule
   | .node (.raw `Lean.Parser.Term.namedPattern) _ => some transparentRule
   | .node (.raw `Lean.Parser.Term.pipeProj) _ => some pipeProjRule
@@ -2011,7 +2152,7 @@ def ruleFor : SyntaxTree.Tree → Option LineBreakRule
   | .node (.raw `Lean.Parser.Term.binderDefault) _ => some defaultRule
   | .node (.raw `Lean.Parser.Term.namedArgument) _ => some defaultRule
   | .node (.raw `Lean.Parser.Term.strictImplicitBinder) _ => some defaultRule
-  | .node (.raw `Lean.Parser.Term.anonymousCtor) _ => some defaultRule
+  | .node (.raw `Lean.Parser.Term.anonymousCtor) _ => some anonymousCtorRule
   | .node (.raw `Lean.Parser.Term.local) _ => some defaultRule
   | .node (.raw `Lean.Parser.Term.instBinder) _ => some defaultRule
   | .node (.raw `Lean.Parser.Term.attrKind) _ => some defaultRule
@@ -2020,18 +2161,24 @@ def ruleFor : SyntaxTree.Tree → Option LineBreakRule
   | .node (.raw `Lean.Parser.Term.scoped) _ => some defaultRule
   | .node (.raw `Lean.Parser.Term.ellipsis) _ => some defaultRule
   | .node (.raw `Lean.Parser.Term.nomatch) _ => some defaultRule
+  | .node (.raw `Lean.Parser.Term.nofun) _ => some defaultRule
   | .node (.raw `Lean.Parser.Term.quotedName) _ => some defaultRule
   | .node (.raw `Lean.Parser.Term.cdot) _ => some defaultRule
   | .node (.raw `Lean.Parser.Term.show) _ => some transparentRule
   | .node (.raw `Lean.Parser.Term.fromTerm) _ => some fromTermRule
   | .node (.raw `Lean.Parser.Tactic.tacticSeq) _ => some defaultRule
   | .node (.raw `Lean.Parser.Tactic.tacticSeq1Indented) _ => some defaultRule
+  | .node (.raw `Lean.Parser.Tactic.exact) _ => some defaultRule
+  | .node (.raw `Lean.Parser.Tactic.grind) _ => some defaultRule
+  | .node (.raw `Lean.Parser.Tactic.optConfig) _ => some defaultRule
+  | .node (.raw `Lean.Parser.Term.doNested) _ => some defaultRule
   -- Known leaf-like parser nodes handled by generic spacing and layout.
   | .node (.raw `Lean.binderIdent) _ => some defaultRule
   | .node (.raw `Lean.explicitBinders) _ => some defaultRule
   | .node (.raw `Lean.unbracketedExplicitBinders) _ => some defaultRule
   | .node (.raw `Lean.bracketedExplicitBinders) _ => some defaultRule
   | .node (.raw `num) _ => some defaultRule
+  | .node (.raw `scientific) _ => some defaultRule
   | .node (.raw `str) _ => some defaultRule
   | .node (.raw `name) _ => some defaultRule
   | .node (.raw `char) _ => some defaultRule
@@ -2041,6 +2188,7 @@ def ruleFor : SyntaxTree.Tree → Option LineBreakRule
   | .node (.raw `termℤ) _ => some defaultRule
   | .node (.raw `termℚ) _ => some defaultRule
   | .node (.raw `termℝ) _ => some defaultRule
+  | .node (.raw `Nat.term_!) _ => some defaultRule
   | .node (.raw `Lean.Elab.Term.«termType*») _ => some defaultRule
   | .node (.raw `Lean.Elab.Term.«termSort*») _ => some defaultRule
   | .node (.raw `coeNotation) _ => some defaultRule
@@ -2048,11 +2196,18 @@ def ruleFor : SyntaxTree.Tree → Option LineBreakRule
   | .node (.raw `Lean.calc) _ => some defaultRule
   | .node (.raw `Lean.calcSteps) _ => some defaultRule
   | .node (.raw `Lean.calcFirstStep) _ => some defaultRule
+  | .node (.raw `Lean.modCast) _ => some defaultRule
   | .node (.raw `Lean.«term∀__,_») _ => some defaultRule
   | .node (.raw `Lean.«term∃__,_») _ => some defaultRule
   | .node (.raw `Lean.«binderPred∈_») _ => some defaultRule
+  | .node (.raw `Lean.«binderPred<_») _ => some defaultRule
+  | .node (.raw `Lean.«binderPred>_») _ => some defaultRule
   | .node (.raw `Lean.«binderPred≤_») _ => some defaultRule
+  | .node (.raw `Lean.«binderPred≥_») _ => some defaultRule
+  | .node (.raw `Lean.«binderPred≠_») _ => some defaultRule
   | .node (.raw `Lean.«binderPred∉_») _ => some defaultRule
+  | .node (.raw `Mathlib.Meta.SetNotationForOrder.«binderPred⊆_») _ =>
+      some defaultRule
   | .node (.raw `termDepIfThenElse) _ => some defaultRule
   | .node (.raw `BigOperators.bigsum) _ => some defaultRule
   | .node (.raw `BigOperators.bigprod) _ => some defaultRule
@@ -2067,6 +2222,7 @@ def ruleFor : SyntaxTree.Tree → Option LineBreakRule
   | .node (.raw `Lean.Parser.Syntax.cat) _ => some transparentRule
   | .node (.raw `«stx_,*») _ => some transparentRule
   | .node (.raw `Lean.Parser.Term.quot) _ => some defaultRule
+  | .node (.raw `Lean.Parser.Tactic.quot) _ => some defaultRule
   | .node (.raw `term!_) _ => some unaryPrefixRule
   | .node (.raw `«term¬_») _ => some unaryPrefixRule
   | .node (.raw `token.«← ») _ => some defaultRule
@@ -2098,6 +2254,8 @@ def ruleFor : SyntaxTree.Tree → Option LineBreakRule
   | .node (.raw `Mathlib.Tactic.Translate.translationHint) _ => some defaultRule
   | .node (.raw `«term{}») _ => some defaultRule
   | .node (.raw `Lean.Parser.Level.hole) _ => some defaultRule
+  | .node (.raw `Lean.Parser.Level.paren) _ => some defaultRule
+  | .node (.raw `Lean.Parser.Level.max) _ => some defaultRule
   | .node (.raw `«term∅») _ => some defaultRule
   | .node (.raw `«term⊤») _ => some defaultRule
   | .node (.raw `«term⊥») _ => some defaultRule
@@ -2116,6 +2274,15 @@ def ruleFor : SyntaxTree.Tree → Option LineBreakRule
   | .node (.raw `PiNotation.piNotation) _ => some defaultRule
   | .node (.raw `coeFunNotation) _ => some defaultRule
   | .node (.raw `Mathlib.Meta.setBuilder) _ => some defaultRule
+  | .node (.raw `Mathlib.Meta.macroPattSetBuilder) _ => some defaultRule
+  | .node (.raw `Mathlib.Notation3.notation3) _ => some defaultRule
+  | .node (.raw `Mathlib.Notation3.notation3Item) _ => some defaultRule
+  | .node (.raw `Mathlib.Notation3.identOptScoped) _ => some defaultRule
+  | .node (.raw `LinearAlgebra.Projectivization.termℙ) _ => some defaultRule
+  | .node (.raw `Qq.matcher) _ => some defaultRule
+  | .node (.raw `Qq.doElemAssertInstancesCommute) _ => some defaultRule
+  | .node (.raw `term.pseudo.antiquot) _ => some defaultRule
+  | .node (.raw `Lean.termThrowError__) _ => some defaultRule
   | .node (.raw `Mathlib.Elab.FastInstance.fastInstance) _ => some defaultRule
   | .node (.raw `Mathlib.Tactic.scopedNS) _ => some defaultRule
   | .node (.raw `Mathlib.Tactic.Push.pushAttr) _ => some defaultRule
@@ -2130,6 +2297,9 @@ def ruleFor : SyntaxTree.Tree → Option LineBreakRule
   | .node (.raw `Batteries.Util.LibraryNote.commandLibrary_note___) _ =>
       some defaultRule
   | .node (.raw `Aesop.Frontend.Parser.aesop) _ => some defaultRule
+  | .node (.raw `Aesop.Frontend.Parser.aesopTactic) _ => some defaultRule
+  | .node (.raw `Aesop.Frontend.Parser.declareRuleSets) _ =>
+      some defaultRule
   | .node (.raw `Aesop.Frontend.Parser.attr_rules_) _ => some defaultRule
   | .node (.raw `Aesop.Frontend.Parser.rule_expr_) _ => some defaultRule
   | .node (.raw `Aesop.Frontend.Parser.rule_expr___) _ => some defaultRule
@@ -2139,17 +2309,36 @@ def ruleFor : SyntaxTree.Tree → Option LineBreakRule
   | .node (.raw `Aesop.Frontend.Parser.feature__2) _ => some defaultRule
   | .node (.raw `Aesop.Frontend.Parser.feature__4) _ => some defaultRule
   | .node (.raw `Aesop.Frontend.Parser.phaseSafe) _ => some defaultRule
+  | .node (.raw `Aesop.Frontend.Parser.phaseNorm) _ => some defaultRule
+  | .node (.raw `Aesop.Frontend.Parser.phaseUnsafe) _ => some defaultRule
   | .node (.raw `Aesop.Frontend.Parser.builder_nameApply) _ => some defaultRule
   | .node (.raw `Aesop.Frontend.Parser.«priority_%») _ => some defaultRule
   | .node (.raw `Aesop.Frontend.Parser.«priority-_») _ => some defaultRule
   | .node (.raw `prioLow) _ => some defaultRule
   | .node (.raw `prioHigh) _ => some defaultRule
+  | .node (.raw `Lean.Parser.precedence) _ => some defaultRule
+  | .node (.raw `precMax) _ => some defaultRule
   | .node (.raw `cfcTac) _ => some defaultRule
   | .node (.raw `adaptationNoteCmd) _ => some defaultRule
   | .node (.raw `wikidataId) _ => some defaultRule
+  | .node (.raw `goldenRatio.termφ) _ => some defaultRule
+  | .node (.raw `goldenRatio.termψ) _ => some defaultRule
+  | .node (.raw `Topology.term𝓝) _ => some defaultRule
+  | .node (.raw `FinsetFamily.term𝓒) _ => some defaultRule
+  | .node (.raw `FinsetFamily.term𝓓) _ => some defaultRule
+  | .node (.raw `Cardinal.termℵ₀) _ => some defaultRule
+  | .node (.raw `Matroid.aesop_mat) _ => some defaultRule
+  | .node (.raw `Matroid.ExchangeProperty.aesop_mat) _ => some defaultRule
+  | .node (.raw `aesop_graph) _ => some defaultRule
+  | .node (.raw `CategoryTheory.cat_disch) _ => some defaultRule
+  | .node (.raw `Mathlib.Tactic.TermCongr.termCongr) _ => some defaultRule
+  | .node (.raw `Mathlib.Util.«commandCompile_inductive%_») _ =>
+      some defaultRule
+  | .node (.raw `proof_wanted) _ => some defaultRule
   | .node (.raw `«term{_}») _ => some structInstRule
   | .node (.raw `«term[_]») _ => some arrayRule
   | .node (.raw `«term#[_,]») _ => some arrayRule
+  | .node (.raw `Matrix.vecNotation) _ => some arrayRule
   | .node (.raw `«term__[_]_?») _ => some transparentRule
   -- Syntax with specialized formatting rules.
   | .node (.raw `Lean.Parser.Command.declaration) _ => some declarationRule
@@ -2205,7 +2394,7 @@ def ruleFor : SyntaxTree.Tree → Option LineBreakRule
   | .node (.raw `Lean.Parser.Term.doUnless) _ => some doUnlessRule
   | .node (.raw `Lean.Parser.Term.doForDecl) _ => some transparentRule
   | .node (.raw `Lean.Parser.Term.liftMethod) _ => some transparentRule
-  | .node (.raw `Lean.Parser.Term.dotIdent) _ => some defaultRule
+  | .node (.raw `Lean.Parser.Term.dotIdent) _ => some dotIdentRule
   | .node (.raw `termS!_) _ => some interpolatedStringRule
   | .node (.raw `interpolatedStrKind) _ => some interpolatedStringRule
   | .node (.raw `interpolatedStrLitKind) _ => some interpolatedStringRule
@@ -2220,7 +2409,8 @@ def ruleFor : SyntaxTree.Tree → Option LineBreakRule
   | .node (.raw `group) _ => some groupRule
   | .node (.raw `Lean.Parser.Term.matchAltsWhereDecls) _ => some matchAltsWhereDeclsRule
   | .node (.raw `Lean.Parser.Term.matchAlts) _ => some matchAltsRule
-  | .node (.raw _) _ => none
+  | .node (.raw kind) _ =>
+      if isVerticalBarDelimitedTermKind kind then some transparentRule else none
 
 def formattingRuleFor (tree : SyntaxTree.Tree) : LineBreakRule :=
   match ruleFor tree with

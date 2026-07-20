@@ -422,6 +422,7 @@ Rules and regroupings should preserve these cross-syntax relationships:
   break before the argument.
 - Fitting constructors are flat. When the enclosing declaration and constructor both
   need breaks, the declaration break after `:=` precedes constructor-internal breaks.
+  Anonymous constructors then use balanced item breaks like tuples and arrays.
 - Inductive and equation arms inherit the arm base while their binders/patterns use flow
   opportunities. This keeps `|` at the arm base and continuation binders below it.
 - A semicolon suppresses the otherwise structural do-statement boundary when the joined
@@ -566,7 +567,9 @@ layout, and comment text while declarations around them can still be formatted.
 
 The escape hatch is intentionally narrow. If a non-proof syntax form is unsafe, prefer a
 specific transparent/default rule or a grouping change before adding another original
-source region.
+source region. Mathlib tactic extension nodes whose names start with `Mathlib.Tactic.`
+are currently original-source islands because their syntax is extension-owned and often
+already encodes tactic-specific layout requirements.
 
 ## Diagnostics and formatter exceptions
 
@@ -584,9 +587,96 @@ remains an exception regardless of the classification. Preservation
 normalization gives every code token and comment boundary one canonical space, so ordinary
 formatting whitespace is ignored without conflating tokenizations such as `ab c` and
 `a bc`. `ruleFor` returning `none` still renders with `defaultRule`, so unknown nodes remain
-conservatively formatable. Diagnostic analysis and the exception model live in
+conservatively formatable. Generated private parser node names beginning with `_private.`
+are ignored by missing-rule reporting because they are local implementation details rather
+than stable rule targets. Diagnostic analysis and the exception model live in
 `Formatter.Diagnostics`; trace and profiling APIs live under `Formatter.Debug`;
 convergence and shared pipeline phases live under `Formatter.Internal`.
+
+### Preservation-check limitation: layout-sensitive elaboration
+
+The preservation check is necessary but not complete. It compares code-token/comment
+fragments and a source-info-stripped syntax signature. Lean elaboration can still change
+when formatting changes layout-sensitive source positions that are not represented in
+that signature.
+
+Mathlib validation exposed this class of bug:
+
+- repository: `leanprover-community/mathlib4`
+- commit: `81a5d257c8e410db227a6665ed08f64fea08e997`
+- file: `Mathlib/Combinatorics/SimpleGraph/Triangle/Removal.lean`
+- original source lines: `179-186`
+- failing formatted build target:
+  `Mathlib.Combinatorics.SimpleGraph.Triangle.Removal`
+
+The original source used a layout-sensitive `do` fallback:
+
+```lean
+meta def evalTriangleRemovalBound : PositivityExt where eval {u α} _zα pα? e :=
+  match pα? with | none => pure .none | some _ => do
+  match u, α, e with
+  | 0, ~q(ℝ), ~q(triangleRemovalBound $ε) =>
+    let .positive hε ← core q(inferInstance) (some q(inferInstance)) ε | failure
+    assertInstancesCommute
+    pure (.positive q(triangleRemovalBound_pos $hε))
+  | _, _, _ => throwError "failed to match on Int.ceil application"
+```
+
+An unsafe formatter version produced this patch. The result was parseable and the
+token/syntax preservation diagnostics reported no code change, but the post-format build
+failed:
+
+```diff
+@@
+-meta def evalTriangleRemovalBound : PositivityExt where eval {u α} _zα pα? e :=
+-  match pα? with | none => pure .none | some _ => do
+-  match u, α, e with
+-  | 0, ~q(ℝ), ~q(triangleRemovalBound $ε) =>
+-    let .positive hε ← core q(inferInstance) (some q(inferInstance)) ε | failure
+-    assertInstancesCommute
+-    pure (.positive q(triangleRemovalBound_pos $hε))
+-  | _, _, _ => throwError "failed to match on Int.ceil application"
++meta
++def evalTriangleRemovalBound : PositivityExt
++  where
++    eval {u α} _zα pα? e :=
++      match pα? with
++      | none => pure .none
++      | some _ => do
++          match u, α, e with
++          | 0, ~q(ℝ), ~q(triangleRemovalBound $ε) =>
++              let .positive hε ←
++                core q(inferInstance) (some q(inferInstance)) ε | failure
++                                                                  assertInstancesCommute
++                                                                  pure
++                                                                    (.positive
++                                                                      q(
++                                                                        triangleRemovalBound_pos
++                                                                          $hε))
++          | _, _, _ => throwError "failed to match on Int.ceil application"
+```
+
+The build errors were:
+
+```text
+Mathlib/Combinatorics/SimpleGraph/Triangle/Removal.lean:188:14:
+Application type mismatch: The argument PUnit.unit has type PUnit.{1}
+but is expected to have type Strictness _zα e (some val✝)
+
+Mathlib/Combinatorics/SimpleGraph/Triangle/Removal.lean:195:75:
+Unknown identifier `«$hε»`
+
+Mathlib/Combinatorics/SimpleGraph/Triangle/Removal.lean:198:64:
+failed to prove positivity/nonnegativity/nonzeroness
+```
+
+The architecture response is to give `do` let-arrow fallbacks an explicit syntax rule.
+When a `doIdDecl` or `doPatDecl` contains a fallback tail, the declaration may break
+after `←` and before the `|` fallback arm. The wrapper that owns `| fallback` plus the
+following `do` continuation forces a break before that continuation. This keeps
+continuation commands at the outer `do` indentation instead of allowing them to become
+source text after the fallback expression. The post-format build remains the guardrail
+for preservation classes that syntax diagnostics cannot prove.
 
 Overflow analysis uses the formatted module's lossless token spans. It ignores comment
 overflow, which occupies trivia rather than syntax tokens, and unavoidable overflow where

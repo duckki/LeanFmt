@@ -979,7 +979,7 @@ When it does not fit, it breaks before `//`:
 
 The property can then use ordinary proposition layout.
 
-## Arrays, tuples, and structure instances
+## Arrays, tuples, anonymous constructors, and structure instances
 
 Single-line collections remain compact:
 
@@ -989,9 +989,9 @@ Single-line collections remain compact:
 { data := .null, errors := 1 }
 ```
 
-Multi-item arrays and tuples use balanced layout: when the collection does not
-fit, the opening boundary, every item boundary, and the closing delimiter break
-together.
+Multi-item arrays, tuples, and anonymous constructors use balanced layout: when
+the collection does not fit, the opening boundary, every item boundary, and the
+closing delimiter break together.
 
 ```lean
 [
@@ -1058,6 +1058,19 @@ def tupleOperand :=
 
 Existing punctuation is preserved, so the trailing comma above remains because
 it was present in the source; LeanFmt does not add one.
+
+Anonymous constructors use the same balanced shape. Single-field constructors
+remain flat when they fit.
+
+```lean
+def setoidWitness :=
+  ⟨
+    fun a b => related a b,
+    fun a => ⟨refl a⟩,
+    fun h => h.symm,
+    fun h₁ h₂ => h₁.trans h₂
+  ⟩
+```
 
 Structure updates follow the same field layout:
 

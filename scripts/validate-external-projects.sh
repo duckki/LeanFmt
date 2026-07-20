@@ -9,7 +9,10 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)" || exit 1
 readonly REPO_ROOT
 readonly FORMATTER="$REPO_ROOT/.lake/build/bin/fmt"
 readonly WORK_DIR="${LEANFMT_VALIDATION_DIR:-$REPO_ROOT/.scratch/external-validation}"
-readonly FILES_PER_BATCH="${LEANFMT_VALIDATION_BATCH_SIZE:-200}"
+readonly BUILD_FILES_PER_BATCH="${LEANFMT_VALIDATION_BUILD_BATCH_SIZE:-${LEANFMT_VALIDATION_BATCH_SIZE:-200}}"
+readonly FORMATTER_FILES_PER_BATCH="${LEANFMT_VALIDATION_FORMATTER_BATCH_SIZE:-1}"
+readonly FORMATTER_ENV_CACHE_SIZE="${LEANFMT_VALIDATION_FORMATTER_ENV_CACHE_SIZE:-0}"
+readonly FORMATTER_IMPORT_ENV_FIRST="${LEANFMT_VALIDATION_IMPORT_ENV_FIRST:-1}"
 readonly DEFAULT_FILE_SELECTOR="${LEANFMT_VALIDATION_FILE_PATTERN:-*.lean}"
 readonly CSLIB_URL="https://github.com/leanprover/cslib.git"
 readonly MATHLIB_URL="https://github.com/leanprover-community/mathlib4.git"
@@ -63,6 +66,42 @@ run_optional_phase() {
   fi
 }
 
+validate_nonnegative_integer() {
+  local name="$1"
+  local value="$2"
+
+  if [[ "$value" =~ ^[0-9]+$ ]]; then
+    return 0
+  fi
+
+  printf '%s must be a nonnegative integer, got %q.\n' "$name" "$value" >&2
+  return 2
+}
+
+validate_positive_integer() {
+  local name="$1"
+  local value="$2"
+
+  if [[ "$value" =~ ^[1-9][0-9]*$ ]]; then
+    return 0
+  fi
+
+  printf '%s must be a positive integer, got %q.\n' "$name" "$value" >&2
+  return 2
+}
+
+validate_boolean() {
+  local name="$1"
+  local value="$2"
+
+  if [[ "$value" == "0" || "$value" == "1" ]]; then
+    return 0
+  fi
+
+  printf '%s must be 0 or 1, got %q.\n' "$name" "$value" >&2
+  return 2
+}
+
 clone_project() {
   local url="$1"
   local destination="$2"
@@ -85,6 +124,47 @@ get_build_cache() {
 build_project() {
   local project_dir="$1"
   (cd "$project_dir" && lake build)
+}
+
+path_to_module_target() {
+  local project_dir="$1"
+  local path="$2"
+  local relative="${path#"$project_dir/"}"
+  relative="${relative%.lean}"
+  printf '%s\n' "${relative//\//.}"
+}
+
+build_selected_modules() {
+  local project_dir="$1"
+  local file_selector="$2"
+  local -a targets=()
+  local file
+
+  while IFS= read -r -d '' file; do
+    targets+=("$(path_to_module_target "$project_dir" "$file")")
+  done < <(tracked_lean_files "$project_dir" "$file_selector")
+
+  if ((${#targets[@]} == 0)); then
+    printf 'No files matched %q in %s.\n' "$file_selector" "$project_dir"
+    return 0
+  fi
+
+  (
+    cd "$project_dir" || exit 1
+    printf '%s\0' "${targets[@]}" |
+      xargs -0 -n "$BUILD_FILES_PER_BATCH" lake build
+  )
+}
+
+build_project_or_selected_modules() {
+  local project_dir="$1"
+  local file_selector="$2"
+
+  if [[ "$file_selector" == "$DEFAULT_FILE_SELECTOR" ]]; then
+    build_project "$project_dir"
+  else
+    build_selected_modules "$project_dir" "$file_selector"
+  fi
 }
 
 tracked_lean_files() {
@@ -121,10 +201,16 @@ run_formatter() {
     return 0
   fi
 
+  local -a formatter_options=(--env-cache-size "$FORMATTER_ENV_CACHE_SIZE")
+  if [[ "$FORMATTER_IMPORT_ENV_FIRST" == "1" ]]; then
+    formatter_options+=(--import-env-first)
+  fi
+
   (
     cd "$project_dir" || exit 1
     printf '%s\0' "${files[@]}" |
-      xargs -0 -n "$FILES_PER_BATCH" lake env "$FORMATTER" "$@"
+      xargs -0 -n "$FORMATTER_FILES_PER_BATCH" lake env "$FORMATTER" \
+        "${formatter_options[@]}" "$@"
   )
 }
 
@@ -132,6 +218,16 @@ main() {
   local started_at=$SECONDS
   local -a projects=("${DEFAULT_PROJECTS[@]}")
   local default_file_selector="$DEFAULT_FILE_SELECTOR"
+
+  validate_positive_integer LEANFMT_VALIDATION_BUILD_BATCH_SIZE \
+    "$BUILD_FILES_PER_BATCH" || return $?
+  validate_positive_integer LEANFMT_VALIDATION_FORMATTER_BATCH_SIZE \
+    "$FORMATTER_FILES_PER_BATCH" || return $?
+  validate_nonnegative_integer LEANFMT_VALIDATION_FORMATTER_ENV_CACHE_SIZE \
+    "$FORMATTER_ENV_CACHE_SIZE" || return $?
+  validate_boolean LEANFMT_VALIDATION_IMPORT_ENV_FIRST \
+    "$FORMATTER_IMPORT_ENV_FIRST" || return $?
+
   if (($# > 0)); then
     projects=()
     local specification
@@ -187,14 +283,16 @@ main() {
     fi
 
     run_optional_phase "Download $name build cache" get_build_cache "$project_dir"
-    run_phase "Build $name before formatting" build_project "$project_dir"
+    run_phase "Build $name before formatting ($file_selector)" \
+      build_project_or_selected_modules "$project_dir" "$file_selector"
     if run_phase_result "Check $name formatting exceptions/idempotence ($file_selector)" \
         run_formatter "$project_dir" "$file_selector" --check --check-exception \
           --check-idempotent; then
       if run_phase_result "Format $name after clean diagnostics ($file_selector)" \
           run_formatter "$project_dir" "$file_selector" --check-exception \
             --check-idempotent; then
-        run_phase "Build $name after formatting" build_project "$project_dir"
+        run_phase "Build $name after formatting ($file_selector)" \
+          build_project_or_selected_modules "$project_dir" "$file_selector"
       else
         printf 'Skipping post-format build for %s because formatting failed.\n' \
           "$name" >&2

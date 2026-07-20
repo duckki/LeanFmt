@@ -357,9 +357,25 @@ Clones are recreated under `.scratch/external-validation`. Set
 `LEANFMT_VALIDATION_DIR` to use another directory,
 `LEANFMT_VALIDATION_SKIP_CACHE=1` to build without downloading caches,
 `LEANFMT_VALIDATION_FILE_PATTERN` to change the default file selector, or
-`LEANFMT_VALIDATION_BATCH_SIZE` to change the number of files passed to each formatter
-invocation. The script continues after individual phase failures so it can report all
-issues, then exits with a nonzero status if any phase failed. Each phase and the final
-summary include elapsed wall-clock time. Build-cache retrieval is an optional
-optimization: repositories without a `cache` executable are reported as skipped rather
-than failed.
+`LEANFMT_VALIDATION_BUILD_BATCH_SIZE` to change the selected-module build batch
+size. `LEANFMT_VALIDATION_BATCH_SIZE` is still accepted as a legacy fallback for
+the build batch size. Formatter invocations are batched separately through
+`LEANFMT_VALIDATION_FORMATTER_BATCH_SIZE`, which defaults to `1` so imported
+mathlib environments are released at process exit instead of accumulating across
+hundreds of files. The formatter imported-environment cache is disabled during
+external validation by default; set
+`LEANFMT_VALIDATION_FORMATTER_ENV_CACHE_SIZE=N` to allow each formatter process
+to retain up to `N` imported environments. External validation also passes
+`--import-env-first` to the formatter by default so mathlib files do not first
+attempt a whole-file parse with LeanFmt's default Lean environment; set
+`LEANFMT_VALIDATION_IMPORT_ENV_FIRST=0` to restore the ordinary CLI strategy of
+trying the default environment before loading source imports.
+
+For the default all-file selector, the pre- and post-format build phases run
+`lake build`. When a narrower selector is used, the script converts selected
+`.lean` paths to module targets and builds those modules in batches. The script
+continues after individual phase failures so it can report all issues, then
+exits with a nonzero status if any phase failed. Each phase and the final summary
+include elapsed wall-clock time. Build-cache retrieval is an optional
+optimization: repositories without a `cache` executable are reported as skipped
+rather than failed.

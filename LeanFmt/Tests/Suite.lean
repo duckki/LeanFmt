@@ -74,6 +74,22 @@ def assertOverlappingQuotationTokensRemoved (env : Lean.Environment) : IO Unit :
   assertTextLacks "quotation splice is not duplicated"
     formatted "{ $selection,* } { $selection,* }"
 
+def assertTacticQuotationAntiquotationPreserved (env : Lean.Environment) : IO Unit := do
+  let source :=
+    "macro \"finish_true_with_antiquotation\" : tactic =>\n"
+    ++ "  `(tactic|\n"
+    ++ "    first | exact $(Lean.mkIdent `True.intro):term | exact $(Lean.mkIdent `True.intro):term)\n"
+  let result ←
+    Formatter.formatSourceWithEnvDetailed env source
+      "tactic-quotation-antiquotation.lean"
+  assertTrue "tactic quotation antiquotation does not fall back" (!result.fellBack)
+  assertTrue "tactic quotation antiquotation preserves code"
+    (← codePreservedIgnoringWhitespace env source result.formatted)
+  assertTextContains "tactic quotation antiquotation prefix stays tight"
+    result.formatted "$(Lean.mkIdent `True.intro):term"
+  assertTextLacks "tactic quotation antiquotation prefix is not split"
+    result.formatted "$\n"
+
 def assertOverlappingEmptySyntaxTokensRemoved (env : Lean.Environment) : IO Unit := do
   let source :=
     "syntax \"field \" str \"{\" term,* \"}\" : term\n" ++ "#check field \"empty\" {}\n"
@@ -126,9 +142,22 @@ def assertBlockCommentInternalWhitespacePreservedByFormatting (env : Lean.Enviro
   assertTextContains "block comment indentation is preserved" formatted
     "  Indented author line keeps spacing"
 
+def assertModuleDocInternalBlankLinesPreservedByFormatting (env : Lean.Environment)
+    : IO Unit := do
+  let source := "/-!\nA\n\n\nB\n-/\n\ndef moduleDocBlankLines := 0\n"
+  let formatted ← Formatter.formatSourceWithEnv env source "module-doc-blank-lines.lean"
+  assertTrue "module doc blank lines preserve code"
+    (← codePreservedIgnoringWhitespace env source formatted)
+  assertTextContains "module doc internal blank line run is preserved"
+    formatted "A\n\n\nB"
+
 def syntheticAtomToken (lexeme : String) : SyntaxTree.Token :=
   SyntaxTree.tokenOfSynthetic .atom `token lexeme (String.Pos.Raw.mk 0)
     (String.Pos.Raw.mk 0)
+
+def syntheticAtomTokenAt (lexeme : String) (start stop : Nat) : SyntaxTree.Token :=
+  SyntaxTree.tokenOfSynthetic .atom `token lexeme (String.Pos.Raw.mk start)
+    (String.Pos.Raw.mk stop)
 
 def assertCustomNotationBracketSpacing : IO Unit := do
   assertEq "custom notation open bracket keeps tight spacing" ""
@@ -143,6 +172,35 @@ def assertCustomNotationBracketSpacing : IO Unit := do
   assertEq "strict implicit binder close keeps tight spacing" ""
     (Formatter.SpaceRules.interTokenWhitespace ""
       (syntheticAtomToken "a") (syntheticAtomToken "⦄"))
+  assertEq "dot identifier stays tight" ""
+    (Formatter.SpaceRules.spaceBetweenTokens
+      (syntheticAtomToken ".") (syntheticAtomToken "inr"))
+  assertEq "pattern ellipsis does not attach to arrow" " "
+    (Formatter.SpaceRules.spaceBetweenTokens
+      (syntheticAtomToken "..") (syntheticAtomToken "=>"))
+  assertEq "source space before explicit identifier marker is preserved" " "
+    (Formatter.SpaceRules.interTokenWhitespace "f @x"
+      (syntheticAtomTokenAt "f" 0 1) (syntheticAtomTokenAt "@" 2 3))
+  assertEq "true postfix superscript marker stays tight" ""
+    (Formatter.SpaceRules.spaceBetweenTokens
+      (syntheticAtomToken "m") (syntheticAtomToken "⁻¹"))
+  assertEq "operator-like modifier token gets ordinary spacing" " "
+    (Formatter.SpaceRules.spaceBetweenTokens
+      (syntheticAtomToken "vec") (syntheticAtomToken "ᵥ*"))
+
+def assertOperatorLikeModifierTokenPreservesParse (env : Lean.Environment)
+    : IO Unit := do
+  let source :=
+    "def vecMul (left right : Nat) := left + right\n"
+    ++ "infixl:70 \" ᵥ* \" => vecMul\n"
+    ++ "def value := 1 ᵥ* 2\n"
+  let formatted ← Formatter.formatSourceWithEnv env source "operator-like-modifier.lean"
+  assertTrue "operator-like modifier token formatting preserves code"
+    (← codePreservedIgnoringWhitespace env source formatted)
+  assertTextContains "operator-like modifier token keeps left boundary"
+    formatted "1 ᵥ* 2"
+  assertTextLacks "operator-like modifier token does not attach to left operand"
+    formatted "1ᵥ*"
 
 def assertSetOptionInBreaksAfterIn (env : Lean.Environment) : IO Unit := do
   let source :=
@@ -155,6 +213,37 @@ def assertSetOptionInBreaksAfterIn (env : Lean.Environment) : IO Unit := do
     (← codePreservedIgnoringWhitespace env source formatted)
   assertTextContains "set_option keeps in before command break" formatted "false in\n"
   assertTextLacks "set_option does not break before in" formatted "false\nin theorem"
+
+def assertCommandInWrapperPreservesBreakAfterIn (env : Lean.Environment) : IO Unit := do
+  let source :=
+    "variable {p q r s t u v w : Prop} in\n"
+    ++ "theorem wrapperBreaksBeforeDeclaration\n"
+    ++ "    : p ∧ q ∧ r ∧ s ∧ t ∧ u ∧ v ∧ w -> p := by\n"
+    ++ "  intro h\n"
+    ++ "  exact h.1\n"
+  let formatted ← Formatter.formatSourceWithEnv env source "command-in-wrapper.lean"
+  assertTrue "command in wrapper formatting preserves code"
+    (← codePreservedIgnoringWhitespace env source formatted)
+  assertTextContains "command in wrapper keeps command break after in"
+    formatted "variable {p q r s t u v w : Prop} in\ntheorem"
+
+def assertLeadingDotPatternConstructorsStayTight (env : Lean.Environment)
+    : IO Unit := do
+  let source :=
+    "inductive Side where\n"
+    ++ "  | inl\n"
+    ++ "  | inr\n"
+    ++ "\n"
+    ++ "instance : DecidableRel (fun _ _ : Side => True)\n"
+    ++ "  | .inl, .inr | .inr, .inl => isTrue trivial\n"
+    ++ "  | .inl, .inl | .inr, .inr => isTrue trivial\n"
+  let formatted ← Formatter.formatSourceWithEnv env source "leading-dot-patterns.lean"
+  assertTrue "leading-dot pattern formatting preserves code"
+    (← codePreservedIgnoringWhitespace env source formatted)
+  assertTextLacks "leading-dot pattern constructor does not split after dot"
+    formatted ".\n"
+  assertTextLacks "leading-dot pattern constructor does not add space after dot"
+    formatted ". inr"
 
 def assertFormatterConvergencePassLimit : IO Unit := do
   assertTrue "formatter convergence pass limit"
@@ -330,6 +419,30 @@ def assertAttributeDeclarationBreak (env : Lean.Environment) : IO Unit := do
   let formatted ← Formatter.formatSourceWithEnv env source "attribute-declaration.lean"
   assertEq "attribute declaration break" source formatted
 
+def assertSameLineAttributeDeclarationBreaks (env : Lean.Environment) : IO Unit := do
+  let definitionSource := "@[simp] def idNat (x : Nat) : Nat := x\n"
+  let definitionExpected := "@[simp]\n" ++ "def idNat (x : Nat) : Nat := x\n"
+  let definitionFormatted ←
+    Formatter.formatSourceWithEnv env definitionSource
+      "attribute-definition-same-line.lean"
+  assertEq "same-line attribute breaks before definition"
+    definitionExpected definitionFormatted
+  let structureSource := "@[simp] structure Point where\n" ++ "  x : Nat\n"
+  let structureExpected := "@[simp]\n" ++ "structure Point where\n" ++ "  x : Nat\n"
+  let structureFormatted ←
+    Formatter.formatSourceWithEnv env structureSource
+      "attribute-structure-same-line.lean"
+  assertEq "same-line attribute breaks before structure"
+    structureExpected structureFormatted
+  let documentedStructureSource :=
+    "/-- Point documentation. -/\n"
+    ++ "@[simp]\n" ++ "structure DocumentedPoint where\n" ++ "  x : Nat\n"
+  let documentedStructureFormatted ←
+    Formatter.formatSourceWithEnv env documentedStructureSource
+      "documented-attribute-structure.lean"
+  assertEq "documented attribute stays before structure"
+    documentedStructureSource documentedStructureFormatted
+
 def assertPrivateTheoremModifierStaysOnHeader (env : Lean.Environment) : IO Unit := do
   let source := "private theorem privateTheoremModifier : True := by\n" ++ "  trivial\n"
   let formatted ←
@@ -401,6 +514,39 @@ def assertDoLetElseBreaks (env : Lean.Environment) : IO Unit := do
       ++ "    veryLongAtomicValueNameForDoLetElseFormattingThatCannotShareTheHeaderLine\n"
       ++ "  | veryLongAtomicFallbackNameForDoLetElseFormattingThatCannotShareTheHeaderLine")
 
+def assertDoLetArrowFallbackBreaksBeforeContinuation (env : Lean.Environment)
+    : IO Unit := do
+  let source :=
+    "def veryLongOptionProviderNameForDoLetArrowFallbackBreak\n"
+    ++ "    (first second third fourth : Option Nat) : Option (Option Nat) :=\n"
+    ++ "  first\n"
+    ++ "\n"
+    ++ "def fallbackValue : Option Nat := none\n"
+    ++ "def assertInstancesCommute : Option Unit := some ()\n"
+    ++ "\n"
+    ++ "def doLetArrowFallbackExample : Option Nat := do\n"
+    ++ "  let .some value ← veryLongOptionProviderNameForDoLetArrowFallbackBreak (some 1) (some 2) (some 3) (some 4) | fallbackValue\n"
+    ++ "  assertInstancesCommute\n"
+    ++ "  some value\n"
+  let expected :=
+    "def veryLongOptionProviderNameForDoLetArrowFallbackBreak\n"
+    ++ "    (first second third fourth : Option Nat)\n"
+    ++ "    : Option (Option Nat) :=\n"
+    ++ "  first\n"
+    ++ "\n"
+    ++ "def fallbackValue : Option Nat := none\n"
+    ++ "def assertInstancesCommute : Option Unit := some ()\n"
+    ++ "\n"
+    ++ "def doLetArrowFallbackExample : Option Nat := do\n"
+    ++ "  let .some value ←\n"
+    ++ "    veryLongOptionProviderNameForDoLetArrowFallbackBreak (some 1) (some 2) (some 3)\n"
+    ++ "      (some 4)\n"
+    ++ "  | fallbackValue\n"
+    ++ "  assertInstancesCommute\n"
+    ++ "  some value\n"
+  let formatted ← Formatter.formatSourceWithEnv env source "do-let-arrow-fallback.lean"
+  assertEq "do-let arrow fallback breaks before continuation" expected formatted
+
 def assertShowFromBreaksLikeAssignment (env : Lean.Environment) : IO Unit := do
   let source :=
     "def showDoExample : IO Unit :=\n"
@@ -467,6 +613,7 @@ def assertShowAndDoWrapperRules (env : Lean.Environment) : IO Unit := do
   assertShowFromBreaksLikeAssignment env
   assertDoControlWrapperRules env
   assertDoLetElseBreaks env
+  assertDoLetArrowFallbackBreaksBeforeContinuation env
 
 def assertProjectionChainDoesNotBreakBeforeDot (env : Lean.Environment) : IO Unit := do
   let source :=
@@ -672,6 +819,154 @@ def assertDeclarationValueKeepsAttachedDoBody (env : Lean.Environment) : IO Unit
     Formatter.formatSourceWithEnv env formatted
       "declaration-value-attached-do-formatted.lean"
   assertEq "declaration value attached do is idempotent" formatted formattedAgain
+
+def assertProofValuesRemainLayoutIslands (env : Lean.Environment) : IO Unit := do
+  let directSource :=
+    "theorem directProofValueLayoutIsland : VeryLongLeftOperandForLayoutTesting = VeryLongRightOperandForLayoutTesting := by\n"
+    ++ "  exact proof\n"
+  let directExpected :=
+    "theorem directProofValueLayoutIsland\n"
+    ++ "    : VeryLongLeftOperandForLayoutTesting = VeryLongRightOperandForLayoutTesting := by\n"
+    ++ "  exact proof\n"
+  let directFormatted ←
+    Formatter.formatSourceWithEnv env directSource "direct-proof-value-layout.lean"
+  assertEq "direct proof value keeps assignment with by" directExpected directFormatted
+  let _ ←
+    SyntaxTree.parseModuleStringWithEnv env directFormatted
+      "direct-proof-value-layout-formatted.lean"
+  let directFormattedAgain ←
+    Formatter.formatSourceWithEnv env directFormatted
+      "direct-proof-value-layout-formatted.lean"
+  assertEq "direct proof value layout is idempotent"
+    directFormatted directFormattedAgain
+  let whereSource :=
+    "theorem whereStructInstProofField (h : VeryLongHypothesisNameForLayoutTesting) : VeryLongTargetTypeNameForLayoutTesting where\n"
+    ++ "  field := fun s t hsA htA hs ht hEq => by\n"
+    ++ "    exact proof\n"
+  let whereExpected :=
+    "theorem whereStructInstProofField (h : VeryLongHypothesisNameForLayoutTesting)\n"
+    ++ "    : VeryLongTargetTypeNameForLayoutTesting where\n"
+    ++ "  field := fun s t hsA htA hs ht hEq => by\n"
+    ++ "    exact proof\n"
+  let whereFormatted ←
+    Formatter.formatSourceWithEnv env whereSource "where-struct-inst-proof-value.lean"
+  assertEq "where struct instance proof field remains layout island"
+    whereExpected whereFormatted
+  let _ ←
+    SyntaxTree.parseModuleStringWithEnv env whereFormatted
+      "where-struct-inst-proof-value-formatted.lean"
+  let whereFormattedAgain ←
+    Formatter.formatSourceWithEnv env whereFormatted
+      "where-struct-inst-proof-value-formatted.lean"
+  assertEq "where struct instance proof layout is idempotent"
+    whereFormatted whereFormattedAgain
+  let termStructSource :=
+    "noncomputable instance [DecidableEq K] : ProjectivePlane (ProjectivePoint K (Fin 3 → K)) (ProjectiveLine K (Fin 3 → K)) :=\n"
+    ++ "  { mkPoint := by\n"
+    ++ "      intro v w _\n"
+    ++ "      exact cross v w\n"
+    ++ "    mkPoint_ax := fun h ↦ ⟨cross_orthogonal_left h, cross_orthogonal_right h⟩\n"
+    ++ "    mkLine := by\n"
+    ++ "      intro v w _\n"
+    ++ "      exact cross v w }\n"
+  let termStructExpected :=
+    "noncomputable instance [DecidableEq K]\n"
+    ++ "                  : ProjectivePlane (ProjectivePoint K (Fin 3 → K))\n"
+    ++ "                      (ProjectiveLine K (Fin 3 → K)) :=\n"
+    ++ "  { mkPoint := by\n"
+    ++ "      intro v w _\n"
+    ++ "      exact cross v w\n"
+    ++ "    mkPoint_ax := fun h ↦ ⟨cross_orthogonal_left h, cross_orthogonal_right h⟩\n"
+    ++ "    mkLine := by\n"
+    ++ "      intro v w _\n"
+    ++ "      exact cross v w }\n"
+  let termStructResult ←
+    Formatter.formatSourceWithEnvDetailed env termStructSource
+      "term-struct-inst-proof-value.lean"
+  assertTrue "term struct instance proof field does not fall back"
+    (!termStructResult.fellBack)
+  assertEq "term struct instance proof field remains layout island"
+    termStructExpected termStructResult.formatted
+  let _ ←
+    SyntaxTree.parseModuleStringWithEnv env termStructResult.formatted
+      "term-struct-inst-proof-value-formatted.lean"
+  let termStructFormattedAgain ←
+    Formatter.formatSourceWithEnv env termStructResult.formatted
+      "term-struct-inst-proof-value-formatted.lean"
+  assertEq "term struct instance proof layout is idempotent"
+    termStructResult.formatted termStructFormattedAgain
+
+def assertCalcLayoutIslandAfterNestedInfix (env : Lean.Environment) : IO Unit := do
+  let source :=
+    "def embeddingCalcAfterNestedInfix : Nat :=\n"
+    ++ "  (firstFunction <| c.sizeUpTo i).trans <| secondFunction <|\n"
+    ++ "    calc\n"
+    ++ "      c.sizeUpTo i + c.blocksFun i = c.sizeUpTo (i + 1) := (c.sizeUpTo_succ i.2).symm\n"
+    ++ "      _ ≤ c.sizeUpTo c.length := monotone_sum_take _ i.2\n"
+    ++ "      _ = n := c.sizeUpTo_length\n"
+  let expected :=
+    "def embeddingCalcAfterNestedInfix : Nat :=\n"
+    ++ "  (firstFunction <| c.sizeUpTo i).trans\n"
+    ++ "  <| secondFunction\n"
+    ++ "  <|\n"
+    ++ "    calc\n"
+    ++ "      c.sizeUpTo i + c.blocksFun i = c.sizeUpTo (i + 1) := (c.sizeUpTo_succ i.2).symm\n"
+    ++ "      _ ≤ c.sizeUpTo c.length := monotone_sum_take _ i.2\n"
+    ++ "      _ = n := c.sizeUpTo_length\n"
+  let result ←
+    Formatter.formatSourceWithEnvDetailed env source
+      "calc-layout-island-after-nested-infix.lean"
+  assertTrue "calc after nested infix does not fall back" (!result.fellBack)
+  assertEq "calc after nested infix preserves calc layout" expected result.formatted
+  let _ ←
+    SyntaxTree.parseModuleStringWithEnv env result.formatted
+      "calc-layout-island-after-nested-infix-formatted.lean"
+  let formattedAgain ←
+    Formatter.formatSourceWithEnv env result.formatted
+      "calc-layout-island-after-nested-infix-formatted.lean"
+  assertEq "calc after nested infix is idempotent" result.formatted formattedAgain
+
+def assertHaveTermLayoutIsland (env : Lean.Environment) : IO Unit := do
+  let source :=
+    "theorem haveTermLayoutWithLongHeaderName (h : VeryLongHypothesisNameForLayoutTesting) : VeryLongTargetNameForLayoutTesting :=\n"
+    ++ "  have := firstTerm\n"
+    ++ "  secondTerm\n"
+  let expected :=
+    "theorem haveTermLayoutWithLongHeaderName (h : VeryLongHypothesisNameForLayoutTesting)\n"
+    ++ "    : VeryLongTargetNameForLayoutTesting :=\n"
+    ++ "  have := firstTerm\n"
+    ++ "  secondTerm\n"
+  let result ←
+    Formatter.formatSourceWithEnvDetailed env source "have-term-layout-island.lean"
+  assertTrue "have term layout does not fall back" (!result.fellBack)
+  assertEq "have term layout remains an island" expected result.formatted
+  let _ ←
+    SyntaxTree.parseModuleStringWithEnv env result.formatted
+      "have-term-layout-island-formatted.lean"
+  let formattedAgain ←
+    Formatter.formatSourceWithEnv env result.formatted
+      "have-term-layout-island-formatted.lean"
+  assertEq "have term layout is idempotent" result.formatted formattedAgain
+
+def assertAbsoluteValueDelimitersStayAttached (env : Lean.Environment) : IO Unit := do
+  let source :=
+    "notation \"|\" x \"|\" => x\n\n"
+    ++ "theorem absoluteValueSignatureWraps (h : VeryLongHypothesisNameForLayoutTesting) : |(firstVeryLongExpressionForAbsoluteValueFormatting + secondVeryLongExpressionForAbsoluteValueFormatting : Int)| ≤ bound := by\n"
+    ++ "  exact proof\n"
+  let result ←
+    Formatter.formatSourceWithEnvDetailed env source "absolute-value-delimiters.lean"
+  assertTrue "absolute value delimiters do not trigger fallback" (!result.fellBack)
+  assertTextLacks "absolute value opening delimiter stays attached after colon"
+    result.formatted ": |\n"
+  assertTextLacks "absolute value opening delimiter stays attached after relation"
+    result.formatted "≤ |\n"
+  let _ ←
+    SyntaxTree.parseModuleStringWithEnv env result.formatted
+      "absolute-value-delimiters-formatted.lean"
+  let formattedAgain ←
+    Formatter.formatSourceWithEnv env result.formatted
+      "absolute-value-delimiters-formatted.lean"
+  assertEq "absolute value formatting is idempotent" result.formatted formattedAgain
 
 def assertSignatureParametersUseLeadingSourceBreakAfterFlatFails
     (env : Lean.Environment)
@@ -1378,6 +1673,15 @@ def assertSignatureParameterSourceBreakFallback (env : Lean.Environment) : IO Un
   let formatted ←
     Formatter.formatSourceWithEnv env source "signature-parameter-source-fallback.lean"
   assertEq "signature parameter source break fallback" expected formatted
+
+def assertVariableBinderSequenceFlows (env : Lean.Environment) : IO Unit := do
+  let source :=
+    "variable {α β₁ β₂ : Type} [CommMonoid α] [CommMonoid β₁] [CommMonoid β₂] {A : Set α} {B₁ : Set β₁} {B₂ : Set β₂} {f₁ : α → β₁} {f₂ : α → β₂} {n : Nat}\n"
+  let expected :=
+    "variable {α β₁ β₂ : Type} [CommMonoid α] [CommMonoid β₁] [CommMonoid β₂] {A : Set α}\n"
+    ++ "  {B₁ : Set β₁} {B₂ : Set β₂} {f₁ : α → β₁} {f₂ : α → β₂} {n : Nat}\n"
+  let formatted ← Formatter.formatSourceWithEnv env source "variable-binder-flow.lean"
+  assertEq "variable binder sequence flows between binders" expected formatted
 
 def assertMutualEquationArmIndent (env : Lean.Environment) : IO Unit := do
   let source :=
@@ -2568,6 +2872,49 @@ def assertTupleBreakBalanced (env : Lean.Environment) : IO Unit := do
   let formatted ← Formatter.formatSourceWithEnv env source "tuple-balanced.lean"
   assertEq "tuple breaks balanced" expected formatted
 
+def assertAnonymousConstructorBreakBalanced (env : Lean.Environment) : IO Unit := do
+  let fittingSource := "def shortConstructor := ⟨left, right⟩\n"
+  let fittingFormatted ←
+    Formatter.formatSourceWithEnv env fittingSource "anonymous-constructor-fitting.lean"
+  assertEq "fitting anonymous constructor stays flat" fittingSource fittingFormatted
+  let source :=
+    "def anonymousCtorOperand := ⟨firstItemNameWithEnoughCharactersForLayoutTesting, secondItemNameWithEnoughCharactersForLayoutTesting, thirdItemNameWithEnoughCharactersForLayoutTesting⟩\n"
+  let expected :=
+    "def anonymousCtorOperand :=\n"
+    ++ "  ⟨\n"
+    ++ "    firstItemNameWithEnoughCharactersForLayoutTesting,\n"
+    ++ "    secondItemNameWithEnoughCharactersForLayoutTesting,\n"
+    ++ "    thirdItemNameWithEnoughCharactersForLayoutTesting\n"
+    ++ "  ⟩\n"
+  let formatted ←
+    Formatter.formatSourceWithEnv env source "anonymous-constructor-balanced.lean"
+  assertEq "anonymous constructor breaks balanced" expected formatted
+  match Formatter.LineBreakRules.ruleFor
+          (SyntaxTree.Tree.node (.raw `Lean.Parser.Term.anonymousCtor) #[]) with
+  | some rule =>
+      assertEq "anonymous constructor uses dedicated rule" "anonymousCtor" rule.name
+  | none => throw <| IO.userError "anonymous constructor has no rule"
+  let setoidSource :=
+    "def stronglyConnectedSetoid : Setoid V :=\n"
+    ++ "  ⟨fun a b => (Nonempty (Path a b)) ∧ (Nonempty (Path b a)), fun _ => ⟨⟨Path.nil⟩, ⟨Path.nil⟩⟩, fun ⟨hab, hba⟩ => ⟨hba, hab⟩, fun ⟨hab, hba⟩ ⟨hbc, hcb⟩ => ⟨⟨hab.some.comp hbc.some⟩, ⟨hcb.some.comp hba.some⟩⟩⟩\n"
+  let setoidExpected :=
+    "def stronglyConnectedSetoid : Setoid V :=\n"
+    ++ "  ⟨\n"
+    ++ "    fun a b => (Nonempty (Path a b)) ∧ (Nonempty (Path b a)),\n"
+    ++ "    fun _ => ⟨⟨Path.nil⟩, ⟨Path.nil⟩⟩,\n"
+    ++ "    fun ⟨hab, hba⟩ => ⟨hba, hab⟩,\n"
+    ++ "    fun ⟨hab, hba⟩ ⟨hbc, hcb⟩ => ⟨⟨hab.some.comp hbc.some⟩, ⟨hcb.some.comp hba.some⟩⟩\n"
+    ++ "  ⟩\n"
+  let setoidFormatted ←
+    Formatter.formatSourceWithEnv env setoidSource "anonymous-constructor-setoid.lean"
+  assertEq "mathlib-style anonymous constructor breaks balanced"
+    setoidExpected setoidFormatted
+  let moduleTree ←
+    SyntaxTree.parseModuleStringWithEnv env setoidFormatted
+      "anonymous-constructor-setoid-formatted.lean"
+  assertTrue "mathlib-style anonymous constructor has no overflow"
+    (Formatter.Diagnostics.overflowOccurrences moduleTree).isEmpty
+
 def assertExportBreaksLongList (env : Lean.Environment) : IO Unit := do
   let source :=
     "export CompleteNormalization (\n"
@@ -2641,6 +2988,10 @@ def assertBangApplicationDiagnostics (env : Lean.Environment) : IO Unit := do
 def assertCliParsing : IO Unit := do
   assertTextContains "CLI help documents exception checks" LeanFmt.Cli.usage
     "--check-exception"
+  assertTextContains "CLI help documents environment cache control"
+    LeanFmt.Cli.usage "--env-cache-size"
+  assertTextContains "CLI help documents import-first environment control"
+    LeanFmt.Cli.usage "--import-env-first"
   assertTextLacks "CLI help omits replaced preservation option"
     LeanFmt.Cli.usage "--check-preserves-code"
   assertTextLacks "CLI help omits replaced unknown-rule option"
@@ -2682,6 +3033,32 @@ def assertCliParsing : IO Unit := do
   | result =>
       throw
       <| IO.userError s!"CLI parser should accept combined check flags: {repr result}"
+  match LeanFmt.Cli.parseArgs ["--env-cache-size", "0", "GraphQL.lean"] with
+  | .run options =>
+      assertTrue "CLI environment cache size flag" (options.environmentCacheSize == 0)
+  | result =>
+      throw
+      <| IO.userError
+          s!"CLI parser should accept --env-cache-size and files: {repr result}"
+  match LeanFmt.Cli.parseArgs ["--env-cache-size", "nope", "GraphQL.lean"] with
+  | .error "invalid --env-cache-size value: nope" => pure ()
+  | result =>
+      throw
+      <| IO.userError
+          s!"CLI parser should reject invalid --env-cache-size: {repr result}"
+  match LeanFmt.Cli.parseArgs ["--env-cache-size"] with
+  | .error "--env-cache-size requires a value" => pure ()
+  | result =>
+      throw
+      <| IO.userError
+          s!"CLI parser should require --env-cache-size value: {repr result}"
+  match LeanFmt.Cli.parseArgs ["--import-env-first", "GraphQL.lean"] with
+  | .run options =>
+      assertTrue "CLI import-first environment flag" options.importEnvironmentFirst
+  | result =>
+      throw
+      <| IO.userError
+          s!"CLI parser should accept --import-env-first and files: {repr result}"
   for testOnlyOption in ["--profile", "--update-fixture", "--trace-renderer"] do
     match LeanFmt.Cli.parseArgs [testOnlyOption, "GraphQL.lean"] with
     | .error message =>
@@ -2730,6 +3107,27 @@ def assertCliParsing : IO Unit := do
   | .error "no input files" => pure ()
   | result =>
       throw <| IO.userError s!"CLI parser should require files: {repr result}"
+
+def assertEnvironmentCacheBound (env : Lean.Environment) : IO Unit := do
+  let keys (entries : List (String × Lean.Environment))
+      : String :=
+    String.intercalate "," (entries.map Prod.fst)
+  let entries ← IO.mkRef []
+  let cache : LeanFmt.Cli.EnvironmentCache :=
+    { default := env, maxEntries := 2, entries }
+  cache.rememberEnvironment "first" env
+  cache.rememberEnvironment "second" env
+  cache.rememberEnvironment "third" env
+  assertEq "environment cache evicts least-recently remembered entry"
+    "third,second" (keys (← entries.get))
+  cache.rememberEnvironment "second" env
+  assertEq "environment cache refreshes remembered entry"
+    "second,third" (keys (← entries.get))
+  let disabledEntries ← IO.mkRef []
+  let disabledCache : LeanFmt.Cli.EnvironmentCache :=
+    { default := env, maxEntries := 0, entries := disabledEntries }
+  disabledCache.rememberEnvironment "ignored" env
+  assertTrue "disabled environment cache remains empty" (← disabledEntries.get).isEmpty
 
 def assertFormattingExceptionChecks (env : Lean.Environment) : IO Unit := do
   assertTrue "whitespace-only edits preserve code"
@@ -3084,49 +3482,79 @@ def assertMathlibLowRiskSyntaxKindsHaveRules : IO Unit := do
       `Lean.Parser.Command.assertNotImported,
       `Lean.Parser.Command.assertNotExists,
       `Lean.Parser.Command.namedPrio,
+      `Lean.Parser.Command.openOnly,
       `Lean.Parser.Command.abbrev,
       `Lean.Parser.Command.classAbbrev,
       `Lean.Parser.Command.nonrec,
       `Lean.Parser.Command.notation,
+      `Lean.Parser.Command.mixfix,
+      `Lean.Parser.Command.macro,
+      `Lean.Parser.Command.namedName,
+      `Lean.Parser.Command.macroArg,
+      `Lean.Parser.Command.macroTail,
+      `Lean.Parser.Command.macroRhs,
+      `Lean.Parser.Command.infix,
+      `Lean.Parser.Command.infixl,
+      `Lean.Parser.Command.infixr,
+      `Lean.Parser.Command.prefix,
+      `Lean.Parser.Command.postfix,
       `Lean.Parser.Command.identPrec,
       `Lean.Parser.Command.grindPattern,
       `Lean.Parser.Command.omit,
+      `Lean.Parser.Command.include,
       `Lean.Parser.Command.structParent,
       `Lean.Parser.Command.structCtor,
       `Lean.Parser.Command.structInstBinder,
+      `Lean.Parser.Command.structExplicitBinder,
       `Lean.Parser.Command.extends,
       `Lean.Parser.Command.initialize_simps_projections,
       `Lean.Parser.Command.simpsProj,
       `Lean.Parser.Command.simpsRule,
+      `Lean.Parser.Command.simpsRule.add,
       `Lean.Parser.Command.simpsRule.prefix,
       `Lean.Parser.Command.simpsRule.erase,
+      `Lean.Parser.Command.eraseAttr,
       `lemma,
       `Lean.Parser.Term.explicit,
       `Lean.Parser.Term.explicitUniv,
       `Lean.Parser.Term.have,
       `Lean.Parser.Term.haveI,
+      `Lean.Parser.Term.structInstFieldEqns,
       `Lean.Parser.Term.sort,
       `Lean.Parser.Term.letI,
       `Lean.Parser.Term.inferInstanceAs,
       `Lean.Parser.Term.configItem,
       `Lean.Parser.Term.negConfigItem,
       `Lean.Parser.Term.strictImplicitBinder,
+      `Lean.Parser.Term.nofun,
+      `Lean.Parser.Term.doNested,
       `Lean.Parser.Tactic.tacticSeq,
       `Lean.Parser.Tactic.tacticSeq1Indented,
+      `Lean.Parser.Tactic.exact,
+      `Lean.Parser.Tactic.grind,
+      `Lean.Parser.Tactic.optConfig,
       `Lean.bracketedExplicitBinders,
+      `scientific,
       `termℕ,
       `termℤ,
       `termℚ,
       `termℝ,
+      `Nat.term_!,
       `coeNotation,
       `coeSortNotation,
       `coeFunNotation,
       `Lean.calc,
       `Lean.calcSteps,
       `Lean.calcFirstStep,
+      `Lean.modCast,
       `Lean.«binderPred∈_»,
+      `Lean.«binderPred<_»,
+      `Lean.«binderPred>_»,
       `Lean.«binderPred≤_»,
+      `Lean.«binderPred≥_»,
+      `Lean.«binderPred≠_»,
       `Lean.«binderPred∉_»,
+      `Mathlib.Meta.SetNotationForOrder.«binderPred⊆_»,
       `termDepIfThenElse,
       `BigOperators.bigsum,
       `BigOperators.bigprod,
@@ -3166,10 +3594,23 @@ def assertMathlibLowRiskSyntaxKindsHaveRules : IO Unit := do
       `Mathlib.Tactic.Push.pushAttr,
       `Mathlib.Tactic.GCongr.gcongrAttr,
       `Mathlib.Tactic.Monotonicity.Attr.mono,
+      `Mathlib.Tactic.TermCongr.termCongr,
       `Mathlib.Elab.FastInstance.fastInstance,
+      `Mathlib.Util.«commandCompile_inductive%_»,
       `Mathlib.Meta.setBuilder,
+      `Mathlib.Meta.macroPattSetBuilder,
+      `Mathlib.Notation3.notation3,
+      `Mathlib.Notation3.notation3Item,
+      `Mathlib.Notation3.identOptScoped,
+      `LinearAlgebra.Projectivization.termℙ,
+      `Qq.matcher,
+      `Qq.doElemAssertInstancesCommute,
+      `term.pseudo.antiquot,
+      `Lean.termThrowError__,
       `Mathlib.CrossRef.wikidataTag,
       `Aesop.Frontend.Parser.aesop,
+      `Aesop.Frontend.Parser.aesopTactic,
+      `Aesop.Frontend.Parser.declareRuleSets,
       `Aesop.Frontend.Parser.attr_rules_,
       `Aesop.Frontend.Parser.rule_expr_,
       `Aesop.Frontend.Parser.rule_expr___,
@@ -3179,29 +3620,88 @@ def assertMathlibLowRiskSyntaxKindsHaveRules : IO Unit := do
       `Aesop.Frontend.Parser.feature__2,
       `Aesop.Frontend.Parser.feature__4,
       `Aesop.Frontend.Parser.phaseSafe,
+      `Aesop.Frontend.Parser.phaseNorm,
+      `Aesop.Frontend.Parser.phaseUnsafe,
       `Aesop.Frontend.Parser.builder_nameApply,
       `Aesop.Frontend.Parser.«priority_%»,
       `Aesop.Frontend.Parser.«priority-_»,
       `Lean.Parser.Level.hole,
+      `Lean.Parser.Level.paren,
+      `Lean.Parser.Level.max,
+      `Lean.Parser.Tactic.quot,
       `PiNotation.piNotation,
       `prioLow,
       `prioHigh,
+      `Lean.Parser.precedence,
+      `precMax,
       `cfcTac,
       `adaptationNoteCmd,
-      `wikidataId
+      `wikidataId,
+      `goldenRatio.termφ,
+      `goldenRatio.termψ,
+      `Topology.term𝓝,
+      `FinsetFamily.term𝓒,
+      `FinsetFamily.term𝓓,
+      `Cardinal.termℵ₀,
+      `Matroid.aesop_mat,
+      `Matroid.ExchangeProperty.aesop_mat,
+      `aesop_graph,
+      `CategoryTheory.cat_disch,
+      `proof_wanted,
+      `Matrix.vecNotation
     ]
   for kind in kinds do
     let tree := SyntaxTree.Tree.node (.raw kind) #[]
     assertTrue s!"mathlib low-risk syntax has rule: {kind}"
       (Formatter.LineBreakRules.ruleFor tree).isSome
+  let vectorItems :=
+    SyntaxTree.Tree.node (.raw `null)
+      #[
+        .leaf (syntheticAtomToken "a"),
+        .leaf (syntheticAtomToken ","),
+        .leaf (syntheticAtomToken "b")
+      ]
+  let vectorTree :=
+    SyntaxTree.Tree.node (.raw `Matrix.vecNotation)
+      #[.leaf (syntheticAtomToken "!["), vectorItems, .leaf (syntheticAtomToken "]")]
+  match Formatter.LineBreakRules.ruleFor vectorTree with
+  | some rule =>
+      assertEq "matrix vector notation uses array rule" "array" rule.name
+      let vectorSegment := Formatter.LineBreakRules.Segment.ofTree vectorTree
+      assertTrue "matrix vector notation has item and close breaks"
+        (rule.breakPoints {} vectorSegment
+          == [{ index := 1, indentLevels := 1 }, { index := 2, indentLevels := 0 }])
+      let itemSegment := Formatter.LineBreakRules.Segment.ofTree vectorItems
+      let itemContext :=
+        ({} : Formatter.LineBreakRules.RuleContext).push vectorSegment 1
+      assertTrue "matrix vector notation item wrapper uses array item breaks"
+        (Formatter.LineBreakRules.arrayItemBreaks itemContext itemSegment
+          == [{ index := 2, indentLevels := 0 }])
+  | none => throw <| IO.userError "matrix vector notation has no rule"
   let ignoredKindNames :=
-    ["token.«←»", "«term⅟_»", "Set.«term⋃_,_»", "Batteries.ExtendedBinder.«term∀ᵉ_,_»"]
+    [
+      "token.«←»",
+      "_private.0.SzemerediRegularity.termM",
+      "«term⅟_»",
+      "Set.«term⋃_,_»",
+      "Batteries.ExtendedBinder.«term∀ᵉ_,_»",
+      "«stx_*»",
+      "Lean.Parser.Command.«stx_,*»",
+      "Lean.Elab.Command.command_Irreducible_def____"
+    ]
   for kindName in ignoredKindNames do
     assertTrue s!"custom syntax kind is ignored by missing-rule report: {kindName}"
       (Formatter.Diagnostics.missingRuleReportIgnoresKindName kindName)
   assertTrue "non-term custom syntax kind still needs an explicit rule"
     (!Formatter.Diagnostics.missingRuleReportIgnoresKindName
         "Aesop.Frontend.Parser.aesop")
+  assertTrue "non-term guillemet syntax kind still needs an explicit rule"
+    (!Formatter.Diagnostics.missingRuleReportIgnoresKindName "«tacticFoo»")
+  let tacticTree := SyntaxTree.Tree.node (.raw `Mathlib.Tactic.ToDual.to_dual) #[]
+  assertTrue "mathlib tactic syntax keeps original formatting"
+    (Formatter.shouldEmitOriginalTree tacticTree)
+  assertTrue "mathlib tactic syntax is skipped by missing-rule reporting"
+    (Formatter.Diagnostics.missingRuleOccurrences "" none tacticTree).isEmpty
 
 def assertMissingRuleCheckUsesDispatch (env : Lean.Environment) : IO Unit := do
   let unknownTree :=
@@ -3285,6 +3785,25 @@ def assertSyntaxDeclarationsHaveRules (env : Lean.Environment) : IO Unit := do
     Formatter.formatSourceWithEnv env source "syntax-declaration-rules.lean"
   assertTextContains "syntax separator stays tight" formatted "term,*"
 
+def assertParserStateUpdatesAfterSyntaxCommands (env : Lean.Environment) : IO Unit := do
+  let source :=
+    "syntax \"customTerm\" : term\n"
+    ++ "macro_rules\n"
+    ++ "  | `(customTerm) => `(0)\n"
+    ++ "macro \"finish_true\" : tactic => `(tactic| trivial)\n"
+    ++ "def customAdd (left right : Nat) := left + right\n"
+    ++ "infixl:65 \" ⊕ₜ \" => customAdd\n"
+    ++ "postfix:max \"♯\" => Nat.succ\n"
+    ++ "def syntaxValue := customTerm\n"
+    ++ "def infixValue := 1 ⊕ₜ 2\n"
+    ++ "def postfixValue := 1♯\n"
+    ++ "example : True := by\n"
+    ++ "  finish_true\n"
+  let moduleTree ←
+    SyntaxTree.parseModuleStringWithEnv env source "parser-state-syntax-commands.lean"
+  assertTrue "syntax command parser-state updates preserve parseability"
+    (!(moduleTree.tokens.isEmpty))
+
 def assertPrefixedTermWrappersHaveRules (env : Lean.Environment) : IO Unit := do
   let source :=
     "def nestedAction : IO Nat := do\n"
@@ -3333,6 +3852,7 @@ def runSyntaxTreeTests (env : Lean.Environment) : IO Unit := do
   assertSyntaxTreeWhereRoundTrip env
   assertPreservationDetectsSyntaxChange env
   assertOverlappingQuotationTokensRemoved env
+  assertTacticQuotationAntiquotationPreserved env
   assertOverlappingEmptySyntaxTokensRemoved env
   assertGroupedApplication env
   assertGroupedInfixChain env
@@ -3341,8 +3861,12 @@ def runBasicFormattingTests (env : Lean.Environment) : IO Unit := do
   assertSafeArrayIndexKeepsPostfixQuestion env
   assertPostfixSuperscriptSpacingPreservesParse env
   assertBlockCommentInternalWhitespacePreservedByFormatting env
+  assertModuleDocInternalBlankLinesPreservedByFormatting env
   assertCustomNotationBracketSpacing
+  assertOperatorLikeModifierTokenPreservesParse env
   assertSetOptionInBreaksAfterIn env
+  assertCommandInWrapperPreservesBreakAfterIn env
+  assertLeadingDotPatternConstructorsStayTight env
   assertFormatterConvergencePassLimit
   assertFormatterFallbackResultIsObservable env
   assertLayoutSensitiveTermsRemainParseableAndIdempotent env
@@ -3355,6 +3879,7 @@ def runBasicFormattingTests (env : Lean.Environment) : IO Unit := do
   assertTrailingLineCommentPreserved env
   assertAnonymousConstructorAfterListKeepsSpace env
   assertAttributeDeclarationBreak env
+  assertSameLineAttributeDeclarationBreaks env
   assertPrivateTheoremModifierStaysOnHeader env
   assertDoBlockPreservesBodyBreak env
   assertDoMatchAlternativesAlignWithMatch env
@@ -3379,6 +3904,10 @@ def runBasicFormattingTests (env : Lean.Environment) : IO Unit := do
   assertDeclarationValueInfixBreaksAfterAssign env
   assertDeclarationValueKeepsAttachedByBody env
   assertDeclarationValueKeepsAttachedDoBody env
+  assertProofValuesRemainLayoutIslands env
+  assertCalcLayoutIslandAfterNestedInfix env
+  assertHaveTermLayoutIsland env
+  assertAbsoluteValueDelimitersStayAttached env
   assertSignatureParametersUseLeadingSourceBreakAfterFlatFails env
   assertDefinitionSourceBreakAfterAssignOverridesFlat env
 
@@ -3401,6 +3930,7 @@ def runExpressionAndRendererTests (env : Lean.Environment) : IO Unit := do
   assertSignatureParametersFitBeforeSourceBreaks env
   assertSignatureParametersStayOnHeaderWhenTheyFit env
   assertSignatureParameterSourceBreakFallback env
+  assertVariableBinderSequenceFlows env
   assertMutualEquationArmIndent env
   assertMutualSingleLineParameterReturnIndent env
   assertReturnTypeInfixIndent env
@@ -3469,11 +3999,13 @@ def runCollectionAndDeclarationTests (env : Lean.Environment) : IO Unit := do
   assertStructInstanceFieldBindersPreserved env
   assertStructUpdateWithFieldsBreaks env
   assertTupleBreakBalanced env
+  assertAnonymousConstructorBreakBalanced env
   assertExportBreaksLongList env
   assertBangApplicationDiagnostics env
 
 def runCliAndArchitectureTests (env : Lean.Environment) : IO Unit := do
   assertCliParsing
+  assertEnvironmentCacheBound env
   assertFormattingExceptionChecks env
   assertCliChecksStillFormatUnlessCheck env
   assertCliFormatsDirectory env
@@ -3488,6 +4020,7 @@ def runCliAndArchitectureTests (env : Lean.Environment) : IO Unit := do
   assertMissingRuleCheckUsesDispatch env
   assertCheckCommandHasRule env
   assertSyntaxDeclarationsHaveRules env
+  assertParserStateUpdatesAfterSyntaxCommands env
   assertPrefixedTermWrappersHaveRules env
   assertCslibStyleCoreSyntaxHasRules env
 

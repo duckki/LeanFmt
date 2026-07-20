@@ -81,39 +81,9 @@ def charsAfterLastNewline (text : String) : String :=
     | char :: rest, current => loop rest (char :: current)
   loop (SpaceRules.normalizeLineEndings text).toList []
 
-def currentLineIndent (text : String) : Nat :=
-  (leadingWhitespace (charsAfterLastNewline text)).length
-
 def hasBlankLineStructure (text : String) : Bool :=
   hasLineBreakChar text
   && SpaceRules.containsSubstring (SpaceRules.normalizeLineEndings text) "\n\n"
-
-def originalColumnAt (source : String) (position : String.Pos.Raw) : Nat :=
-  lineWidth <| charsAfterLastNewline <| SyntaxTree.sourceText source 0 position
-
-def shiftLineIndent (sourceColumn targetColumn : Nat) (line : String) : String :=
-  if line.isEmpty then
-    line
-  else if sourceColumn <= targetColumn then
-    spaces (targetColumn - sourceColumn) ++ line
-  else
-    let removeCount := min (sourceColumn - targetColumn) (leadingWhitespace line).length
-    (line.drop removeCount).toString
-
-def adjustOriginalTextIndent (sourceColumn targetColumn : Nat) (text : String)
-    : String :=
-  match (SpaceRules.normalizeLineEndings text).splitOn "\n" with
-  | [] => text
-  | first :: rest =>
-      String.intercalate "\n"
-      <| first :: rest.map (shiftLineIndent sourceColumn targetColumn)
-
-def adjustOriginalProofTextIndent (sourceColumn targetColumn : Nat) (text : String)
-    : String :=
-  if sourceColumn <= targetColumn then
-    adjustOriginalTextIndent sourceColumn targetColumn text
-  else
-    text
 
 structure SourceBreak where
   index : Nat
@@ -392,10 +362,24 @@ def isProofTree (tree : SyntaxTree.Tree) : Bool :=
 
 def isQuotationTree : SyntaxTree.Tree → Bool
   | .node (.raw `Lean.Parser.Term.quot) _ => true
+  | .node (.raw `Lean.Parser.Tactic.quot) _ => true
   | _ => false
 
 def isLayoutSensitiveCommand : SyntaxTree.Tree → Bool
   | .node (.raw `Lean.Parser.Command.macro_rules) _ => true
+  | _ => false
+
+def isMathlibTacticSyntaxTree : SyntaxTree.Tree → Bool
+  | .node kind _ => (SyntaxTree.nodeKindName kind).startsWith "Mathlib.Tactic."
+  | _ => false
+
+def isCalcTree : SyntaxTree.Tree → Bool
+  | .node (.raw `Lean.calc) _ => true
+  | _ => false
+
+def isHaveTree : SyntaxTree.Tree → Bool
+  | .node (.raw `Lean.Parser.Term.have) _ => true
+  | .node (.raw `Lean.Parser.Term.haveI) _ => true
   | _ => false
 
 def isSyntaxCommentTree : SyntaxTree.Tree → Bool
@@ -409,6 +393,21 @@ partial def containsProofTree : SyntaxTree.Tree → Bool
   | tree@(.node _ children) =>
       isProofTree tree || children.any containsProofTree
 
+def realTokenLexemes (tree : SyntaxTree.Tree) : List String :=
+  tree.tokens.toList.filterMap
+    fun token => if token.lexeme.isEmpty then none else some token.lexeme
+
+def tokenAfterLexeme? (lexemes : List String) (delimiter : String) : Option String :=
+  match lexemes.dropWhile (fun lexeme => lexeme != delimiter) with
+  | _ :: next :: _ => some next
+  | _ => none
+
+def declarationValueStartsWithAttachedBody (tree : SyntaxTree.Tree) : Bool :=
+  match tokenAfterLexeme? (realTokenLexemes tree) ":=" with
+  | some "by" => true
+  | some "do" => true
+  | _ => false
+
 def isDefinitionContainingProof (tree : SyntaxTree.Tree) : Bool :=
   match tree with
   | .node .definition _ => containsProofTree tree
@@ -416,11 +415,45 @@ def isDefinitionContainingProof (tree : SyntaxTree.Tree) : Bool :=
   | .node (.raw `Lean.Parser.Command.abbrev) _ => containsProofTree tree
   | _ => false
 
+def isProofLayoutIsland (tree : SyntaxTree.Tree) : Bool :=
+  match tree with
+  | .node (.raw `Lean.Parser.Command.declValSimple) _ =>
+      containsProofTree tree && declarationValueStartsWithAttachedBody tree
+  | .node (.raw `Lean.Parser.Command.declValEqns) _ =>
+      containsProofTree tree
+  | .node (.raw `Lean.Parser.Term.structInst) _ =>
+      containsProofTree tree
+  | .node (.raw `«term{_}») _ =>
+      containsProofTree tree
+  | .node (.raw `Lean.Parser.Command.whereStructInst) _ =>
+      containsProofTree tree
+  | _ => false
+
+def isProofLemmaCommand (tree : SyntaxTree.Tree) : Bool :=
+  match tree with
+  | .node (.raw `lemma) _ =>
+      LineBreakRules.treeFirstLexeme? tree == some "lemma" && containsProofTree tree
+  | .node (.raw `group) _ =>
+      LineBreakRules.treeFirstLexeme? tree == some "lemma" && containsProofTree tree
+  | _ => false
+
+def isAttributeModifierBlock (tree : SyntaxTree.Tree) : Bool :=
+  match tree with
+  | .node (.raw `Lean.Parser.Command.declModifiers) _ =>
+      LineBreakRules.treeContainsLexeme "@[" tree
+  | _ => false
+
 def shouldEmitOriginalTree (tree : SyntaxTree.Tree) : Bool :=
   isProofTree tree
+  || isProofLayoutIsland tree
+  || isProofLemmaCommand tree
+  || isAttributeModifierBlock tree
   || isDefinitionContainingProof tree
+  || isCalcTree tree
+  || isHaveTree tree
   || isQuotationTree tree
   || isLayoutSensitiveCommand tree
+  || isMathlibTacticSyntaxTree tree
   || isSyntaxCommentTree tree
 
 def isTheoremValueChild (parent : SyntaxTree.Tree) (index : Nat) : Bool :=
@@ -433,26 +466,43 @@ def shouldEmitOriginalChild
     : Bool :=
   isTheoremValueChild parent index || shouldEmitOriginalTree child
 
-def RenderState.emitOriginalTree (state : RenderState) (tree : SyntaxTree.Tree)
+partial def treeStartsWithOriginalEmission : SyntaxTree.Tree → Bool
+  | .missing => false
+  | .leaf _ => false
+  | tree@(.node _ children) =>
+      if shouldEmitOriginalTree tree then
+        true
+      else
+        let rec loop (index : Nat)
+            : Bool :=
+          match children[index]? with
+          | some child =>
+              if SyntaxTree.Tree.firstToken? child |>.isSome then
+                treeStartsWithOriginalEmission child
+              else
+                loop (index + 1)
+          | none => false
+        loop 0
+
+def RenderState.emitOriginalTree
+    (state : RenderState) (tree : SyntaxTree.Tree)
+    (respectPendingIndent : Bool := false)
     : RenderState :=
   match SyntaxTree.Tree.firstToken? tree, SyntaxTree.Tree.lastToken? tree with
   | some firstToken, some lastToken =>
       let leading :=
-        match state.lastToken? with
-        | some leftToken =>
-            SyntaxTree.sourceText state.source leftToken.span.stop firstToken.span.start
-        | none => firstToken.leading.text
+        if respectPendingIndent && state.pendingIndent?.isSome then
+          state.defaultWhitespace firstToken true
+        else
+          match state.lastToken? with
+          | some leftToken =>
+              SyntaxTree.sourceText state.source leftToken.span.stop
+                firstToken.span.start
+          | none => firstToken.leading.text
       let sourceText :=
         SyntaxTree.sourceText state.source firstToken.span.start lastToken.span.stop
-      let sourceColumn := originalColumnAt state.source firstToken.span.start
-      let targetColumn := lineWidth <| currentLineAfterAppend state.currentLine leading
-      let emittedText :=
-        if isProofTree tree then
-          adjustOriginalProofTextIndent sourceColumn targetColumn sourceText
-        else
-          sourceText
       {
-        state.appendOutput <| leading ++ emittedText with
+        state.appendOutput <| leading ++ sourceText with
           lastToken? := some lastToken
           pendingIndent? := none
       }
@@ -891,7 +941,7 @@ partial def segmentAllowsFlat
   | .missing => true
   | .leaf _ => true
   | .node _ _ =>
-      if isProofTree segment.parent then
+      if shouldEmitOriginalTree segment.parent then
         false
       else
         match segment.singleChild? with
@@ -1293,11 +1343,15 @@ partial def renderNestedSegment
     (state : RenderState) (segment : LineBreakRules.Segment) (index : Nat)
     (child : SyntaxTree.Tree) (suffixStop? : Option Nat := none)
     : RenderState :=
-  let state := state.preserveBlankBoundaryBefore child
+  let emitOriginal := shouldEmitOriginalChild segment.parent index child
+  let state :=
+    if emitOriginal || treeStartsWithOriginalEmission child then
+      state
+    else
+      state.preserveBlankBoundaryBefore child
   let childContext := state.context.push segment index
   let childSegment := LineBreakRules.Segment.ofTree child
   let childRule := LineBreakRules.formattingRuleFor child
-  let emitOriginal := shouldEmitOriginalChild segment.parent index child
   let childBreakPoints :=
     if emitOriginal then [] else ruleBreakPoints childContext childSegment childRule
   let inheritsBase := childRule.inheritBase childContext childSegment
@@ -1344,6 +1398,7 @@ partial def renderNestedSegment
   let rendered :=
     if emitOriginal then
       childState.emitOriginalTree child
+        (respectPendingIndent := isProofLemmaCommand child)
     else
       renderSegment childState childSegment (some (childRule, childBreakPoints))
   scope.restore rendered

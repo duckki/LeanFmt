@@ -122,10 +122,12 @@ scripts/validate-external-projects.sh \
 
 For each project the script builds LeanFmt, creates a fresh shallow clone under
 `.scratch/external-validation/`, optionally downloads the project's Lake cache,
-builds the project before formatting, checks matching tracked `.lean` files with
-`--check --check-exception --check-idempotent` under the target project's
-`lake env`, formats only after those diagnostics pass, and builds the formatted
-project again.
+builds before formatting, checks matching tracked `.lean` files with `--check
+--check-exception --check-idempotent` under the target project's `lake env`,
+formats only after those diagnostics pass, and builds after formatting. For the
+default all-file selector, the build phases run `lake build`; for a narrowed file
+selector, the script translates the selected `.lean` files to module targets and
+builds those modules in batches.
 It times every phase, continues after individual failures, and returns failure
 when any required phase fails. A missing build-cache executable is only an
 optional-phase skip.

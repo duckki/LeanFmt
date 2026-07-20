@@ -98,13 +98,17 @@ def commentTriviaForBreak (text indent : String) : String :=
 def cleanFinalTrivia (text : String) : String :=
   collapseNewlineRuns <| stripTrailingWhitespace text
 
+def isFinalWhitespace : Char → Bool
+  | '\n' => true
+  | char => isHorizontalWhitespace char
+
 def normalizeFinalNewline (text : String) : String :=
-  let cleaned := cleanFinalTrivia text
-  let withoutFinalNewlines := (cleaned.dropEndWhile fun char => char == '\n').toString
-  if withoutFinalNewlines.isEmpty then
+  let normalized := normalizeLineEndings text
+  let withoutFinalWhitespace := (normalized.dropEndWhile isFinalWhitespace).toString
+  if withoutFinalWhitespace.isEmpty then
     ""
   else
-    withoutFinalNewlines ++ "\n"
+    withoutFinalWhitespace ++ "\n"
 
 def hasLineStructure (text : String) : Bool :=
   text.contains '\n'
@@ -138,21 +142,27 @@ def isPostfixMarkerStart (char : Char) : Bool :=
   || charCodeIn char 0x1D00 0x1D7F
   || charCodeIn char 0x1D80 0x1DBF
 
+def isPostfixMarkerChar (char : Char) : Bool :=
+  isPostfixMarkerStart char
+  || char.toNat == 0x00B9
+  || char.toNat == 0x00B2
+  || char.toNat == 0x00B3
+
 def isPostfixMarkerToken (lexeme : String) : Bool :=
   match lexeme.toList with
   | [] => false
-  | first :: _ => isPostfixMarkerStart first
+  | chars => chars.all isPostfixMarkerChar
 
 def noSpaceBeforeToken (lexeme : String) : Bool :=
-  stringIn lexeme [",", ",*", ";", "@"]
+  stringIn lexeme [",", ",*", ";"]
   || stringStartsWithAny lexeme [")", "]", "⟩", "⟫", "⦄"]
   || isPostfixMarkerToken lexeme
 
 def preservesTightBraceSpacing (left right : SyntaxTree.Token) : Bool :=
   left.lexeme == "{" || right.lexeme == "}"
 
-def preservesTightDotSpacing (left right : SyntaxTree.Token) : Bool :=
-  left.lexeme == "." || right.lexeme == "." || left.lexeme.endsWith "."
+def preservesTightDotSpacing (left _right : SyntaxTree.Token) : Bool :=
+  left.lexeme == "." || (left.lexeme.endsWith "." && left.lexeme != "..")
 
 def preservesTightPostfixSpacing (right : SyntaxTree.Token) : Bool :=
   right.lexeme == "[" || right.lexeme == "?"
@@ -169,6 +179,7 @@ def spaceBetweenTokens (left right : SyntaxTree.Token) : String :=
     if right.span.start == left.span.stop then "" else " "
   else if noSpaceAfterToken left.lexeme
           || noSpaceBeforeToken right.lexeme
+          || preservesTightDotSpacing left right
           || preservesTightInterpolationSpacing left right then
     ""
   else

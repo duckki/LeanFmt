@@ -10,6 +10,8 @@ structure Options where
   checkException : Bool := false
   checkIdempotent : Bool := false
   recursive : Bool := false
+  environmentCacheSize : Nat := 1
+  importEnvironmentFirst : Bool := false
   files : List FilePath := []
 deriving Repr
 
@@ -32,6 +34,7 @@ deriving DecidableEq, Repr
 
 structure EnvironmentCache where
   default : Lean.Environment
+  maxEntries : Nat
   entries : IO.Ref (List (String × Lean.Environment))
 
 def ExceptionCounts.add (left right : ExceptionCounts) : ExceptionCounts :=
@@ -119,6 +122,10 @@ def usage : String :=
       "            Check code preservation, remaining overflow, and missing rules.",
       "  --check-idempotent",
       "            Fail if formatting the formatted output changes it again.",
+      "  --env-cache-size N",
+      "            Cache up to N imported environments per process; 0 disables the cache.",
+      "  --import-env-first",
+      "            Load source imports before parsing instead of trying the default environment first.",
       "  With either diagnostic option, --check is a dry run; formatting",
       "  differences alone do not affect the exit status."
     ]
@@ -135,6 +142,14 @@ def parseArgs (args : List String) : ParseResult :=
         loop { options with checkException := true } files rest
     | "--check-idempotent" :: rest =>
         loop { options with checkIdempotent := true } files rest
+    | "--env-cache-size" :: value :: rest =>
+        match value.toNat? with
+        | some size => loop { options with environmentCacheSize := size } files rest
+        | none => .error s!"invalid --env-cache-size value: {value}"
+    | "--env-cache-size" :: [] =>
+        .error "--env-cache-size requires a value"
+    | "--import-env-first" :: rest =>
+        loop { options with importEnvironmentFirst := true } files rest
     | "--recursive" :: rest | "-r" :: rest =>
         loop { options with recursive := true } files rest
     | "-h" :: _ | "--help" :: _ => .help
@@ -145,11 +160,12 @@ def parseArgs (args : List String) : ParseResult :=
           loop options (FilePath.mk arg :: files) rest
   loop {} [] args
 
-def loadFormatterEnvironment : IO EnvironmentCache := do
+def loadFormatterEnvironment (environmentCacheSize : Nat := 1)
+    : IO EnvironmentCache := do
   Lean.initSearchPath (← Lean.findSysroot)
   let default ← Formatter.defaultEnvironment
   let entries ← IO.mkRef []
-  pure { default, entries }
+  pure { default, maxEntries := environmentCacheSize, entries }
 
 def importKey (importDecl : Lean.Import) : String :=
   s!"{importDecl.module}|all={importDecl.importAll}|exported={importDecl.isExported}|meta={importDecl.isMeta}"
@@ -170,6 +186,17 @@ def importsForSource (source fileName : String) : IO (Array Lean.Import) := do
   let (header, _state, _messages) ← Lean.Parser.parseHeader inputContext
   pure <| Lean.Elab.headerToImports header
 
+def EnvironmentCache.rememberEnvironment
+    (cache : EnvironmentCache) (key : String) (env : Lean.Environment)
+    : IO Unit := do
+  if cache.maxEntries == 0 then
+    pure ()
+  else
+    cache.entries.modify
+      fun entries =>
+        ((key, env) :: entries.filter (fun entry => entry.1 != key)).take
+          cache.maxEntries
+
 def EnvironmentCache.environmentForImports
     (cache : EnvironmentCache) (imports : Array Lean.Import)
     : IO Lean.Environment := do
@@ -179,22 +206,27 @@ def EnvironmentCache.environmentForImports
     let key := importsKey imports
     let entries ← cache.entries.get
     match entries.find? (fun entry => entry.1 == key) with
-    | some entry => pure entry.2
+    | some (_, env) => cache.rememberEnvironment key env *> pure env
     | none =>
         let env ← SyntaxTree.importEnvironment imports
-        cache.entries.modify fun entries => (key, env) :: entries
+        cache.rememberEnvironment key env
         pure env
 
 def EnvironmentCache.environmentForSource
     (cache : EnvironmentCache) (source fileName : String)
+    (importEnvironmentFirst : Bool)
     : IO Lean.Environment := do
-  try
-    discard
-    <| Formatter.Internal.parseModuleWithEnv cache.default
-        (Formatter.Internal.normalizeSource source) fileName
-    pure cache.default
-  catch _ =>
-    cache.environmentForImports (← importsForSource source fileName)
+  let normalized := Formatter.Internal.normalizeSource source
+  if importEnvironmentFirst then
+    cache.environmentForImports (← importsForSource normalized fileName)
+  else
+    try
+      discard
+      <| SyntaxTree.parseModuleSyntaxWithoutParserStateUpdates cache.default
+          normalized fileName
+      pure cache.default
+    catch _ =>
+      cache.environmentForImports (← importsForSource normalized fileName)
 
 def reportFormattingException
     (path : FilePath) (exception : Formatter.Diagnostics.FormattingException)
@@ -254,7 +286,8 @@ def formatFile (cache : EnvironmentCache) (options : Options) (path : FilePath)
     : IO FileOutcome := do
   try
     let source ← IO.FS.readFile path
-    let env ← cache.environmentForSource source path.toString
+    let env ←
+      cache.environmentForSource source path.toString options.importEnvironmentFirst
     let result ← Formatter.formatSourceWithEnvDetailed env source path.toString
     let formatted := result.formatted
     let exceptionCounts ←
@@ -304,7 +337,7 @@ def expandInputPaths (options : Options) : IO (List FilePath) := do
   pure files
 
 def runOptions (options : Options) : IO UInt32 := do
-  let cache ← loadFormatterEnvironment
+  let cache ← loadFormatterEnvironment options.environmentCacheSize
   let files ← expandInputPaths options
   let mut changed := false
   let mut failed := false
