@@ -958,18 +958,8 @@ def applicationBreaks (_context : RuleContext) (segment : Segment) : List BreakP
   childBoundaryBreaks segment 1
 
 def pipeProjBreaks (_context : RuleContext) (segment : Segment) : List BreakPoint :=
-  match segment.child? segment.start with
-  | some receiver =>
-      let receiverHasLineStructure :=
-        match receiver.tokens.toList with
-        | [] | [_] => false
-        | _ :: rest => rest.any fun token => token.leading.text.contains '\n'
-      if receiverHasLineStructure then
-        match boundaryBreak? segment 1 0 with
-        | some breakPoint => [breakPoint]
-        | none => []
-      else
-        []
+  match boundaryBreak? segment 1 0 with
+  | some breakPoint => [breakPoint]
   | none => []
 
 def patternAliasParenBreaks (context : RuleContext) (segment : Segment)
@@ -2177,7 +2167,8 @@ def ruleFor : SyntaxTree.Tree → Option LineBreakRule
   | .node (.raw `Lean.Parser.Term.suffices) _ => some defaultRule
   | .node (.raw `Lean.Parser.Term.sufficesDecl) _ => some defaultRule
   | .node (.raw `Lean.Parser.Term.open) _ => some defaultRule
-  | .node (.raw `Lean.Parser.Term.termReturn) _ => some defaultRule
+  | .node (.raw `Lean.Parser.Term.termReturn) _ =>
+      some <| prefixedTermRule "termReturn"
   | .node (.raw `Lean.Parser.Term.dynamicQuot) _ => some defaultRule
   | .node (.raw `Lean.Parser.Term.sort) _ => some defaultRule
   | .node (.raw `Lean.Parser.Term.letConfig) _ => some defaultRule

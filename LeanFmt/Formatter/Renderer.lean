@@ -364,10 +364,20 @@ def isProofTree (tree : SyntaxTree.Tree) : Bool :=
 def isQuotationTree : SyntaxTree.Tree → Bool
   | .node (.raw `Lean.Parser.Term.quot) _ => true
   | .node (.raw `Lean.Parser.Tactic.quot) _ => true
+  | .node (.raw `Qq.«termQ(__)») _ => true
+  | _ => false
+
+def rawKindStartsWith (leading : String) : Lean.SyntaxNodeKind → Bool :=
+  fun kind => (toString kind).startsWith leading
+
+def isQqSyntaxTree : SyntaxTree.Tree → Bool
+  | .node (.raw kind) _ => rawKindStartsWith "Qq." kind
+  | .node (.infixChain kind) _ => rawKindStartsWith "Qq." kind
   | _ => false
 
 def isLayoutSensitiveCommand : SyntaxTree.Tree → Bool
   | .node (.raw `Lean.Parser.Command.macro_rules) _ => true
+  | .node (.raw `Lean.Parser.«command_Simproc_decl_(_):=_») _ => true
   | _ => false
 
 def isMathlibTacticSyntaxTree : SyntaxTree.Tree → Bool
@@ -376,6 +386,20 @@ def isMathlibTacticSyntaxTree : SyntaxTree.Tree → Bool
 
 def isCalcTree : SyntaxTree.Tree → Bool
   | .node (.raw `Lean.calc) _ => true
+  | _ => false
+
+def tokenHasCommentTrivia (token : SyntaxTree.Token) : Bool :=
+  SpaceRules.hasCommentStart token.leading.text
+  || SpaceRules.hasCommentStart token.trailing.text
+
+partial def treeHasCommentTrivia : SyntaxTree.Tree → Bool
+  | .missing => false
+  | .leaf token => tokenHasCommentTrivia token
+  | .node _ children => children.any treeHasCommentTrivia
+
+def isCommentSensitiveMatchExpr : SyntaxTree.Tree → Bool
+  | tree@(.node (.raw `Lean.Parser.Term.matchExpr) _) =>
+      treeHasCommentTrivia tree
   | _ => false
 
 def isHaveTree : SyntaxTree.Tree → Bool
@@ -455,8 +479,10 @@ def shouldEmitOriginalTree (tree : SyntaxTree.Tree) : Bool :=
   || isAttributeModifierBlock tree
   || isDefinitionContainingProof tree
   || isCalcTree tree
+  || isCommentSensitiveMatchExpr tree
   || isHaveTree tree
   || isQuotationTree tree
+  || isQqSyntaxTree tree
   || isLayoutSensitiveCommand tree
   || isMathlibTacticSyntaxTree tree
   || isSyntaxCommentTree tree
@@ -861,12 +887,40 @@ def sourceBreaksInSegment (source : String) (segment : LineBreakRules.Segment)
       let (_, breaks) := (List.range segment.stop).foldl step (none, [])
       breaks.reverse
 
+def contentChildIndexAtOrAfter? (segment : LineBreakRules.Segment) (index : Nat)
+    : Option Nat :=
+  segment.indexes.find?
+    fun candidate =>
+      index <= candidate
+      && match segment.child? candidate with
+          | some child => LineBreakRules.treeHasContent child
+          | none => false
+
+def tokenBoundaryAt? (segment : LineBreakRules.Segment) (index : Nat)
+    : Option (SyntaxTree.Token × SyntaxTree.Token) := do
+  let leftIndex ← LineBreakRules.previousContentIndex? segment index
+  let rightIndex ← contentChildIndexAtOrAfter? segment index
+  let leftTree ← segment.child? leftIndex
+  let rightTree ← segment.child? rightIndex
+  let leftToken ← SyntaxTree.Tree.lastToken? leftTree
+  let rightToken ← SyntaxTree.Tree.firstToken? rightTree
+  some (leftToken, rightToken)
+
+def breakPointPreservesTightTokenBoundary
+    (segment : LineBreakRules.Segment) (breakPoint : LineBreakRules.BreakPoint)
+    : Bool :=
+  match tokenBoundaryAt? segment breakPoint.index with
+  | some (left, right) => !SpaceRules.preservesTightDotSpacing left right
+  | none => true
+
 def normalizeBreakPoints
     (segment : LineBreakRules.Segment) (breakPoints : List LineBreakRules.BreakPoint)
     : List LineBreakRules.BreakPoint :=
   (breakPoints.filter
     fun breakPoint =>
-      segment.start <= breakPoint.index && breakPoint.index < segment.stop)
+      segment.start <= breakPoint.index
+      && breakPoint.index < segment.stop
+      && breakPointPreservesTightTokenBoundary segment breakPoint)
   |>.mergeSort fun left right => left.index < right.index
 
 def ruleBreakPoints

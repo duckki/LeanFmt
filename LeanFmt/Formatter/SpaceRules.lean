@@ -169,6 +169,7 @@ def dotPrefixCanAttach (lexeme : String) : Bool :=
 
 def preservesTightDotSpacing (left _right : SyntaxTree.Token) : Bool :=
   left.lexeme == "."
+  || left.lexeme == "|>."
   || (left.lexeme.endsWith "." && left.lexeme != ".." && dotPrefixCanAttach left.lexeme)
 
 def preservesTightPostfixSpacing (right : SyntaxTree.Token) : Bool :=

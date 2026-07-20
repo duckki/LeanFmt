@@ -639,6 +639,26 @@ def assertDoMatchExprAlternativesPreserveBranches (env : Lean.Environment)
       "do-match-expr-alternatives-formatted.lean"
   assertEq "do match_expr formatting is idempotent" formatted formattedAgain
 
+def assertCommentedMatchExprAlternativesStayParseable (env : Lean.Environment)
+    : IO Unit := do
+  let source :=
+    "import Lean\n\n"
+    ++ "open Lean Elab Term Meta\n\n"
+    ++ "meta def knownToBeFinsetNotSet (expectedType? : Option Expr) : TermElabM Bool :=\n"
+    ++ "  match expectedType? with\n"
+    ++ "  | some expectedType =>\n"
+    ++ "    match_expr expectedType with\n"
+    ++ "    -- If the expected type is known to be `Finset ?α`, return `true`.\n"
+    ++ "    | Finset _ => pure true\n"
+    ++ "    -- If the expected type is known to be `Set ?α`, give up.\n"
+    ++ "    | Set _ => throwUnsupportedSyntax\n"
+    ++ "    -- Otherwise return `false`.\n"
+    ++ "    | _ => pure false\n"
+    ++ "  | none => pure false\n"
+  let formatted ← Formatter.formatSourceWithEnv env source "commented-match-expr.lean"
+  assertEq "commented match_expr alternatives keep source layout" source formatted
+  let _ ← SyntaxTree.parseModuleStringWithEnv env formatted "commented-match-expr.lean"
+
 def assertShowFromBreaksLikeAssignment (env : Lean.Environment) : IO Unit := do
   let source :=
     "def showDoExample : IO Unit :=\n"
@@ -701,13 +721,25 @@ def assertDoControlWrapperRules (env : Lean.Environment) : IO Unit := do
     Formatter.formatSourceWithEnv env source "do-control-wrapper-rules.lean"
   assertEq "do control wrapper rules" expected formatted
 
+def assertReturnDoesNotBreakBeforeValue (env : Lean.Environment) : IO Unit := do
+  let source :=
+    "def returnAnonymousConstructor : Result := do\n"
+    ++ "  return ⟨veryLongFunctionNameForReturnConstructor firstArgument secondArgument, anotherVeryLongFunctionNameForReturnConstructor thirdArgument fourthArgument⟩\n"
+  let formatted ←
+    Formatter.formatSourceWithEnv env source "return-constructor-break.lean"
+  assertTextLacks "return keeps value on same line" formatted "return\n"
+  let _ ←
+    SyntaxTree.parseModuleStringWithEnv env formatted "return-constructor-break.lean"
+
 def assertShowAndDoWrapperRules (env : Lean.Environment) : IO Unit := do
   assertShowFromBreaksLikeAssignment env
   assertDoControlWrapperRules env
+  assertReturnDoesNotBreakBeforeValue env
   assertDoLetElseBreaks env
   assertDoLetArrowFallbackBreaksBeforeContinuation env
   assertDoLetExprFallbackBreaksBeforeContinuation env
   assertDoMatchExprAlternativesPreserveBranches env
+  assertCommentedMatchExprAlternativesStayParseable env
   assertBracketedDoBlockPreservesStatementBreaks env
 
 def assertProjectionChainDoesNotBreakBeforeDot (env : Lean.Environment) : IO Unit := do
@@ -749,6 +781,18 @@ def assertLongPipeProjectionKeepsTightDot (env : Lean.Environment) : IO Unit := 
   let _ ←
     SyntaxTree.parseModuleStringWithEnv env formatted
       "long-pipe-projection-tight-dot.lean"
+
+def assertPipeProjectionDoesNotBreakAfterDot (env : Lean.Environment) : IO Unit := do
+  let source :=
+    "def pipeProjectionChain : Result :=\n"
+    ++ "  veryLongFunctionNameForPipeProjectionFormatting firstArgument secondArgument thirdArgument |>.trans (anotherVeryLongFunctionNameForPipeProjectionFormatting fourthArgument fifthArgument) |>.symm\n"
+  let formatted ←
+    Formatter.formatSourceWithEnv env source "pipe-projection-chain-dot.lean"
+  assertTextContains "pipe projection chain keeps dot member attached"
+    formatted "|>.symm"
+  assertTextLacks "pipe projection chain does not break after dot" formatted "|>.\n"
+  let _ ←
+    SyntaxTree.parseModuleStringWithEnv env formatted "pipe-projection-chain-dot.lean"
 
 def assertMatchAltProofRhsKeepsByOnArrowLine (env : Lean.Environment) : IO Unit := do
   let source :=
@@ -1464,9 +1508,10 @@ def assertSelfFormattingRulePriorities (env : Lean.Environment) : IO Unit := do
     ++ "                                  left < right\n"
   let pipeProjectionFunctionArgumentExpected :=
     "def sort xs :=\n"
-    ++ "  xs |>.mergeSort\n"
-    ++ "          fun left right =>\n"
-    ++ "            left < right\n"
+    ++ "  xs\n"
+    ++ "  |>.mergeSort\n"
+    ++ "      fun left right =>\n"
+    ++ "        left < right\n"
   let pipeProjectionFunctionArgumentFormatted ←
     Formatter.formatSourceWithEnv env pipeProjectionFunctionArgument
       "pipe-projection-function-argument.lean"
@@ -3931,6 +3976,16 @@ def assertMathlibLowRiskSyntaxKindsHaveRules : IO Unit := do
     (Formatter.shouldEmitOriginalTree tacticTree)
   assertTrue "mathlib tactic syntax is skipped by missing-rule reporting"
     (Formatter.Diagnostics.missingRuleOccurrences "" none tacticTree).isEmpty
+  let qqTermTree := SyntaxTree.Tree.node (.raw `Qq.«termQ(__)») #[]
+  assertTrue "Qq term quotation keeps original formatting"
+    (Formatter.shouldEmitOriginalTree qqTermTree)
+  let qqEqTree := SyntaxTree.Tree.node (.infixChain `Qq.«term_=Q_») #[]
+  assertTrue "Qq infix quotation keeps original formatting"
+    (Formatter.shouldEmitOriginalTree qqEqTree)
+  let simprocTree :=
+    SyntaxTree.Tree.node (.raw `Lean.Parser.«command_Simproc_decl_(_):=_») #[]
+  assertTrue "simproc declarations keep original formatting"
+    (Formatter.shouldEmitOriginalTree simprocTree)
 
 def assertMissingRuleCheckUsesDispatch (env : Lean.Environment) : IO Unit := do
   let unknownTree :=
@@ -4117,6 +4172,7 @@ def runBasicFormattingTests (env : Lean.Environment) : IO Unit := do
   assertProjectionChainDoesNotBreakBeforeDot env
   assertPipeProjectionKeepsTightDot env
   assertLongPipeProjectionKeepsTightDot env
+  assertPipeProjectionDoesNotBreakAfterDot env
   assertMatchAltProofRhsKeepsByOnArrowLine env
   assertRecordBraceSpacing env
   assertDerivingStaysOnOwnLine env
