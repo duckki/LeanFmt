@@ -1104,8 +1104,12 @@ def doIfBreaks (_context : RuleContext) (segment : Segment) : List BreakPoint :=
         | none => none
   [thenBreak].filterMap id ++ elseBreaks
 
+def parentIsDoSequence (context : RuleContext) : Bool :=
+  parentIsRawKind context `Lean.Parser.Term.doSeqIndent
+  || parentIsRawKind context `Lean.Parser.Term.doSeqBracketed
+
 def doSeqItemBreaks (context : RuleContext) (segment : Segment) : List BreakPoint :=
-  if parentIsRawKind context `Lean.Parser.Term.doSeqIndent then
+  if parentIsDoSequence context then
     match nonemptyChildIndexes segment with
     | [] => []
     | [_] => []
@@ -1228,6 +1232,9 @@ def doLetElseBreaks (_context : RuleContext) (segment : Segment) : List BreakPoi
   ].filterMap
     id
 
+def doLetExprBreaks (context : RuleContext) (segment : Segment) : List BreakPoint :=
+  doLetElseBreaks context segment
+
 /-! ### Binding and `do` rule values -/
 
 def letRule : LineBreakRule :=
@@ -1274,6 +1281,14 @@ def doLetElseRule : LineBreakRule :=
     flow := fun _ _ => true
     inheritBase := fun _ _ => true
     breakPoints := doLetElseBreaks
+  }
+
+def doLetExprRule : LineBreakRule :=
+  {
+    name := "doLetExpr"
+    mandatory := fun _ _ => true
+    inheritBase := fun _ _ => true
+    breakPoints := doLetExprBreaks
   }
 
 def doIdDeclRule : LineBreakRule :=
@@ -1517,9 +1532,14 @@ def ifThenElseBreaks (_context : RuleContext) (segment : Segment) : List BreakPo
   breakSpecs.filterMap
     fun (index, indentLevels) => boundaryBreak? segment index indentLevels
 
+def firstMatchAlternativesIndex? (segment : Segment) : Option Nat :=
+  match firstChildRawKind? segment `Lean.Parser.Term.matchAlts with
+  | some index => some index
+  | none => firstChildRawKind? segment `Lean.Parser.Term.matchExprAlts
+
 def matchExpressionBreaks (_context : RuleContext) (segment : Segment)
     : List BreakPoint :=
-  match firstChildRawKind? segment `Lean.Parser.Term.matchAlts with
+  match firstMatchAlternativesIndex? segment with
   | some index =>
       match boundaryBreak? segment index 0 with
       | some breakPoint => [breakPoint]
@@ -1587,6 +1607,11 @@ def matchAltBreaks (context : RuleContext) (segment : Segment) : List BreakPoint
     match boundaryBreak? segment 3 (matchAltRhsIndentLevels context segment) with
     | some breakPoint => [breakPoint]
     | none => []
+
+def matchExprAltBreaks (_context : RuleContext) (segment : Segment) : List BreakPoint :=
+  match boundaryBreak? segment 3 1 with
+  | some breakPoint => [breakPoint]
+  | none => []
 
 def doBreaks (context : RuleContext) (segment : Segment) : List BreakPoint :=
   let indentLevels :=
@@ -1919,6 +1944,14 @@ def matchAltRule : LineBreakRule :=
     breakPoints := matchAltBreaks
   }
 
+def matchExprAltRule : LineBreakRule :=
+  {
+    name := "matchExprAlt"
+    mandatory := fun _ _ => true
+    inheritBase := fun _ _ => true
+    breakPoints := matchExprAltBreaks
+  }
+
 def doRule : LineBreakRule :=
   {
     name := "do"
@@ -2150,7 +2183,7 @@ def ruleFor : SyntaxTree.Tree → Option LineBreakRule
   | .node (.raw `Lean.Parser.Term.letConfig) _ => some defaultRule
   | .node (.raw `Lean.Parser.Term.letDecl) _ => some defaultRule
   | .node (.raw `Lean.Parser.Term.letI) _ => some defaultRule
-  | .node (.raw `Lean.Parser.Term.doLetExpr) _ => some defaultRule
+  | .node (.raw `Lean.Parser.Term.doLetExpr) _ => some doLetExprRule
   | .node (.raw `Lean.Parser.Term.doIfLetBind) _ => some defaultRule
   | .node (.raw `Lean.Parser.Term.doHave) _ => some defaultRule
   | .node (.raw `Lean.Parser.Term.inferInstanceAs) _ => some defaultRule
@@ -2162,10 +2195,10 @@ def ruleFor : SyntaxTree.Tree → Option LineBreakRule
   | .node (.raw `Lean.Parser.Term.letId) _ => some defaultRule
   | .node (.raw `Lean.Parser.Term.letIdDeclNoBinders) _ => some letIdDeclRule
   | .node (.raw `Lean.Parser.Term.matchDiscr) _ => some transparentRule
-  | .node (.raw `Lean.Parser.Term.doMatchExpr) _ => some defaultRule
-  | .node (.raw `Lean.Parser.Term.matchExprAlts) _ => some defaultRule
-  | .node (.raw `Lean.Parser.Term.matchExprAlt) _ => some defaultRule
-  | .node (.raw `Lean.Parser.Term.matchExprElseAlt) _ => some defaultRule
+  | .node (.raw `Lean.Parser.Term.doMatchExpr) _ => some matchExpressionRule
+  | .node (.raw `Lean.Parser.Term.matchExprAlts) _ => some matchAltsRule
+  | .node (.raw `Lean.Parser.Term.matchExprAlt) _ => some matchExprAltRule
+  | .node (.raw `Lean.Parser.Term.matchExprElseAlt) _ => some matchExprAltRule
   | .node (.raw `Lean.Parser.Term.matchExprPat) _ => some defaultRule
   | .node (.raw `Lean.Parser.Term.binderDefault) _ => some defaultRule
   | .node (.raw `Lean.Parser.Term.namedArgument) _ => some defaultRule
@@ -2190,7 +2223,7 @@ def ruleFor : SyntaxTree.Tree → Option LineBreakRule
   | .node (.raw `Lean.Parser.Tactic.tacticRfl) _ => some defaultRule
   | .node (.raw `Lean.Parser.Tactic.grind) _ => some defaultRule
   | .node (.raw `Lean.Parser.Tactic.optConfig) _ => some defaultRule
-  | .node (.raw `Lean.Parser.Term.doNested) _ => some defaultRule
+  | .node (.raw `Lean.Parser.Term.doNested) _ => some doRule
   | .node (.raw `Lean.Parser.Term.doSeqBracketed) _ => some defaultRule
   -- Known leaf-like parser nodes handled by generic spacing and layout.
   | .node (.raw `Lean.binderIdent) _ => some defaultRule

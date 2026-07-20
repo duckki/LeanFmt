@@ -161,8 +161,15 @@ def noSpaceBeforeToken (lexeme : String) : Bool :=
 def preservesTightBraceSpacing (left right : SyntaxTree.Token) : Bool :=
   left.lexeme == "{" || right.lexeme == "}"
 
+def dotPrefixCanAttach (lexeme : String) : Bool :=
+  match lexeme.toList.reverse with
+  | '.' :: previous :: _ =>
+      previous.isAlphanum || previous == '_' || previous == '\'' || previous == '»'
+  | _ => false
+
 def preservesTightDotSpacing (left _right : SyntaxTree.Token) : Bool :=
-  left.lexeme == "." || (left.lexeme.endsWith "." && left.lexeme != "..")
+  left.lexeme == "."
+  || (left.lexeme.endsWith "." && left.lexeme != ".." && dotPrefixCanAttach left.lexeme)
 
 def preservesTightPostfixSpacing (right : SyntaxTree.Token) : Bool :=
   right.lexeme == "[" || right.lexeme == "?"

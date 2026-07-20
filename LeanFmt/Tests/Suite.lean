@@ -175,6 +175,12 @@ def assertCustomNotationBracketSpacing : IO Unit := do
   assertEq "dot identifier stays tight" ""
     (Formatter.SpaceRules.spaceBetweenTokens
       (syntheticAtomToken ".") (syntheticAtomToken "inr"))
+  assertEq "qualified identifier dot stays tight" ""
+    (Formatter.SpaceRules.spaceBetweenTokens
+      (syntheticAtomToken "Nat.") (syntheticAtomToken "succ"))
+  assertEq "operator ending in dot keeps right spacing" " "
+    (Formatter.SpaceRules.spaceBetweenTokens
+      (syntheticAtomToken "→.") (syntheticAtomToken "List"))
   assertEq "pattern ellipsis does not attach to arrow" " "
     (Formatter.SpaceRules.spaceBetweenTokens
       (syntheticAtomToken "..") (syntheticAtomToken "=>"))
@@ -505,6 +511,23 @@ def assertDoBlockPreservesStatementBreaks (env : Lean.Environment) : IO Unit := 
     Formatter.formatSourceWithEnv env source "do-block-statement-breaks.lean"
   assertEq "do block preserves statement breaks" expected formatted
 
+def assertBracketedDoBlockPreservesStatementBreaks (env : Lean.Environment)
+    : IO Unit := do
+  let source :=
+    "def bracketedDo : IO Nat := do {\n"
+    ++ "    let n ← pure 1\n"
+    ++ "    let m ← pure 2\n"
+    ++ "    pure (n + m) }\n"
+  let formatted ←
+    Formatter.formatSourceWithEnv env source "bracketed-do-statement-breaks.lean"
+  assertTrue "bracketed do block preserves code"
+    (← codePreservedIgnoringWhitespace env source formatted)
+  assertTextContains "bracketed do keeps first statement boundary" formatted
+    "let n ← pure 1\n"
+  assertTextContains "bracketed do keeps second statement boundary" formatted
+    "let m ← pure 2\n"
+  assertTextLacks "bracketed do does not flatten adjacent lets" formatted "pure 1 let"
+
 def assertDoLetElseBreaks (env : Lean.Environment) : IO Unit := do
   let header :=
     "def doLetElseExample (atomicTree commaTree : SyntaxTree.Tree)\n"
@@ -570,6 +593,51 @@ def assertDoLetArrowFallbackBreaksBeforeContinuation (env : Lean.Environment)
     ++ "  some value\n"
   let formatted ← Formatter.formatSourceWithEnv env source "do-let-arrow-fallback.lean"
   assertEq "do-let arrow fallback breaks before continuation" expected formatted
+
+def assertDoLetExprFallbackBreaksBeforeContinuation (env : Lean.Environment)
+    : IO Unit := do
+  let source :=
+    "import Lean\n\n"
+    ++ "open Lean Meta Elab Term\n\n"
+    ++ "meta def shortLetExpr : TermElab\n"
+    ++ "  | _ => fun _ => do\n"
+    ++ "    let_expr A := x | y\n"
+    ++ "    z\n"
+  let formatted ← Formatter.formatSourceWithEnv env source "do-let-expr-fallback.lean"
+  assertTrue "do let_expr fallback preserves code"
+    (← codePreservedIgnoringWhitespace env source formatted)
+  assertTextContains "do let_expr fallback stays separate from continuation"
+    formatted "\n          | y\n          z\n"
+  assertTextLacks "do let_expr fallback does not absorb continuation" formatted "| y z"
+  let formattedAgain ←
+    Formatter.formatSourceWithEnv env formatted "do-let-expr-fallback-formatted.lean"
+  assertEq "do let_expr fallback formatting is idempotent" formatted formattedAgain
+
+def assertDoMatchExprAlternativesPreserveBranches (env : Lean.Environment)
+    : IO Unit := do
+  let source :=
+    "import Lean\n\n"
+    ++ "open Lean Meta\n\n"
+    ++ "meta partial def matchExprExample (e : Expr) : MetaM Expr := do\n"
+    ++ "  match_expr ← Meta.whnfR e with\n"
+    ++ "  | Matrix.vecCons _ n x xs => do\n"
+    ++ "    let tail ← matchExprExample xs\n"
+    ++ "    return tail\n"
+    ++ "  | _ =>\n"
+    ++ "    return e\n"
+  let formatted ←
+    Formatter.formatSourceWithEnv env source "do-match-expr-alternatives.lean"
+  assertTrue "do match_expr alternatives preserve code"
+    (← codePreservedIgnoringWhitespace env source formatted)
+  assertTextContains "do match_expr branch body starts after arrow" formatted
+    "  | Matrix.vecCons _ n x xs =>\n    do\n      let tail ← matchExprExample xs\n"
+  assertTextContains "do match_expr fallback branch stays separate"
+    formatted "  | _ =>\n    return e\n"
+  assertTextLacks "do match_expr alternatives do not merge" formatted "return tail | _"
+  let formattedAgain ←
+    Formatter.formatSourceWithEnv env formatted
+      "do-match-expr-alternatives-formatted.lean"
+  assertEq "do match_expr formatting is idempotent" formatted formattedAgain
 
 def assertShowFromBreaksLikeAssignment (env : Lean.Environment) : IO Unit := do
   let source :=
@@ -638,6 +706,9 @@ def assertShowAndDoWrapperRules (env : Lean.Environment) : IO Unit := do
   assertDoControlWrapperRules env
   assertDoLetElseBreaks env
   assertDoLetArrowFallbackBreaksBeforeContinuation env
+  assertDoLetExprFallbackBreaksBeforeContinuation env
+  assertDoMatchExprAlternativesPreserveBranches env
+  assertBracketedDoBlockPreservesStatementBreaks env
 
 def assertProjectionChainDoesNotBreakBeforeDot (env : Lean.Environment) : IO Unit := do
   let source :=
