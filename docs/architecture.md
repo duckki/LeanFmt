@@ -206,6 +206,8 @@ recognized, `ruleFor` returns `none`, the renderer uses `defaultRule`, and
 `--check-exception` reports the missing rule. For raw parser kinds, the report also audits
 Lean's formatter metadata without using it to change output: it distinguishes an explicit
 formatter registration, a generated `ParserDescr` fallback, and a kind with neither.
+The missing-rule report intentionally filters unstable implementation-detail kinds such as
+tokens, generated private names, custom term-notation names, and `stx` helper nodes.
 
 ## Space rules
 
@@ -583,14 +585,15 @@ code-token sequence and exact comment text are preserved, reports remaining line
 and reports missing rules with their source location and tree slice. Each missing raw
 syntax kind is also classified by whether Lean provides a registered formatter, only a
 parser-description fallback, or no formatter metadata. This is a read-only coverage audit:
-the renderer continues to use LeanFmt's `defaultRule`, and every missing LeanFmt rule
-remains an exception regardless of the classification. Preservation
+the renderer continues to use LeanFmt's `defaultRule`, and non-ignorable missing LeanFmt
+rules remain exceptions regardless of the Lean formatter classification. Preservation
 normalization gives every code token and comment boundary one canonical space, so ordinary
 formatting whitespace is ignored without conflating tokenizations such as `ab c` and
 `a bc`. `ruleFor` returning `none` still renders with `defaultRule`, so unknown nodes remain
-conservatively formatable. Generated private parser node names beginning with `_private.`
-are ignored by missing-rule reporting because they are local implementation details rather
-than stable rule targets. Diagnostic analysis and the exception model live in
+conservatively formatable. Generated private parser node names beginning with `_private.`,
+custom term-notation node names such as `termℂ` or `Some.Namespace.termFoo`, token nodes,
+and generated `stx` helper names are ignored by missing-rule reporting because they are
+not stable rule targets. Diagnostic analysis and the exception model live in
 `Formatter.Diagnostics`; trace and profiling APIs live under `Formatter.Debug`;
 convergence and shared pipeline phases live under `Formatter.Internal`.
 

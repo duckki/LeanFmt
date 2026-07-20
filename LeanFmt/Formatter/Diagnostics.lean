@@ -119,11 +119,16 @@ def missingRuleReportSkipsTree : SyntaxTree.Tree → Bool
   | .node (.raw `Lean.Parser.Termination.suffix) _ => true
   | tree => shouldEmitOriginalTree tree
 
+def missingRuleReportIgnoresTermNotationKindName (kindName : String) : Bool :=
+  kindName.startsWith "term"
+  || SpaceRules.containsSubstring kindName ".term"
+  || kindName.startsWith "«term"
+  || SpaceRules.containsSubstring kindName ".«term"
+
 def missingRuleReportIgnoresKindName (kindName : String) : Bool :=
   kindName.startsWith "token."
   || kindName.startsWith "_private."
-  || kindName.startsWith "«term"
-  || SpaceRules.containsSubstring kindName ".«term"
+  || missingRuleReportIgnoresTermNotationKindName kindName
   || kindName.startsWith "«stx"
   || SpaceRules.containsSubstring kindName ".«stx"
   || kindName.startsWith "Lean.Elab.Command.command_"
