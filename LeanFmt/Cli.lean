@@ -23,6 +23,9 @@ structure ExceptionCounts where
   codeChanged : Nat := 0
   lineOverflow : Nat := 0
   missingRule : Nat := 0
+  missingRuleWithRegisteredLeanFormatter : Nat := 0
+  missingRuleWithParserDescription : Nat := 0
+  missingRuleWithoutLeanFormatter : Nat := 0
   formatFallback : Nat := 0
   notIdempotent : Nat := 0
 deriving DecidableEq, Repr
@@ -36,6 +39,13 @@ def ExceptionCounts.add (left right : ExceptionCounts) : ExceptionCounts :=
     codeChanged := left.codeChanged + right.codeChanged
     lineOverflow := left.lineOverflow + right.lineOverflow
     missingRule := left.missingRule + right.missingRule
+    missingRuleWithRegisteredLeanFormatter :=
+      left.missingRuleWithRegisteredLeanFormatter
+      + right.missingRuleWithRegisteredLeanFormatter
+    missingRuleWithParserDescription :=
+      left.missingRuleWithParserDescription + right.missingRuleWithParserDescription
+    missingRuleWithoutLeanFormatter :=
+      left.missingRuleWithoutLeanFormatter + right.missingRuleWithoutLeanFormatter
     formatFallback := left.formatFallback + right.formatFallback
     notIdempotent := left.notIdempotent + right.notIdempotent
   }
@@ -53,6 +63,26 @@ def ExceptionCounts.addFormattingException (counts : ExceptionCounts)
   | .lineOverflow _ => { counts with lineOverflow := counts.lineOverflow + 1 }
   | .missingRule _ => { counts with missingRule := counts.missingRule + 1 }
 
+def ExceptionCounts.addMissingRuleAudit (counts : ExceptionCounts)
+    : Formatter.Diagnostics.LeanFormatterAvailability → ExceptionCounts
+  | .registered =>
+      {
+        counts with
+          missingRuleWithRegisteredLeanFormatter :=
+            counts.missingRuleWithRegisteredLeanFormatter + 1
+      }
+  | .parserDescription =>
+      {
+        counts with
+          missingRuleWithParserDescription :=
+            counts.missingRuleWithParserDescription + 1
+      }
+  | .unavailable =>
+      {
+        counts with
+          missingRuleWithoutLeanFormatter := counts.missingRuleWithoutLeanFormatter + 1
+      }
+
 def ExceptionCounts.summary (counts : ExceptionCounts) : String :=
   String.intercalate "\n"
     [
@@ -60,6 +90,9 @@ def ExceptionCounts.summary (counts : ExceptionCounts) : String :=
       s!"  code changed: {counts.codeChanged}",
       s!"  line overflow: {counts.lineOverflow}",
       s!"  missing rule: {counts.missingRule}",
+      s!"    registered Lean formatter: {counts.missingRuleWithRegisteredLeanFormatter}",
+      s!"    Lean parser description: {counts.missingRuleWithParserDescription}",
+      s!"    no Lean formatter metadata: {counts.missingRuleWithoutLeanFormatter}",
       s!"  format fallback: {counts.formatFallback}",
       s!"  not idempotent: {counts.notIdempotent}"
     ]
@@ -165,6 +198,7 @@ def EnvironmentCache.environmentForSource
 
 def reportFormattingException
     (path : FilePath) (exception : Formatter.Diagnostics.FormattingException)
+    (leanFormatter? : Option Formatter.Diagnostics.LeanFormatterAvailability := none)
     : IO Unit :=
   match exception with
   | .codeChanged =>
@@ -175,6 +209,8 @@ def reportFormattingException
       IO.eprintln occurrence.text
   | .missingRule occurrence => do
       IO.eprintln s!"missing rule: {path}:{occurrence.line}: {occurrence.kind}"
+      if let some availability := leanFormatter? then
+        IO.eprintln s!"Lean formatter: {availability.description}"
       IO.eprintln
       <| if occurrence.treeText.isEmpty then "<empty>" else occurrence.treeText
 
@@ -196,8 +232,16 @@ def runDiagnosticChecks
       pure []
   let mut exceptionCounts : ExceptionCounts := {}
   for exception in exceptions do
-    reportFormattingException path exception
+    let leanFormatter? :=
+      match exception with
+      | .missingRule occurrence =>
+          some
+          <| Formatter.Diagnostics.leanFormatterAvailability env occurrence.syntaxKind?
+      | _ => none
+    reportFormattingException path exception leanFormatter?
     exceptionCounts := exceptionCounts.addFormattingException exception
+    if let some availability := leanFormatter? then
+      exceptionCounts := exceptionCounts.addMissingRuleAudit availability
   if options.checkIdempotent then
     let formattedAgain ← Formatter.formatSourceWithEnv env formatted path.toString
     if formattedAgain != formatted then

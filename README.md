@@ -99,3 +99,5 @@ keeps token text and order and preserves proof regions.
   between the syntax tree, rules, and renderer.
 - [Development](docs/development.md) covers building, testing, fixtures, tracing,
   profiling, validation, and contributing new rules.
+- [Comparison](docs/comparison.md) compares LeanFmt's style, architecture, and workflow
+  with Lean's standard-library guide and pretty-lean.

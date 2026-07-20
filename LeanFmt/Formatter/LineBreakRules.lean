@@ -1933,6 +1933,8 @@ def ruleFor : SyntaxTree.Tree → Option LineBreakRule
   | .node (.raw `Lean.Parser.Command.private) _ => some defaultRule
   | .node (.raw `Lean.Parser.Command.public) _ => some defaultRule
   | .node (.raw `Lean.Parser.Command.meta) _ => some defaultRule
+  | .node (.raw `Lean.Parser.Command.unsafe) _ => some defaultRule
+  | .node (.raw `Lean.Parser.Command.opaque) _ => some defaultRule
   | .node (.raw `Lean.Parser.Command.noncomputable) _ => some defaultRule
   | .node (.raw `Lean.Parser.Command.protected) _ => some defaultRule
   | .node (.raw `Lean.Parser.Command.partial) _ => some defaultRule
@@ -1947,6 +1949,7 @@ def ruleFor : SyntaxTree.Tree → Option LineBreakRule
   | .node (.raw `Lean.Parser.Command.assertNotImported) _ => some defaultRule
   | .node (.raw `Lean.Parser.Command.assertNotExists) _ => some defaultRule
   | .node (.raw `Lean.Parser.Command.namedPrio) _ => some defaultRule
+  | .node (.raw `Lean.Parser.Command.namedName) _ => some defaultRule
   | .node (.raw `Lean.Parser.Command.abbrev) _ => some defaultRule
   | .node (.raw `Lean.Parser.Command.classAbbrev) _ => some defaultRule
   | .node (.raw `Lean.Parser.Command.nonrec) _ => some defaultRule
@@ -2209,6 +2212,8 @@ def ruleFor : SyntaxTree.Tree → Option LineBreakRule
   | .node (.raw `Lean.Parser.Term.doSeqIndent) _ => some defaultRule
   | .node (.raw `Lean.Parser.Term.doSeqItem) _ => some defaultRule
   | .node (.raw `Lean.Parser.Term.doExpr) _ => some defaultRule
+  | .node (.raw `Lean.Parser.Term.doIfLet) _ => some defaultRule
+  | .node (.raw `Lean.Parser.Term.doIfLetPure) _ => some defaultRule
   | .node (.raw `Lean.Parser.Term.doLetArrow) _ => some doLetRule
   | .node (.raw `Lean.Parser.Term.doIdDecl) _ => some doIdDeclRule
   | .node (.raw `Lean.Parser.Term.doPatDecl) _ => some doPatternDeclRule

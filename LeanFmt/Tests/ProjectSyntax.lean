@@ -1,3 +1,3 @@
 import Lean
 
-syntax "project_syntax" : term
+syntax (name := projectSyntax) "project_syntax" : term

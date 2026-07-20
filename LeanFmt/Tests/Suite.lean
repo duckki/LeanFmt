@@ -2856,6 +2856,9 @@ def assertFormattingExceptionChecks (env : Lean.Environment) : IO Unit := do
       codeChanged := 1,
       lineOverflow := 2,
       missingRule := 3,
+      missingRuleWithRegisteredLeanFormatter := 1,
+      missingRuleWithParserDescription := 1,
+      missingRuleWithoutLeanFormatter := 1,
       formatFallback := 4,
       notIdempotent := 5
     }
@@ -2866,6 +2869,9 @@ def assertFormattingExceptionChecks (env : Lean.Environment) : IO Unit := do
         "  code changed: 1",
         "  line overflow: 2",
         "  missing rule: 3",
+        "    registered Lean formatter: 1",
+        "    Lean parser description: 1",
+        "    no Lean formatter metadata: 1",
         "  format fallback: 4",
         "  not idempotent: 5"
       ])
@@ -3197,7 +3203,7 @@ def assertMathlibLowRiskSyntaxKindsHaveRules : IO Unit := do
     (!Formatter.Diagnostics.missingRuleReportIgnoresKindName
         "Aesop.Frontend.Parser.aesop")
 
-def assertMissingRuleCheckUsesDispatch (_env : Lean.Environment) : IO Unit := do
+def assertMissingRuleCheckUsesDispatch (env : Lean.Environment) : IO Unit := do
   let unknownTree :=
     SyntaxTree.Tree.node
       (SyntaxTree.NodeKind.raw `Lean.Parser.Term.syntheticUnknownForTest) #[]
@@ -3223,6 +3229,7 @@ def assertMissingRuleCheckUsesDispatch (_env : Lean.Environment) : IO Unit := do
     (occurrences.any
       fun occurrence =>
         occurrence.kind == "Lean.Parser.Term.syntheticUnknownForTest"
+        && occurrence.syntaxKind? == some `Lean.Parser.Term.syntheticUnknownForTest
         && occurrence.line == 1
         && occurrence.treeText == "foo")
   let customTokenTree :=
@@ -3252,6 +3259,18 @@ def assertMissingRuleCheckUsesDispatch (_env : Lean.Environment) : IO Unit := do
         | .missingRule occurrence =>
             occurrence.kind == "Lean.Parser.Term.syntheticUnknownForTest"
         | _ => false)
+  assertTrue "registered Lean formatter is identified"
+    (Formatter.Diagnostics.leanFormatterAvailability env (some `Lean.Parser.Term.app)
+      == .registered)
+  assertTrue "unknown syntax has no Lean formatter metadata"
+    (Formatter.Diagnostics.leanFormatterAvailability env
+        (some `Lean.Parser.Term.syntheticUnknownForTest)
+      == .unavailable)
+  let projectEnv ←
+    SyntaxTree.importEnvironment #[{ module := `LeanFmt.Tests.ProjectSyntax }]
+  assertTrue "parser description fallback is identified"
+    (Formatter.Diagnostics.leanFormatterAvailability projectEnv (some `projectSyntax)
+      == .parserDescription)
 
 def assertSyntaxDeclarationsHaveRules (env : Lean.Environment) : IO Unit := do
   let source :=

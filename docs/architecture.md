@@ -203,7 +203,9 @@ same-line suffix.
 
 The full dispatch table lives in `LineBreakRules.ruleFor`. If a raw node is not
 recognized, `ruleFor` returns `none`, the renderer uses `defaultRule`, and
-`--check-exception` reports the missing rule.
+`--check-exception` reports the missing rule. For raw parser kinds, the report also audits
+Lean's formatter metadata without using it to change output: it distinguishes an explicit
+formatter registration, a generated `ParserDescr` fallback, and a kind with neither.
 
 ## Space rules
 
@@ -574,7 +576,11 @@ diagnostic API lives under `Formatter.Diagnostics`.
 
 Formatter-exception checking is also separate from rendering. It verifies that the
 code-token sequence and exact comment text are preserved, reports remaining line overflow,
-and reports missing rules with their source location and tree slice. Preservation
+and reports missing rules with their source location and tree slice. Each missing raw
+syntax kind is also classified by whether Lean provides a registered formatter, only a
+parser-description fallback, or no formatter metadata. This is a read-only coverage audit:
+the renderer continues to use LeanFmt's `defaultRule`, and every missing LeanFmt rule
+remains an exception regardless of the classification. Preservation
 normalization gives every code token and comment boundary one canonical space, so ordinary
 formatting whitespace is ignored without conflating tokenizations such as `ab c` and
 `a bc`. `ruleFor` returning `none` still renders with `defaultRule`, so unknown nodes remain

@@ -19,9 +19,48 @@ deriving BEq, Repr
 
 structure MissingRuleOccurrence where
   kind : String
+  syntaxKind? : Option SyntaxNodeKind
   line : Nat
   treeText : String
 deriving BEq, Repr
+
+inductive LeanFormatterAvailability where
+  | registered
+  | parserDescription
+  | unavailable
+deriving BEq, Inhabited, Repr
+
+def LeanFormatterAvailability.description : LeanFormatterAvailability → String
+  | .registered => "registered formatter"
+  | .parserDescription => "parser description"
+  | .unavailable => "no formatter metadata"
+
+def syntaxNodeKind? : SyntaxTree.NodeKind → Option SyntaxNodeKind
+  | .raw kind => some kind
+  | _ => none
+
+unsafe def leanFormatterAvailabilityUnsafe
+    (env : Environment) (kind? : Option SyntaxNodeKind)
+    : LeanFormatterAvailability :=
+  match kind? with
+  | none => .unavailable
+  | some kind =>
+      if !(KeyedDeclsAttribute.getValues
+            PrettyPrinter.formatterAttribute env kind).isEmpty then
+        .registered
+      else
+        match env.find? kind with
+        | some info =>
+            if info.type.isConstOf ``ParserDescr
+                || info.type.isConstOf ``TrailingParserDescr then
+              .parserDescription
+            else
+              .unavailable
+        | none => .unavailable
+
+@[implemented_by leanFormatterAvailabilityUnsafe]
+opaque leanFormatterAvailability
+  (env : Environment) (kind? : Option SyntaxNodeKind) : LeanFormatterAvailability
 
 structure OverflowOccurrence where
   line : Nat
@@ -115,6 +154,7 @@ partial def missingRuleOccurrences
               else
                 [{
                   kind := kindName
+                  syntaxKind? := syntaxNodeKind? kind
                   line := currentStart?.map (lineNumberAt source ·) |>.getD 1
                   treeText := (treeSourceText? source tree).getD ""
                 }]

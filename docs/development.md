@@ -98,7 +98,8 @@ lake exe fmt --check --check-exception --check-idempotent --recursive Some/Direc
   comment text exactly and requiring the parsed syntax shape, with source positions
   erased, to remain unchanged;
 - report actionable formatted lines that still exceed the configured width;
-- report syntax nodes that have no registered line-break rule.
+- report syntax nodes that have no registered line-break rule, together with a read-only
+  audit of Lean's formatter metadata.
 
 Overflow inside comments is ignored. A line is also exempt when every column beyond the
 configured width belongs to one indivisible syntax unit, since the renderer has no legal
@@ -125,13 +126,18 @@ option, `--check` retains its ordinary behavior and fails when a file needs form
 Missing rules are reported with their source location and original tree slice:
 
 ```text
-path/to/File.lean:line: Lean.Parser.Some.kind
+missing rule: path/to/File.lean:line: Lean.Parser.Some.kind
+Lean formatter: registered formatter
 <original source slice>
 ```
 
 A listed node is not automatically formatted incorrectly. It means the generic default
 rule is being used. Add an explicit rule when the syntax has layout requirements that the
 generic rule cannot know, such as projection tightness or mandatory command boundaries.
+The `Lean formatter` line classifies the kind as `registered formatter`, `parser
+description`, or `no formatter metadata`. The final exception summary counts all three
+groups separately. This classification is evidence for rule development only; it neither
+delegates rendering to Lean's pretty printer nor makes a missing LeanFmt rule pass.
 
 ## Tests
 
