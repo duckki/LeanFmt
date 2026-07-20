@@ -1508,7 +1508,7 @@ def mutualBreaks (_context : RuleContext) (segment : Segment) : List BreakPoint 
 /-! ### Conditionals, matches, functions, and quantifiers -/
 
 def ifThenElseKind (kind : Lean.SyntaxNodeKind) : Bool :=
-  kind == `termIfThenElse
+  kind == `termIfThenElse || kind == `boolIfThenElse
 
 def ifThenElseElseBranch (context : RuleContext) : Bool :=
   match context.ancestors with
@@ -2182,7 +2182,7 @@ def ruleFor : SyntaxTree.Tree → Option LineBreakRule
   | .node (.raw `Lean.Parser.Term.sort) _ => some defaultRule
   | .node (.raw `Lean.Parser.Term.letConfig) _ => some defaultRule
   | .node (.raw `Lean.Parser.Term.letDecl) _ => some defaultRule
-  | .node (.raw `Lean.Parser.Term.letI) _ => some defaultRule
+  | .node (.raw `Lean.Parser.Term.letI) _ => some letRule
   | .node (.raw `Lean.Parser.Term.doLetExpr) _ => some doLetExprRule
   | .node (.raw `Lean.Parser.Term.doIfLetBind) _ => some defaultRule
   | .node (.raw `Lean.Parser.Term.doHave) _ => some defaultRule
@@ -2441,6 +2441,7 @@ def ruleFor : SyntaxTree.Tree → Option LineBreakRule
   | .node (.infixChain `Lean.Parser.Command.in) _ => some commandInChainRule
   | .node (.infixChain _) _ => some infixChainRule
   | .node (.raw `termIfThenElse) _ => some ifThenElseRule
+  | .node (.raw `boolIfThenElse) _ => some ifThenElseRule
   | .node (.raw `Lean.Parser.Term.match) _ => some matchExpressionRule
   | .node (.raw `Lean.Parser.Term.forall) _ => some quantifierRule
   | .node (.raw `Lean.Parser.Term.exists) _ => some quantifierRule

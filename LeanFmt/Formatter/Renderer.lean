@@ -356,6 +356,7 @@ def RenderState.hasBlankBoundaryBefore (state : RenderState) (tree : SyntaxTree.
 def isProofTree (tree : SyntaxTree.Tree) : Bool :=
   match tree with
   | .node (.raw `Lean.Parser.Term.byTactic) _ => true
+  | .node (.raw `Lean.Parser.Term.byTactic') _ => true
   | .node (.raw `Lean.Parser.Termination.suffix) _ =>
       (SyntaxTree.Tree.firstToken? tree).isSome
   | _ => false
@@ -423,9 +424,13 @@ def isProofLayoutIsland (tree : SyntaxTree.Tree) : Bool :=
       containsProofTree tree
   | .node (.raw `Lean.Parser.Term.structInst) _ =>
       containsProofTree tree
+  | .node (.raw `Lean.Parser.Term.anonymousCtor) _ =>
+      containsProofTree tree
   | .node (.raw `«term{_}») _ =>
       containsProofTree tree
   | .node (.raw `Lean.Parser.Command.whereStructInst) _ =>
+      containsProofTree tree
+  | .node (.raw `Lean.Parser.Term.show) _ =>
       containsProofTree tree
   | _ => false
 

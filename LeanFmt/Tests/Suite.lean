@@ -814,6 +814,15 @@ def assertProofBodyUntouched (env : Lean.Environment) : IO Unit := do
   let formatted ← Formatter.formatSourceWithEnv env source "proof-body-untouched.lean"
   assertEq "proof body untouched" source formatted
 
+def assertShowProofTermUntouched (env : Lean.Environment) : IO Unit := do
+  let source := "#check (show True by\n" ++ "  trivial)\n"
+  let formatted ← Formatter.formatSourceWithEnv env source "show-proof-term.lean"
+  assertTrue "show proof term preserves code"
+    (← codePreservedIgnoringWhitespace env source formatted)
+  assertTextContains "show proof term keeps tactic body break"
+    formatted "show True by\n"
+  assertTextLacks "show proof term does not flatten tactic body" formatted "by trivial"
+
 def assertTheoremTermProofBodyUntouched (env : Lean.Environment) : IO Unit := do
   let source :=
     "theorem theoremTermProofBodyUntouched : True :=\n"
@@ -847,6 +856,15 @@ def assertDefinitionContainingProofUntouched (env : Lean.Environment) : IO Unit 
     Formatter.formatSourceWithEnv env
       source "definition-containing-proof-untouched.lean"
   assertEq "definition containing proof untouched" source formatted
+
+def assertInstanceContainingProofUntouched (env : Lean.Environment) : IO Unit := do
+  let source :=
+    "instance proofContainingInstance : Inhabited Nat :=\n"
+    ++ "  ⟨by\n"
+    ++ "    exact 0⟩\n"
+  let formatted ←
+    Formatter.formatSourceWithEnv env source "instance-containing-proof-untouched.lean"
+  assertEq "instance containing proof untouched" source formatted
 
 def assertTerminationProofSuffixUntouched (env : Lean.Environment) : IO Unit := do
   let source :=
@@ -1603,6 +1621,18 @@ def assertLetExpressionKeepsBodyBreak (env : Lean.Environment) : IO Unit := do
     "def letBodyBreak : Result :=\n" ++ "  let value := f a\n" ++ "  value\n"
   let formatted ← Formatter.formatSourceWithEnv env source "let-body-break.lean"
   assertEq "let expression body break" source formatted
+
+def assertLetIExpressionKeepsBodyBreak (env : Lean.Environment) : IO Unit := do
+  let source :=
+    "def letIBodyBreak : Result :=\n"
+    ++ "  letI : DecidableEq α := decEq\n"
+    ++ "  letI : Inhabited β := inhabit\n"
+    ++ "  body\n"
+  let formatted ← Formatter.formatSourceWithEnv env source "letI-body-break.lean"
+  assertTrue "letI expression preserves code"
+    (← codePreservedIgnoringWhitespace env source formatted)
+  assertTextLacks "letI binding does not absorb following letI" formatted "decEq letI"
+  assertTextLacks "letI binding does not absorb final body" formatted "inhabit body"
 
 def assertLetExpressionBlocksFlatRendering (env : Lean.Environment) : IO Unit := do
   let source :=
@@ -3738,6 +3768,7 @@ def assertMathlibLowRiskSyntaxKindsHaveRules : IO Unit := do
       `Lean.«binderPred∉_»,
       `Mathlib.Meta.SetNotationForOrder.«binderPred⊆_»,
       `termDepIfThenElse,
+      `boolIfThenElse,
       `BigOperators.bigsum,
       `BigOperators.bigprod,
       `BigOperators.bigOpBinders,
@@ -4094,9 +4125,11 @@ def runBasicFormattingTests (env : Lean.Environment) : IO Unit := do
   assertMatchArmKeepsDoOnArrowLine env
   assertWhereFormattingKeepsSuffix env
   assertProofBodyUntouched env
+  assertShowProofTermUntouched env
   assertTheoremTermProofBodyUntouched env
   assertTheoremEquationProofBodyUntouched env
   assertDefinitionContainingProofUntouched env
+  assertInstanceContainingProofUntouched env
   assertTerminationProofSuffixUntouched env
   assertBasicDeclarationBreak env
   assertDeclarationValueInfixBreaksAfterAssign env
@@ -4118,6 +4151,7 @@ def runExpressionAndRendererTests (env : Lean.Environment) : IO Unit := do
   assertNestedApplicationHonorsSourceBreaks env
   assertApplicationArgumentUsesHeadAnchorAfterTypeBreak env
   assertLetExpressionKeepsBodyBreak env
+  assertLetIExpressionKeepsBodyBreak env
   assertLetExpressionBlocksFlatRendering env
   assertParenthesizedLetRhsIndentUnderImplication env
   assertLetBodyAfterInfixClosesLetLayout env
