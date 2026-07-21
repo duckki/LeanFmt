@@ -395,17 +395,32 @@ scripts/validate-external-projects.sh \
   mathlib=https://github.com/leanprover-community/mathlib4.git
 ```
 
+Validation runs in batches of 100 files by default. Each validation batch builds
+the selected modules before formatting, checks formatter diagnostics, formats the
+files after clean diagnostics, and builds the same modules again. Within each
+validation batch, formatter processes receive two files at a time by default to
+bound memory growth. The validator prints the total file count, total batch
+count, selected batch, batch index range, and first/last file for each batch.
+Without `--batch`, it runs batches in order and stops at the first batch whose
+build, formatter diagnostics, or formatting pass fails. Pass `--batch N` to run
+only a specific 1-based validation batch:
+
+```sh
+scripts/validate-external-projects.sh \
+  --files Mathlib/Combinatorics \
+  --batch 2 \
+  mathlib=$HOME/work/lean-libs/mathlib4
+```
+
 Clones are recreated under `.scratch/external-validation`. Set
 `LEANFMT_VALIDATION_DIR` to use another directory,
 `LEANFMT_VALIDATION_SKIP_CACHE=1` to build without downloading caches,
 `LEANFMT_VALIDATION_FILE_PATTERN` to change the default file selector, or
 `LEANFMT_VALIDATION_BUILD_BATCH_SIZE` to change the selected-module build batch
-size. `LEANFMT_VALIDATION_BATCH_SIZE` is still accepted as a legacy fallback for
-the build batch size. Formatter invocations are batched separately through
-`LEANFMT_VALIDATION_FORMATTER_BATCH_SIZE`, which defaults to `1` so imported
-mathlib environments are released at process exit instead of accumulating across
-hundreds of files. The formatter imported-environment cache is disabled during
-external validation by default; set
+size. `LEANFMT_VALIDATION_BATCH_SIZE` changes the validation batch size, and
+`LEANFMT_VALIDATION_FORMATTER_BATCH_SIZE` changes the smaller per-process
+formatter invocation batch size. The formatter imported-environment cache is
+disabled during external validation by default; set
 `LEANFMT_VALIDATION_FORMATTER_ENV_CACHE_SIZE=N` to allow each formatter process
 to retain up to `N` imported environments. External validation also passes
 `--import-env-first` to the formatter by default so mathlib files do not first
@@ -417,11 +432,9 @@ trying the default environment before loading source imports. Set
 `LEANFMT_VALIDATION_LINE_WIDTH=N` to pass a project-specific line width to every
 formatter invocation.
 
-For the default all-file selector, the pre- and post-format build phases run
-`lake build`. When a narrower selector is used, the script converts selected
-`.lean` paths to module targets and builds those modules in batches. The script
-continues after individual phase failures so it can report all issues, then
-exits with a nonzero status if any phase failed. Each phase and the final summary
-include elapsed wall-clock time. Build-cache retrieval is an optional
-optimization: repositories without a `cache` executable are reported as skipped
-rather than failed.
+The script converts selected `.lean` paths to module targets and builds those
+modules in batches. It stops at the first failing validation batch and exits with
+a nonzero status if any phase failed. Each phase and the final summary include
+elapsed wall-clock time. Build-cache retrieval is an optional optimization:
+repositories without a `cache` executable are reported as skipped rather than
+failed.

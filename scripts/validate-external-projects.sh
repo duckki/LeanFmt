@@ -9,8 +9,9 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)" || exit 1
 readonly REPO_ROOT
 readonly FORMATTER="$REPO_ROOT/.lake/build/bin/fmt"
 readonly WORK_DIR="${LEANFMT_VALIDATION_DIR:-$REPO_ROOT/.scratch/external-validation}"
-readonly BUILD_FILES_PER_BATCH="${LEANFMT_VALIDATION_BUILD_BATCH_SIZE:-${LEANFMT_VALIDATION_BATCH_SIZE:-200}}"
-readonly FORMATTER_FILES_PER_BATCH="${LEANFMT_VALIDATION_FORMATTER_BATCH_SIZE:-1}"
+readonly VALIDATION_FILES_PER_BATCH="${LEANFMT_VALIDATION_BATCH_SIZE:-100}"
+readonly BUILD_FILES_PER_BATCH="${LEANFMT_VALIDATION_BUILD_BATCH_SIZE:-$VALIDATION_FILES_PER_BATCH}"
+readonly FORMATTER_FILES_PER_BATCH="${LEANFMT_VALIDATION_FORMATTER_BATCH_SIZE:-2}"
 readonly FORMATTER_ENV_CACHE_SIZE="${LEANFMT_VALIDATION_FORMATTER_ENV_CACHE_SIZE:-0}"
 readonly FORMATTER_IMPORT_ENV_FIRST="${LEANFMT_VALIDATION_IMPORT_ENV_FIRST:-1}"
 readonly FORMATTER_LINE_WIDTH="${LEANFMT_VALIDATION_LINE_WIDTH:-}"
@@ -157,9 +158,37 @@ build_selected_modules() {
   )
 }
 
+build_module_file_list() {
+  local project_dir="$1"
+  local list_file="$2"
+  local -a targets=()
+  local file
+
+  while IFS= read -r -d '' file; do
+    targets+=("$(path_to_module_target "$project_dir" "$file")")
+  done < "$list_file"
+
+  if ((${#targets[@]} == 0)); then
+    printf 'No files listed for selected build in %s.\n' "$project_dir"
+    return 0
+  fi
+
+  (
+    cd "$project_dir" || exit 1
+    printf '%s\0' "${targets[@]}" |
+      xargs -0 -n "$BUILD_FILES_PER_BATCH" lake build
+  )
+}
+
 build_project_or_selected_modules() {
   local project_dir="$1"
   local file_selector="$2"
+  local selected_file_list="${3:-}"
+
+  if [[ -n "$selected_file_list" ]]; then
+    build_module_file_list "$project_dir" "$selected_file_list"
+    return $?
+  fi
 
   if [[ "$file_selector" == "$DEFAULT_FILE_SELECTOR" ]]; then
     build_project "$project_dir"
@@ -186,21 +215,34 @@ tracked_lean_files() {
   fi
 }
 
-run_formatter() {
+collect_tracked_lean_files() {
   local project_dir="$1"
   local file_selector="$2"
-  shift 2
-  local -a files=()
   local file
 
   while IFS= read -r -d '' file; do
-    files+=("$file")
+    printf '%s\0' "$file"
   done < <(tracked_lean_files "$project_dir" "$file_selector")
+}
 
-  if ((${#files[@]} == 0)); then
-    printf 'No files matched %q in %s.\n' "$file_selector" "$project_dir"
-    return 0
-  fi
+write_file_batch() {
+  local output_file="$1"
+  local first_index="$2"
+  local count="$3"
+  shift 3
+  local -a files_ref=("$@")
+  local index
+
+  : > "$output_file"
+  for ((index = first_index; index < first_index + count; index++)); do
+    printf '%s\0' "${files_ref[$index]}" >> "$output_file"
+  done
+}
+
+run_formatter_file_list() {
+  local project_dir="$1"
+  local list_file="$2"
+  shift 2
 
   local -a formatter_options=(--env-cache-size "$FORMATTER_ENV_CACHE_SIZE")
   if [[ "$FORMATTER_IMPORT_ENV_FIRST" == "1" ]]; then
@@ -212,17 +254,166 @@ run_formatter() {
 
   (
     cd "$project_dir" || exit 1
-    printf '%s\0' "${files[@]}" |
-      xargs -0 -n "$FORMATTER_FILES_PER_BATCH" lake env "$FORMATTER" \
-        "${formatter_options[@]}" "$@"
+    xargs -0 -n "$FORMATTER_FILES_PER_BATCH" lake env "$FORMATTER" \
+      "${formatter_options[@]}" "$@" < "$list_file"
   )
+}
+
+run_project_validation_batches() {
+  local project_name="$1"
+  local project_dir="$2"
+  local file_selector="$3"
+  local selected_batch="$4"
+  local -a files=()
+  local file
+
+  while IFS= read -r -d '' file; do
+    files+=("$file")
+  done < <(collect_tracked_lean_files "$project_dir" "$file_selector")
+
+  if ((${#files[@]} == 0)); then
+    printf 'No files matched %q in %s.\n' "$file_selector" "$project_dir"
+    return 0
+  fi
+
+  local total_files="${#files[@]}"
+  local total_batches=$(((total_files + VALIDATION_FILES_PER_BATCH - 1) / VALIDATION_FILES_PER_BATCH))
+  local first_batch=1
+  local last_batch="$total_batches"
+
+  if [[ -n "$selected_batch" ]]; then
+    if ((selected_batch < 1 || selected_batch > total_batches)); then
+      printf 'Batch %d is out of range for %s (%d file(s), %d batch(es)).\n' \
+        "$selected_batch" "$file_selector" "$total_files" "$total_batches" >&2
+      return 2
+    fi
+    first_batch="$selected_batch"
+    last_batch="$selected_batch"
+  fi
+
+  printf 'Formatter file set: %s\n' "$file_selector"
+  printf 'Total Lean files: %d\n' "$total_files"
+  printf 'Validation batch size: %d file(s); total batches: %d\n' \
+    "$VALIDATION_FILES_PER_BATCH" "$total_batches"
+  printf 'Formatter invocation batch size: %d file(s)\n' "$FORMATTER_FILES_PER_BATCH"
+  if [[ -n "$selected_batch" ]]; then
+    printf 'Running selected validation batch: %d\n' "$selected_batch"
+  fi
+
+  local batch first_index count last_index list_file status
+  for ((batch = first_batch; batch <= last_batch; batch++)); do
+    first_index=$(((batch - 1) * VALIDATION_FILES_PER_BATCH))
+    count="$VALIDATION_FILES_PER_BATCH"
+    if ((first_index + count > total_files)); then
+      count=$((total_files - first_index))
+    fi
+    last_index=$((first_index + count - 1))
+
+    list_file="$(mktemp "$WORK_DIR/$project_name-batch-$batch.XXXXXX")" || return 1
+    write_file_batch "$list_file" "$first_index" "$count" "${files[@]}"
+
+    printf '\n-- Formatter batch %d/%d: %d file(s), indexes %d-%d --\n' \
+      "$batch" "$total_batches" "$count" "$((first_index + 1))" \
+      "$((last_index + 1))"
+    printf 'First file: %s\n' "${files[$first_index]#"$project_dir/"}"
+    printf 'Last file:  %s\n' "${files[$last_index]#"$project_dir/"}"
+
+    if run_phase_result \
+        "Build $project_name before formatting batch $batch/$total_batches ($file_selector)" \
+        build_project_or_selected_modules "$project_dir" "$file_selector" \
+          "$list_file"; then
+      :
+    else
+      status=$?
+      rm -f "$list_file"
+      printf 'Stopping at validation batch %d/%d after pre-format build failed.\n' \
+        "$batch" "$total_batches" >&2
+      return "$status"
+    fi
+
+    if run_phase_result \
+        "Check $project_name formatting exceptions/idempotence batch $batch/$total_batches ($file_selector)" \
+        run_formatter_file_list "$project_dir" "$list_file" --check \
+          --check-exception --check-idempotent; then
+      :
+    else
+      status=$?
+      rm -f "$list_file"
+      printf 'Stopping at validation batch %d/%d after formatter diagnostics failed.\n' \
+        "$batch" "$total_batches" >&2
+      return "$status"
+    fi
+
+    if run_phase_result \
+        "Format $project_name batch $batch/$total_batches after clean diagnostics ($file_selector)" \
+        run_formatter_file_list "$project_dir" "$list_file" --check-exception \
+          --check-idempotent; then
+      :
+    else
+      status=$?
+      rm -f "$list_file"
+      printf 'Stopping at validation batch %d/%d after formatting failed.\n' \
+        "$batch" "$total_batches" >&2
+      return "$status"
+    fi
+
+    run_phase_result \
+      "Build $project_name after formatting batch $batch/$total_batches ($file_selector)" \
+      build_project_or_selected_modules "$project_dir" "$file_selector" \
+        "$list_file"
+    status=$?
+    rm -f "$list_file"
+    if ((status != 0)); then
+      printf 'Stopping at validation batch %d/%d after post-format build failed.\n' \
+        "$batch" "$total_batches" >&2
+      return "$status"
+    fi
+  done
+
+  return 0
+}
+
+selected_batch_file_list() {
+  local project_dir="$1"
+  local file_selector="$2"
+  local selected_batch="$3"
+  local output_file="$4"
+  local -a files=()
+  local file
+
+  while IFS= read -r -d '' file; do
+    files+=("$file")
+  done < <(collect_tracked_lean_files "$project_dir" "$file_selector")
+
+  if ((${#files[@]} == 0)); then
+    : > "$output_file"
+    return 0
+  fi
+
+  local total_files="${#files[@]}"
+  local total_batches=$(((total_files + VALIDATION_FILES_PER_BATCH - 1) / VALIDATION_FILES_PER_BATCH))
+  if ((selected_batch < 1 || selected_batch > total_batches)); then
+    printf 'Batch %d is out of range for %s (%d file(s), %d batch(es)).\n' \
+      "$selected_batch" "$file_selector" "$total_files" "$total_batches" >&2
+    return 2
+  fi
+
+  local first_index=$(((selected_batch - 1) * VALIDATION_FILES_PER_BATCH))
+  local count="$VALIDATION_FILES_PER_BATCH"
+  if ((first_index + count > total_files)); then
+    count=$((total_files - first_index))
+  fi
+  write_file_batch "$output_file" "$first_index" "$count" "${files[@]}"
 }
 
 main() {
   local started_at=$SECONDS
   local -a projects=("${DEFAULT_PROJECTS[@]}")
   local default_file_selector="$DEFAULT_FILE_SELECTOR"
+  local selected_batch=""
 
+  validate_positive_integer LEANFMT_VALIDATION_BATCH_SIZE \
+    "$VALIDATION_FILES_PER_BATCH" || return $?
   validate_positive_integer LEANFMT_VALIDATION_BUILD_BATCH_SIZE \
     "$BUILD_FILES_PER_BATCH" || return $?
   validate_positive_integer LEANFMT_VALIDATION_FORMATTER_BATCH_SIZE \
@@ -248,6 +439,16 @@ main() {
           return 2
         fi
         default_file_selector="$1"
+        shift
+        continue
+      fi
+      if [[ "$specification" == "--batch" ]]; then
+        if (($# == 0)); then
+          printf 'Missing value for --batch.\n' >&2
+          return 2
+        fi
+        validate_positive_integer "--batch" "$1" || return $?
+        selected_batch="$1"
         shift
         continue
       fi
@@ -291,24 +492,8 @@ main() {
     fi
 
     run_optional_phase "Download $name build cache" get_build_cache "$project_dir"
-    run_phase "Build $name before formatting ($file_selector)" \
-      build_project_or_selected_modules "$project_dir" "$file_selector"
-    if run_phase_result "Check $name formatting exceptions/idempotence ($file_selector)" \
-        run_formatter "$project_dir" "$file_selector" --check --check-exception \
-          --check-idempotent; then
-      if run_phase_result "Format $name after clean diagnostics ($file_selector)" \
-          run_formatter "$project_dir" "$file_selector" --check-exception \
-            --check-idempotent; then
-        run_phase "Build $name after formatting ($file_selector)" \
-          build_project_or_selected_modules "$project_dir" "$file_selector"
-      else
-        printf 'Skipping post-format build for %s because formatting failed.\n' \
-          "$name" >&2
-      fi
-    else
-      printf 'Skipping formatter writes and post-format build for %s because diagnostics failed.\n' \
-        "$name" >&2
-    fi
+    run_project_validation_batches "$name" "$project_dir" "$file_selector" \
+      "$selected_batch"
   done
 
   section "Validation summary"
