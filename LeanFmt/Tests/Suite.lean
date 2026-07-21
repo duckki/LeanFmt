@@ -870,6 +870,20 @@ def assertStructureBreaksTopLevelFields (env : Lean.Environment) : IO Unit := do
     Formatter.formatSourceWithEnv env source "structure-top-level-fields.lean"
   assertEq "structure breaks top-level fields" expected formatted
 
+def assertStructureFieldProofBreaksAfterAssignment (env : Lean.Environment)
+    : IO Unit := do
+  let source :=
+    "structure Hom where\n"
+    ++ "  naturality : VeryLongTypeNameForStructureFieldDefaultProofLayoutTestingAndMoreCharacters := by exact 0\n"
+  let expected :=
+    "structure Hom where\n"
+    ++ "  naturality\n"
+    ++ "    : VeryLongTypeNameForStructureFieldDefaultProofLayoutTestingAndMoreCharacters :=\n"
+    ++ "      by exact 0\n"
+  let formatted ←
+    Formatter.formatSourceWithEnv env source "structure-field-proof-break.lean"
+  assertEq "structure field proof breaks after assignment" expected formatted
+
 def assertAbbrevSourceBreakAfterAssign (env : Lean.Environment) : IO Unit := do
   let source := "abbrev Result (α : Type) : Type :=\n" ++ "  Except Nat (α × Nat)\n"
   let formatted ← Formatter.formatSourceWithEnv env source "abbrev-source-assign.lean"
@@ -4343,6 +4357,7 @@ def runBasicFormattingTests (env : Lean.Environment) : IO Unit := do
   assertRecordBraceSpacing env
   assertDerivingStaysOnOwnLine env
   assertStructureBreaksTopLevelFields env
+  assertStructureFieldProofBreaksAfterAssignment env
   assertAbbrevSourceBreakAfterAssign env
   assertMatchArmKeepsDoOnArrowLine env
   assertWhereFormattingKeepsSuffix env

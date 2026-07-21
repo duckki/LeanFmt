@@ -138,10 +138,18 @@ def RuleContext.parentIsVariableBinderList (context : RuleContext) : Bool :=
       parent.rawKind? == some `Lean.Parser.Command.variable && parent.childIndex == 1
   | _ => false
 
+def RuleContext.parentIsStructureFieldDefaultValue (context : RuleContext) : Bool :=
+  match context.ancestors with
+  | parent :: _ =>
+      parent.rawKind? == some `Lean.Parser.Command.structSimpleBinder
+      && parent.childIndex == 3
+  | _ => false
+
 def defaultInheritBase (context : RuleContext) (segment : Segment) : Bool :=
   context.parentIsSingletonArrayItemWrapper
   || segment.rawKind? == some `Lean.Parser.Term.letDecl
   || (segment.rawKind? == some `null && context.parentIsVariableBinderList)
+  || (segment.rawKind? == some `null && context.parentIsStructureFieldDefaultValue)
   || (segment.rawKind? == some `null
       && context.parentIsStructureWhereWrapper
       && !context.parentStructureHasExtends)
@@ -956,16 +964,18 @@ def signatureBreaks (context : RuleContext) (segment : Segment) : List BreakPoin
       1
     else
       2
-  match breakBeforeLexeme? segment ":" indentLevels with
-  | some breakPoint =>
-      match segment.child? breakPoint.index with
-      | some child =>
-          if treeHasContent child then
-            [breakPoint]
-          else
-            []
-      | none => []
-  | none => []
+  let typeBreak :=
+    match breakBeforeLexeme? segment ":" indentLevels with
+    | some breakPoint =>
+        match segment.child? breakPoint.index with
+        | some child =>
+            if treeHasContent child then
+              [breakPoint]
+            else
+              []
+        | none => []
+    | none => []
+  typeBreak
 
 def binderBreaks (_context : RuleContext) (segment : Segment) : List BreakPoint :=
   [breakBeforeLexeme? segment ":" 1].filterMap id
@@ -1681,6 +1691,9 @@ def arrowInfixLogicalContext (context : RuleContext) : Bool :=
 def infixFlow (context : RuleContext) (segment : Segment) : Bool :=
   arrowInfixSegment segment && !arrowInfixLogicalContext context
 
+def binderTacticBreaks (_context : RuleContext) (segment : Segment) : List BreakPoint :=
+  [breakBeforeLexeme? segment "by" 2].filterMap id
+
 def nullBreaks (context : RuleContext) (segment : Segment) : List BreakPoint :=
   structureFieldBreaks context segment
   ++ structureWhereFieldBreaks context segment
@@ -1828,6 +1841,13 @@ def infixChainRule : LineBreakRule :=
     liftsTailIndentation :=
       fun context segment => !(infixBreaks context segment).isEmpty
     breakPoints := infixBreaks
+  }
+
+def binderTacticRule : LineBreakRule :=
+  {
+    name := "binderTactic"
+    inheritBase := fun _ _ => true
+    breakPoints := binderTacticBreaks
   }
 
 def commandInChainRule : LineBreakRule :=
@@ -2416,6 +2436,8 @@ def ruleFor : SyntaxTree.Tree → Option LineBreakRule
   | .node (.raw `Lean.Parser.Command.whereStructInst) _ => some whereStructInstRule
   | .node (.raw `Lean.Parser.Command.mutual) _ => some mutualRule
   | .node (.infixChain `Lean.Parser.Command.in) _ => some commandInChainRule
+  | .node (.infixChain `Lean.Parser.Term.binderTactic) _ =>
+      some binderTacticRule
   | .node (.infixChain _) _ => some infixChainRule
   | .node (.raw `termIfThenElse) _ => some ifThenElseRule
   | .node (.raw `boolIfThenElse) _ => some ifThenElseRule
