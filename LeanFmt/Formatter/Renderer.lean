@@ -942,30 +942,31 @@ partial def segmentAllowsFlat
   | .leaf _ => true
   | .node _ _ =>
       if shouldEmitOriginalTree segment.parent then
-        false
+        isAttributeModifierBlock segment.parent
       else
-        match segment.singleChild? with
-        | some (index, child) =>
-            segmentAllowsFlat source (context.push segment index)
-              (LineBreakRules.Segment.ofTree child)
-        | none =>
-            let rule := LineBreakRules.formattingRuleFor segment.parent
-            if rule.mandatory context segment then
-              false
-            else if respectSourceBreaks
-                    && segmentHasAllowedSourceBreaks source context segment then
-              false
-            else
-              let rec loop : List Nat → Bool
-                | [] => true
-                | index :: rest =>
-                    match segment.child? index with
-                    | none => true
-                    | some child =>
-                        segmentAllowsFlat source (context.push segment index)
-                          (LineBreakRules.Segment.ofTree child)
-                        && loop rest
-              loop segment.indexes
+        let rule := LineBreakRules.formattingRuleFor segment.parent
+        if rule.mandatory context segment then
+          false
+        else
+          match segment.singleChild? with
+          | some (index, child) =>
+              segmentAllowsFlat source (context.push segment index)
+                (LineBreakRules.Segment.ofTree child)
+          | none =>
+              if respectSourceBreaks
+                  && segmentHasAllowedSourceBreaks source context segment then
+                false
+              else
+                let rec loop : List Nat → Bool
+                  | [] => true
+                  | index :: rest =>
+                      match segment.child? index with
+                      | none => true
+                      | some child =>
+                          segmentAllowsFlat source (context.push segment index)
+                            (LineBreakRules.Segment.ofTree child)
+                          && loop rest
+                loop segment.indexes
 
 def flatSegmentFits (state : RenderState) (segment : LineBreakRules.Segment) : Bool :=
   segmentAllowsFlat state.source state.context segment

@@ -1,7 +1,31 @@
 @[simp]
 def idNat (x : Nat) : Nat := x
+
+@[simp] theorem eraseP_nil : [].eraseP p = [] := rfl
+
+@[inline] def inlineId (x : Nat) : Nat := x
+
+@[ext] structure Point where
+  x : Nat
+
+@[derive Repr] inductive Choice where
+  | left
+  | right
 -----------------------------------------------------------------------------------------
 -- leanfmt: expected output below (DO NOT EDIT)
 -----------------------------------------------------------------------------------------
 @[simp]
 def idNat (x : Nat) : Nat := x
+
+@[simp] theorem eraseP_nil : [].eraseP p = [] := rfl
+
+@[inline] def inlineId (x : Nat) : Nat := x
+
+@[ext]
+structure Point where
+  x : Nat
+
+@[derive Repr]
+inductive Choice where
+  | left
+  | right

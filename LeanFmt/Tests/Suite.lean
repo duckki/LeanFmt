@@ -414,34 +414,58 @@ def assertAnonymousConstructorAfterListKeepsSpace (env : Lean.Environment)
   assertTextContains "anonymous constructor after list keeps space"
     formatted "[objectType] .allFields"
 
-def assertAttributeDeclarationBreak (env : Lean.Environment) : IO Unit := do
+def assertAttributeDeclarationPreservesSourceBreak (env : Lean.Environment)
+    : IO Unit := do
   let source := "@[simp]\n" ++ "def idNat (x : Nat) : Nat := x\n"
   let formatted ← Formatter.formatSourceWithEnv env source "attribute-declaration.lean"
-  assertEq "attribute declaration break" source formatted
+  assertEq "attribute declaration preserves source break" source formatted
 
-def assertSameLineAttributeDeclarationBreaks (env : Lean.Environment) : IO Unit := do
-  let definitionSource := "@[simp] def idNat (x : Nat) : Nat := x\n"
-  let definitionExpected := "@[simp]\n" ++ "def idNat (x : Nat) : Nat := x\n"
-  let definitionFormatted ←
-    Formatter.formatSourceWithEnv env definitionSource
-      "attribute-definition-same-line.lean"
-  assertEq "same-line attribute breaks before definition"
-    definitionExpected definitionFormatted
-  let structureSource := "@[simp] structure Point where\n" ++ "  x : Nat\n"
-  let structureExpected := "@[simp]\n" ++ "structure Point where\n" ++ "  x : Nat\n"
-  let structureFormatted ←
-    Formatter.formatSourceWithEnv env structureSource
-      "attribute-structure-same-line.lean"
-  assertEq "same-line attribute breaks before structure"
-    structureExpected structureFormatted
+def assertAttributesFlowBeforeDeclarations (env : Lean.Environment) : IO Unit := do
+  let source :=
+    "@[simp] theorem eraseP_nil : [].eraseP p = [] := rfl\n"
+    ++ "@[inline] def idNat (x : Nat) : Nat := x\n"
+    ++ "@[ext] structure Point where\n"
+    ++ "  x : Nat\n"
+    ++ "@[derive Repr] inductive Choice where\n"
+    ++ "  | left\n"
+    ++ "  | right\n"
+  let expected :=
+    "@[simp] theorem eraseP_nil : [].eraseP p = [] := rfl\n"
+    ++ "@[inline] def idNat (x : Nat) : Nat := x\n"
+    ++ "@[ext]\n"
+    ++ "structure Point where\n"
+    ++ "  x : Nat\n"
+    ++ "@[derive Repr]\n"
+    ++ "inductive Choice where\n"
+    ++ "  | left\n"
+    ++ "  | right\n"
+  let formatted ←
+    Formatter.formatSourceWithEnv env source "fitting-attribute-declarations.lean"
+  assertEq "attributes stay inline only with single-line declarations" expected
+    formatted
+
+  let longSource :=
+    "@[simp] theorem theoremNameWithEnoughCharactersToRequireAnAttributeHeaderBreak (value : VeryLongInputTypeName) : VeryLongOutputTypeName := proof\n"
+  let longExpected :=
+    "@[simp]\n"
+    ++ "theorem theoremNameWithEnoughCharactersToRequireAnAttributeHeaderBreak\n"
+    ++ "    (value : VeryLongInputTypeName)\n"
+    ++ "    : VeryLongOutputTypeName := proof\n"
+  let longFormatted ←
+    Formatter.formatSourceWithEnv env longSource "long-attribute-declaration.lean"
+  assertEq "long attribute breaks before declaration" longExpected longFormatted
+
   let documentedStructureSource :=
     "/-- Point documentation. -/\n"
-    ++ "@[simp]\n" ++ "structure DocumentedPoint where\n" ++ "  x : Nat\n"
+    ++ "@[ext] structure DocumentedPoint where\n" ++ "  x : Nat\n"
+  let documentedStructureExpected :=
+    "/-- Point documentation. -/\n"
+    ++ "@[ext]\nstructure DocumentedPoint where\n" ++ "  x : Nat\n"
   let documentedStructureFormatted ←
     Formatter.formatSourceWithEnv env documentedStructureSource
       "documented-attribute-structure.lean"
-  assertEq "documented attribute stays before structure"
-    documentedStructureSource documentedStructureFormatted
+  assertEq "documentation and attribute flow before a multiline structure"
+    documentedStructureExpected documentedStructureFormatted
 
 def assertPrivateTheoremModifierStaysOnHeader (env : Lean.Environment) : IO Unit := do
   let source := "private theorem privateTheoremModifier : True := by\n" ++ "  trivial\n"
@@ -3878,8 +3902,8 @@ def runBasicFormattingTests (env : Lean.Environment) : IO Unit := do
   assertLeadingCommentsPreserved env
   assertTrailingLineCommentPreserved env
   assertAnonymousConstructorAfterListKeepsSpace env
-  assertAttributeDeclarationBreak env
-  assertSameLineAttributeDeclarationBreaks env
+  assertAttributeDeclarationPreservesSourceBreak env
+  assertAttributesFlowBeforeDeclarations env
   assertPrivateTheoremModifierStaysOnHeader env
   assertDoBlockPreservesBodyBreak env
   assertDoMatchAlternativesAlignWithMatch env

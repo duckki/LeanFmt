@@ -171,7 +171,7 @@ Current logical regroupings are:
 | `.application` | Lean parser applications are nested per argument, but formatting wants one function-application segment. | Child `0` is the head, children `1...` are arguments in source order. Raw `null` argument containers are spliced. |
 | `.infixChain kind` | Same-kind infix peers should break as one balanced chain, and renderer indentation should not infer peer structure from nested raw nodes. | Odd-length array alternating operand, operator, operand. Operands are even indexes; operators are odd indexes. |
 | `.definition` | Definitions and abbreviations need one node containing header, assignment marker, body, and suffixes. | The raw `declValSimple` wrapper is spliced so child `4` is the value/body when the recognized shape is present. |
-| `.annotatedDeclaration` | Attribute/modifier wrappers must be able to break before the declaration without making plain declarations nontransparent. | Child `0` is the nonempty modifier subtree, child `1` is the declaration, remaining children preserve raw order. |
+| `.annotatedDeclaration` | Attribute/modifier wrappers and the declaration form a flow. Source breaks are preserved; otherwise the declaration remains after its attributes only when the complete command fits. | Child `0` is the nonempty modifier subtree, child `1` is the declaration, remaining children preserve raw order. |
 | `.signatureParameters` | Parameter sequences need flow behavior at binder boundaries without forcing rules to inspect raw `null` wrappers. | Direct binder/parameter children from `optDeclSig` or `declSig`. |
 | `.matchDiscriminants` | Multiple match scrutinees need peer flow boundaries after commas, aligned under the first scrutinee, rather than generic nested parser wrapping. | Children of the discriminant sequence immediately before `with`, preserving alternating discriminants and commas. |
 | `.matchPatterns` | Multiple patterns in one alternative need peer/balanced wrapping rather than raw nested `null` behavior. | Pattern children from the `matchAlt` pattern wrapper, with a redundant single `null` wrapper removed. |
@@ -404,7 +404,8 @@ Rules and regroupings should preserve these cross-syntax relationships:
   of its returned break points. Flow rules may select the subset needed to fit.
 - A child that is structurally multiline does not fit as a same-line parent operand or
   application argument. The parent breaks before it through ordinary fit/flow logic;
-  rules do not accumulate exceptions that prefer a parent break.
+  rules do not accumulate exceptions that prefer a parent break. Annotated declarations
+  use the same flow behavior: a multiline command moves below its attribute.
 - `:=`, `←`, and `=>` terminate headers. Declaration, binding, lambda, and arm rules
   omit breaks before them and expose RHS breaks after them.
 - Header suffixes such as instance `where` and match `with` behave like assignment

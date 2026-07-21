@@ -1361,8 +1361,8 @@ def inductiveBreaks (context : RuleContext) (segment : Segment) : List BreakPoin
 def annotatedDeclarationRule : LineBreakRule :=
   {
     name := "annotatedDeclaration"
-    mandatory :=
-      fun context segment => !(annotatedDeclarationBreaks context segment).isEmpty
+    useExistingBreaks := fun _ _ => true
+    flow := fun context segment => !(annotatedDeclarationBreaks context segment).isEmpty
     inheritBase := fun _ _ => true
     breakPoints := annotatedDeclarationBreaks
   }

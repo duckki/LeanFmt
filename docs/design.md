@@ -269,11 +269,29 @@ import Very.Long.Module.Name.ThatRemainsOneImportCommand
 syntax "widget" : term
 ```
 
-Attributes begin on their own line before a declaration:
+An attribute may share a declaration's line when the source keeps them together
+and the complete declaration fits on that line:
+
+```lean
+@[simp] theorem eraseP_nil : [].eraseP p = [] := rfl
+```
+
+A source break between an attribute and its command is preserved. A multiline
+command breaks after the attribute before trying breaks inside the command:
+
+```lean
+@[ext]
+structure Point where
+  x : Nat
+```
+
+For example, a declaration that wraps because of width moves below its attribute:
 
 ```lean
 @[simp]
-def idNat (x : Nat) : Nat := x
+theorem theoremNameWithEnoughCharactersToRequireAnAttributeHeaderBreak
+    (value : VeryLongInputTypeName)
+    : VeryLongOutputTypeName := proof
 ```
 
 Keyword modifiers remain on the declaration header:
