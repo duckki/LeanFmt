@@ -382,6 +382,15 @@ def assertNamespaceCommandsStayOnSeparateLines (env : Lean.Environment) : IO Uni
   let formatted ← Formatter.formatSourceWithEnv env source "namespace-lines.lean"
   assertEq "namespace commands stay on separate lines" source formatted
 
+def assertOpenCommandListBreaksFromOpenColumn (env : Lean.Environment) : IO Unit := do
+  let source :=
+    "open CategoryTheory ModuleCat MonoidalCategory Limits Functor.LaxMonoidal Functor.OplaxMonoidal TensorProduct\n"
+  let expected :=
+    "open CategoryTheory ModuleCat MonoidalCategory Limits Functor.LaxMonoidal\n"
+    ++ "      Functor.OplaxMonoidal TensorProduct\n"
+  let formatted ← Formatter.formatSourceWithEnv env source "open-command-list.lean"
+  assertEq "open command list breaks from open column" expected formatted
+
 def assertCommentsDoNotBlockFormatting (env : Lean.Environment) : IO Unit := do
   let source :=
     "/-! Module comment -/\n"
@@ -4311,6 +4320,7 @@ def runBasicFormattingTests (env : Lean.Environment) : IO Unit := do
   assertImportsStayOnSeparateLines env
   assertLongImportStaysOnOneLine env
   assertNamespaceCommandsStayOnSeparateLines env
+  assertOpenCommandListBreaksFromOpenColumn env
   assertCommentsDoNotBlockFormatting env
   assertLeadingCommentsPreserved env
   assertTrailingLineCommentPreserved env

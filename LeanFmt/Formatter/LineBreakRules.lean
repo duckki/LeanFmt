@@ -489,6 +489,12 @@ def exportIdentifierList (context : RuleContext) : Bool :=
       parent.rawKind? == some `Lean.Parser.Command.export && parent.childIndex == 3
   | _ => false
 
+def openIdentifierList (context : RuleContext) : Bool :=
+  match context.ancestors with
+  | parent :: _ =>
+      parent.rawKind? == some `Lean.Parser.Command.openSimple && parent.childIndex == 0
+  | _ => false
+
 def nullInheritBase (context : RuleContext) (segment : Segment) : Bool :=
   defaultInheritBase context segment
   || singletonArrayItemWrapper context segment
@@ -813,6 +819,15 @@ def binderIdentifierBreaks (context : RuleContext) (segment : Segment)
 
 def variableBinderBreaks (context : RuleContext) (segment : Segment) : List BreakPoint :=
   if variableBinderSequence context then
+    match nonemptyChildIndexes segment with
+    | [] => []
+    | [_] => []
+    | _ :: rest => rest.filterMap fun index => boundaryBreak? segment index 1
+  else
+    []
+
+def openIdentifierBreaks (context : RuleContext) (segment : Segment) : List BreakPoint :=
+  if openIdentifierList context then
     match nonemptyChildIndexes segment with
     | [] => []
     | [_] => []
@@ -1658,6 +1673,7 @@ def nullBreaks (context : RuleContext) (segment : Segment) : List BreakPoint :=
   ++ quantifierBinderBreaks context segment
   ++ binderIdentifierBreaks context segment
   ++ variableBinderBreaks context segment
+  ++ openIdentifierBreaks context segment
   ++ exportItemBreaks context segment
   ++ doSeqItemBreaks context segment
   ++ doLetArrowFallbackTailBreaks context segment
@@ -1695,6 +1711,7 @@ def nullRule : LineBreakRule :=
         !(quantifierBinderBreaks context segment).isEmpty
         || !(binderIdentifierBreaks context segment).isEmpty
         || !(variableBinderBreaks context segment).isEmpty
+        || !(openIdentifierBreaks context segment).isEmpty
         || !(exportItemBreaks context segment).isEmpty
     inheritBase := nullInheritBase
     breakPoints := nullBreaks
@@ -2009,7 +2026,7 @@ def ruleFor : SyntaxTree.Tree → Option LineBreakRule
   | .node (.raw `Lean.Parser.Command.sectionHeader) _ => some defaultRule
   | .node (.raw `Lean.Parser.Command.namespace) _ => some defaultRule
   | .node (.raw `Lean.Parser.Command.end) _ => some defaultRule
-  | .node (.raw `Lean.Parser.Command.open) _ => some defaultRule
+  | .node (.raw `Lean.Parser.Command.open) _ => some transparentRule
   | .node (.raw `Lean.Parser.Command.openSimple) _ => some defaultRule
   | .node (.raw `Lean.Parser.Command.openScoped) _ => some defaultRule
   | .node (.raw `Lean.Parser.Command.openOnly) _ => some defaultRule
