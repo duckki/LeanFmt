@@ -2043,6 +2043,57 @@ def assertMultiItemArrayBreaksBalanced (env : Lean.Environment) : IO Unit := do
     Formatter.formatSourceWithEnv env source "multi-item-array-balanced.lean"
   assertEq "multi-item array breaks balanced" expected formatted
 
+def assertListLikeCollectionsBreakBalanced (env : Lean.Environment) : IO Unit := do
+  let listSource :=
+    "def doLetElseBreaks (_context : RuleContext) (segment : Segment) : List BreakPoint :=\n"
+    ++ "  let continuationBreak := do\n"
+    ++ "    let pipeIndex ← segment.indexes.find? fun index => childStartsWithLexeme segment index \"|\"\n"
+    ++ "    let fallbackIndex ← (nonemptyChildIndexes segment).find? fun index => pipeIndex < index\n"
+    ++ "    let continuationIndex ← (nonemptyChildIndexes segment).find? fun index => fallbackIndex < index\n"
+    ++ "    boundaryBreak? segment continuationIndex 0\n"
+    ++ "  [breakAfterLexeme? segment \":=\" 1, breakBeforeLexeme? segment \"|\" 0, continuationBreak].filterMap id\n"
+  let listExpected :=
+    "def doLetElseBreaks (_context : RuleContext) (segment : Segment) : List BreakPoint :=\n"
+    ++ "  let continuationBreak := do\n"
+    ++ "    let pipeIndex ←\n"
+    ++ "      segment.indexes.find? fun index => childStartsWithLexeme segment index \"|\"\n"
+    ++ "    let fallbackIndex ←\n"
+    ++ "      (nonemptyChildIndexes segment).find? fun index => pipeIndex < index\n"
+    ++ "    let continuationIndex ←\n"
+    ++ "      (nonemptyChildIndexes segment).find? fun index => fallbackIndex < index\n"
+    ++ "    boundaryBreak? segment continuationIndex 0\n"
+    ++ "  [\n"
+    ++ "    breakAfterLexeme? segment \":=\" 1,\n"
+    ++ "    breakBeforeLexeme? segment \"|\" 0,\n"
+    ++ "    continuationBreak\n"
+    ++ "  ].filterMap\n"
+    ++ "    id\n"
+  let listFormatted ←
+    Formatter.formatSourceWithEnv env listSource "balanced-list-like-items.lean"
+  assertEq "broken list delimiters break every item" listExpected listFormatted
+
+  let peerSource :=
+    "def tupleCollection := (firstItemWithEnoughCharactersToRequireBalancedLayout, secondItemWithEnoughCharactersToRequireBalancedLayout, thirdItemWithEnoughCharactersToRequireBalancedLayout)\n"
+    ++ "\n"
+    ++ "def anonymousCollection := ⟨firstItemWithEnoughCharactersToRequireBalancedLayout, secondItemWithEnoughCharactersToRequireBalancedLayout, thirdItemWithEnoughCharactersToRequireBalancedLayout⟩\n"
+  let peerExpected :=
+    "def tupleCollection :=\n"
+    ++ "  (\n"
+    ++ "    firstItemWithEnoughCharactersToRequireBalancedLayout,\n"
+    ++ "    secondItemWithEnoughCharactersToRequireBalancedLayout,\n"
+    ++ "    thirdItemWithEnoughCharactersToRequireBalancedLayout\n"
+    ++ "  )\n"
+    ++ "\n"
+    ++ "def anonymousCollection :=\n"
+    ++ "  ⟨\n"
+    ++ "    firstItemWithEnoughCharactersToRequireBalancedLayout,\n"
+    ++ "    secondItemWithEnoughCharactersToRequireBalancedLayout,\n"
+    ++ "    thirdItemWithEnoughCharactersToRequireBalancedLayout\n"
+    ++ "  ⟩\n"
+  let peerFormatted ←
+    Formatter.formatSourceWithEnv env peerSource "balanced-tuple-like-items.lean"
+  assertEq "tuple-like delimiters and items break together" peerExpected peerFormatted
+
 def assertOffColumnArrayRoundsOneLevel (env : Lean.Environment) : IO Unit := do
   let source :=
     "def offColumnArray := some <| #[firstExceptionallyLongItemNameForOffColumnArrayLayout, secondExceptionallyLongItemNameForOffColumnArrayLayout] ++ remainingItemsForOffColumnArrayLayout\n"
@@ -3911,28 +3962,26 @@ def assertMathlibLowRiskSyntaxKindsHaveRules : IO Unit := do
     let tree := SyntaxTree.Tree.node (.raw kind) #[]
     assertTrue s!"mathlib low-risk syntax has rule: {kind}"
       (Formatter.LineBreakRules.ruleFor tree).isSome
-  let vectorItems :=
-    SyntaxTree.Tree.node (.raw `null)
-      #[
-        .leaf (syntheticAtomToken "a"),
-        .leaf (syntheticAtomToken ","),
-        .leaf (syntheticAtomToken "b")
-      ]
   let vectorTree :=
     SyntaxTree.Tree.node (.raw `Matrix.vecNotation)
-      #[.leaf (syntheticAtomToken "!["), vectorItems, .leaf (syntheticAtomToken "]")]
+      #[
+        .leaf (syntheticAtomToken "!["),
+        .leaf (syntheticAtomToken "a"),
+        .leaf (syntheticAtomToken ","),
+        .leaf (syntheticAtomToken "b"),
+        .leaf (syntheticAtomToken "]")
+      ]
   match Formatter.LineBreakRules.ruleFor vectorTree with
   | some rule =>
       assertEq "matrix vector notation uses array rule" "array" rule.name
       let vectorSegment := Formatter.LineBreakRules.Segment.ofTree vectorTree
       assertTrue "matrix vector notation has item and close breaks"
         (rule.breakPoints {} vectorSegment
-          == [{ index := 1, indentLevels := 1 }, { index := 2, indentLevels := 0 }])
-      let itemSegment := Formatter.LineBreakRules.Segment.ofTree vectorItems
-      let itemContext := ({} : Formatter.LineBreakRules.RuleContext).push vectorSegment 1
-      assertTrue "matrix vector notation item wrapper uses array item breaks"
-        (Formatter.LineBreakRules.arrayItemBreaks itemContext itemSegment
-          == [{ index := 2, indentLevels := 0 }])
+          == [
+            { index := 1, indentLevels := 1 },
+            { index := 3, indentLevels := 1 },
+            { index := 4, indentLevels := 0 }
+          ])
   | none => throw <| IO.userError "matrix vector notation has no rule"
   let ignoredKindNames :=
     [
@@ -4233,6 +4282,7 @@ def runExpressionAndRendererTests (env : Lean.Environment) : IO Unit := do
   assertListApplicationSourceBreakIndent env
   assertSingletonArrayKeepsBodyBase env
   assertMultiItemArrayBreaksBalanced env
+  assertListLikeCollectionsBreakBalanced env
   assertOffColumnArrayRoundsOneLevel env
   assertInstanceWhereStaysWithHeader env
   assertInfixLeftDepth env

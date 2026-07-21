@@ -199,7 +199,8 @@ def importsKey (imports : Array Lean.Import) : String :=
 def usesDefaultEnvironmentImports (imports : Array Lean.Import) : Bool :=
   imports
     == #[
-      { module := `Init : Lean.Import }, { module := `Init, isMeta := true : Lean.Import }
+      { module := `Init : Lean.Import },
+      { module := `Init, isMeta := true : Lean.Import }
     ]
   || imports.isEmpty
 

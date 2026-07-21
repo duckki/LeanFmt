@@ -177,6 +177,7 @@ Current logical regroupings are:
 | `.matchPatterns` | Multiple patterns in one alternative need peer/balanced wrapping rather than raw nested `null` behavior. | Pattern children from the `matchAlt` pattern wrapper, with a redundant single `null` wrapper removed. |
 | `.doForHeader` | A `for` binder and its collection need separate LHS and `in` layout without teaching the renderer about `do` syntax. | The `for` keyword and declaration children before the loop body. |
 | `.structureUpdate` | The source before `with` behaves as an LHS expression, while the surrounding braces remain an ordinary balanced structure. | The original lossless source wrapper, including the final `with` token. |
+| Multi-item delimited collections | Arrays, lists, tuples, anonymous constructors, and matrix vectors need one balanced rule to own opening, item, and closing breaks. | Parser sequence wrappers are spliced so delimiters, items, and commas are direct children of the original raw collection node. Singleton wrappers remain intact to preserve the established base for a multiline item. |
 
 Regrouping deliberately avoids semantic interpretation. For example, it flattens only
 same-kind infix parser nodes; it does not decide operator precedence itself.

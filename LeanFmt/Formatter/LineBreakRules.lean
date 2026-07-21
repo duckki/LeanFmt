@@ -657,142 +657,53 @@ def structInstFieldValueBreaks (_context : RuleContext) (segment : Segment)
       | none => []
   | none => []
 
+def delimitedItemIndexes (segment : Segment) : List Nat :=
+  match nonemptyChildIndexes segment with
+  | [] | [_] => []
+  | _open :: rest =>
+      rest.dropLast.filter fun index => !childStartsWithLexeme segment index ","
+
+def delimitedItemCount (segment : Segment) : Nat :=
+  (delimitedItemIndexes segment).length
+
+def delimitedCollectionBreaks (segment : Segment) : List BreakPoint :=
+  if 1 < delimitedItemCount segment then
+    let itemBreaks :=
+      (delimitedItemIndexes segment).filterMap fun index => boundaryBreak? segment index 1
+    let closeBreak :=
+      match (nonemptyChildIndexes segment).getLast? with
+      | some index => [boundaryBreak? segment index 0].filterMap id
+      | none => []
+    itemBreaks ++ closeBreak
+  else
+    []
+
 def tupleItemIndexes (segment : Segment) : List Nat :=
-  segment.indexes.filter
-    fun index =>
-      match segment.child? index with
-      | some child => treeHasContent child && treeFirstLexeme? child != some ","
-      | none => false
+  delimitedItemIndexes segment
 
 def tupleItemCount (segment : Segment) : Nat :=
-  match firstChildRawKind? segment `null with
-  | some index =>
-      match segment.child? index with
-      | some child => tupleItemIndexes (Segment.ofTree child) |>.length
-      | none => 0
-  | none => 0
+  delimitedItemCount segment
 
 def tupleBreaks (_context : RuleContext) (segment : Segment) : List BreakPoint :=
-  if 1 < tupleItemCount segment then
-    let itemBreak :=
-      match firstChildRawKind? segment `null with
-      | some index =>
-          match boundaryBreak? segment index 1 with
-          | some breakPoint => [breakPoint]
-          | none => []
-      | none => []
-    let closeBreak :=
-      match segment.indexes.find?
-              fun index => childStartsWithLexeme segment index ")" with
-      | some index =>
-          match boundaryBreak? segment index 0 with
-          | some breakPoint => [breakPoint]
-          | none => []
-      | none => []
-    itemBreak ++ closeBreak
-  else
-    []
-
-def tupleItemBreaks (context : RuleContext) (segment : Segment) : List BreakPoint :=
-  if parentIsRawKind context `Lean.Parser.Term.tuple then
-    match tupleItemIndexes segment with
-    | [] => []
-    | [_] => []
-    | _ :: rest =>
-        rest.filterMap fun index => boundaryBreak? segment index 0
-  else
-    []
+  delimitedCollectionBreaks segment
 
 def anonymousCtorItemIndexes (segment : Segment) : List Nat :=
-  tupleItemIndexes segment
+  delimitedItemIndexes segment
 
 def anonymousCtorItemCount (segment : Segment) : Nat :=
-  match firstChildRawKind? segment `null with
-  | some index =>
-      match segment.child? index with
-      | some child => anonymousCtorItemIndexes (Segment.ofTree child) |>.length
-      | none => 0
-  | none => 0
+  delimitedItemCount segment
 
 def anonymousCtorBreaks (_context : RuleContext) (segment : Segment) : List BreakPoint :=
-  if 1 < anonymousCtorItemCount segment then
-    let itemBreak :=
-      match firstChildRawKind? segment `null with
-      | some index =>
-          match boundaryBreak? segment index 1 with
-          | some breakPoint => [breakPoint]
-          | none => []
-      | none => []
-    let closeBreak :=
-      match segment.indexes.find?
-              fun index => childStartsWithLexeme segment index "⟩" with
-      | some index =>
-          match boundaryBreak? segment index 0 with
-          | some breakPoint => [breakPoint]
-          | none => []
-      | none => []
-    itemBreak ++ closeBreak
-  else
-    []
-
-def anonymousCtorItemBreaks (context : RuleContext) (segment : Segment)
-    : List BreakPoint :=
-  if parentIsRawKind context `Lean.Parser.Term.anonymousCtor then
-    match anonymousCtorItemIndexes segment with
-    | [] => []
-    | [_] => []
-    | _ :: rest =>
-        rest.filterMap fun index => boundaryBreak? segment index 0
-  else
-    []
+  delimitedCollectionBreaks segment
 
 def arrayItemIndexes (segment : Segment) : List Nat :=
-  tupleItemIndexes segment
-
-def isArrayLikeKind (kind : Lean.SyntaxNodeKind) : Bool :=
-  kind == `«term[_]» || kind == `«term#[_,]» || kind == `Matrix.vecNotation
+  delimitedItemIndexes segment
 
 def arrayItemCount (segment : Segment) : Nat :=
-  match firstChildRawKind? segment `null with
-  | some index =>
-      match segment.child? index with
-      | some child => arrayItemIndexes (Segment.ofTree child) |>.length
-      | none => 0
-  | none => 0
+  delimitedItemCount segment
 
 def arrayBreaks (_context : RuleContext) (segment : Segment) : List BreakPoint :=
-  if 1 < arrayItemCount segment then
-    let itemBreak :=
-      match firstChildRawKind? segment `null with
-      | some index =>
-          match boundaryBreak? segment index 1 with
-          | some breakPoint => [breakPoint]
-          | none => []
-      | none => []
-    let closeBreak :=
-      match segment.indexes.find?
-              fun index => childStartsWithLexeme segment index "]" with
-      | some index =>
-          match boundaryBreak? segment index 0 with
-          | some breakPoint => [breakPoint]
-          | none => []
-      | none => []
-    itemBreak ++ closeBreak
-  else
-    []
-
-def arrayItemBreaks (context : RuleContext) (segment : Segment) : List BreakPoint :=
-  match context.parentRawKind? with
-  | some kind =>
-      if isArrayLikeKind kind then
-        match arrayItemIndexes segment with
-        | [] => []
-        | [_] => []
-        | _ :: rest =>
-            rest.filterMap fun index => boundaryBreak? segment index 0
-      else
-        []
-  | none => []
+  delimitedCollectionBreaks segment
 
 def structInstFieldsMandatory (context : RuleContext) (segment : Segment) : Bool :=
   parentIsRawKind context `Lean.Parser.Term.structInstFields
@@ -1202,7 +1113,9 @@ def doLetElseBreaks (_context : RuleContext) (segment : Segment) : List BreakPoi
       (nonemptyChildIndexes segment).find? fun index => fallbackIndex < index
     boundaryBreak? segment continuationIndex 0
   [
-    breakAfterLexeme? segment ":=" 1, breakBeforeLexeme? segment "|" 0, continuationBreak
+    breakAfterLexeme? segment ":=" 1,
+    breakBeforeLexeme? segment "|" 0,
+    continuationBreak
   ].filterMap
     id
 
@@ -1699,9 +1612,6 @@ def infixFlow (context : RuleContext) (segment : Segment) : Bool :=
 def nullBreaks (context : RuleContext) (segment : Segment) : List BreakPoint :=
   structureFieldBreaks context segment
   ++ structInstFieldBreaks context segment
-  ++ tupleItemBreaks context segment
-  ++ anonymousCtorItemBreaks context segment
-  ++ arrayItemBreaks context segment
   ++ inductiveAlternativeBreaks context segment
   ++ quantifierBinderBreaks context segment
   ++ binderIdentifierBreaks context segment

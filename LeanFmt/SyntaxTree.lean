@@ -445,6 +445,35 @@ def regroupStructInstChildren (children : Array Tree) : Array Tree :=
         children
   | none => children
 
+def isDelimitedCollectionKind (kind : SyntaxNodeKind) : Bool :=
+  kind == `Lean.Parser.Term.tuple
+  || kind == `Lean.Parser.Term.anonymousCtor
+  || kind == `«term[_]»
+  || kind == `«term#[_,]»
+  || kind == `Matrix.vecNotation
+
+partial def flattenDelimitedCollectionChildren (children : Array Tree) : Array Tree :=
+  match children.findIdx? fun child => rawKind? child == some `null with
+  | some index =>
+      match children[index]? with
+      | some (.node (.raw `null) items) =>
+          let itemCount :=
+            items.foldl
+              (fun count item =>
+                match item.firstToken? with
+                | some token => if token.lexeme == "," then count else count + 1
+                | none => count)
+              0
+          if 1 < itemCount then
+            flattenDelimitedCollectionChildren
+            <| childrenRange children 0 index
+                ++ items
+                ++ childrenRange children (index + 1) children.size
+          else
+            children
+      | _ => children
+  | none => children
+
 def regroupRawNode (kind : SyntaxNodeKind) (children : Array Tree) : Tree :=
   if kind == `Lean.Parser.Term.app && children.size == 2 then
     match children[0]?, children[1]? with
@@ -545,7 +574,12 @@ def regroupRawNode (kind : SyntaxNodeKind) (children : Array Tree) : Tree :=
 partial def regroupTree : Tree → Tree
   | .missing => .missing
   | .leaf token => .leaf token
-  | .node (.raw kind) children => regroupRawNode kind (children.map regroupTree)
+  | .node (.raw kind) children =>
+      if isDelimitedCollectionKind kind then
+        let children := (flattenDelimitedCollectionChildren children).map regroupTree
+        .node (.raw kind) <| flattenDelimitedCollectionChildren children
+      else
+        regroupRawNode kind (children.map regroupTree)
   | .node kind children => .node kind (children.map regroupTree)
 
 def extractTree (source : String) (stx : Syntax) : Tree :=
