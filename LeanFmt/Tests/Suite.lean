@@ -477,6 +477,17 @@ def assertAttributesFlowBeforeDeclarations (env : Lean.Environment) : IO Unit :=
   assertEq "documentation and attribute flow before a multiline structure"
     documentedStructureExpected documentedStructureFormatted
 
+def assertCommandAttributeBracketPayloadStaysAttached (env : Lean.Environment)
+    : IO Unit := do
+  let source :=
+    "attribute [local instance] hasColimitsOfShape_of_finallySmall IsFiltered.isSifted FinallySmall.preservesColimitsOfShape_of_isFiltered\n"
+  let expected :=
+    "attribute [local instance]\n"
+    ++ "  hasColimitsOfShape_of_finallySmall IsFiltered.isSifted FinallySmall.preservesColimitsOfShape_of_isFiltered\n"
+  let formatted ←
+    Formatter.formatSourceWithEnv env source "command-attribute-bracket-payload.lean"
+  assertEq "command attribute keeps bracket payload attached" expected formatted
+
 def assertPrivateTheoremModifierStaysOnHeader (env : Lean.Environment) : IO Unit := do
   let source := "private theorem privateTheoremModifier : True := by\n" ++ "  trivial\n"
   let formatted ← Formatter.formatSourceWithEnv env source "private-theorem-modifier.lean"
@@ -1857,6 +1868,17 @@ def assertVariableBinderSequenceFlows (env : Lean.Environment) : IO Unit := do
     ++ "  {B₁ : Set β₁} {B₂ : Set β₂} {f₁ : α → β₁} {f₂ : α → β₂} {n : Nat}\n"
   let formatted ← Formatter.formatSourceWithEnv env source "variable-binder-flow.lean"
   assertEq "variable binder sequence flows between binders" expected formatted
+
+def assertVariableInstanceBinderAvoidsBracketOnlyLines (env : Lean.Environment)
+    : IO Unit := do
+  let source :=
+    "variable [∀ {X Y : Cᵒᵖ} (f : X ⟶ Y), PreservesColimit (F ⋙ evaluation R Y) (ModuleCat.restrictScalars (R.map f).hom)]\n"
+  let formatted ←
+    Formatter.formatSourceWithEnv env source "variable-instance-binder-brackets.lean"
+  assertTextLacks "variable instance binder avoids newline after opening bracket"
+    formatted "[\n"
+  assertTextLacks "variable instance binder avoids newline before closing bracket"
+    formatted "\n]"
 
 def assertMutualEquationArmIndent (env : Lean.Environment) : IO Unit := do
   let source :=
@@ -4295,6 +4317,7 @@ def runBasicFormattingTests (env : Lean.Environment) : IO Unit := do
   assertAnonymousConstructorAfterListKeepsSpace env
   assertAttributeDeclarationPreservesSourceBreak env
   assertAttributesFlowBeforeDeclarations env
+  assertCommandAttributeBracketPayloadStaysAttached env
   assertPrivateTheoremModifierStaysOnHeader env
   assertDoBlockPreservesBodyBreak env
   assertDoMatchAlternativesAlignWithMatch env
@@ -4351,6 +4374,7 @@ def runExpressionAndRendererTests (env : Lean.Environment) : IO Unit := do
   assertSignatureParametersStayOnHeaderWhenTheyFit env
   assertSignatureParameterSourceBreakFallback env
   assertVariableBinderSequenceFlows env
+  assertVariableInstanceBinderAvoidsBracketOnlyLines env
   assertMutualEquationArmIndent env
   assertMutualSingleLineParameterReturnIndent env
   assertReturnTypeInfixIndent env

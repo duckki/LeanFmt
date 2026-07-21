@@ -536,6 +536,15 @@ def declarationValueHasAttachedBodyInfix (segment : Segment) : Bool :=
       | some value => treeContainsAttachedBodyInfix value
       | none => false
 
+def commandAttributeBreaks (_context : RuleContext) (segment : Segment)
+    : List BreakPoint :=
+  match contentIndexAfterLexeme? segment "]" with
+  | some index =>
+      match boundaryBreak? segment index 1 with
+      | some breakPoint => [breakPoint]
+      | none => []
+  | none => []
+
 /-! ### Declarations, structures, and collections -/
 
 def definitionBreaks (_context : RuleContext) (segment : Segment) : List BreakPoint :=
@@ -1702,6 +1711,12 @@ def arrayRule : LineBreakRule :=
 def declarationRule : LineBreakRule :=
   { name := "declaration" }
 
+def commandAttributeRule : LineBreakRule :=
+  {
+    name := "commandAttribute"
+    breakPoints := commandAttributeBreaks
+  }
+
 def variableCommandRule : LineBreakRule :=
   { name := "variableCommand" }
 
@@ -2027,7 +2042,7 @@ def ruleFor : SyntaxTree.Tree → Option LineBreakRule
   | .node (.raw `Lean.Parser.Command.macroArg) _ => some defaultRule
   | .node (.raw `Lean.Parser.Command.macroTail) _ => some defaultRule
   | .node (.raw `Lean.Parser.Command.macroRhs) _ => some defaultRule
-  | .node (.raw `Lean.Parser.Command.attribute) _ => some defaultRule
+  | .node (.raw `Lean.Parser.Command.attribute) _ => some commandAttributeRule
   | .node (.raw `Lean.Parser.Command.deprecated_module) _ => some defaultRule
   | .node (.raw `Lean.Parser.Command.assertNotImported) _ => some defaultRule
   | .node (.raw `Lean.Parser.Command.assertNotExists) _ => some defaultRule
@@ -2125,7 +2140,7 @@ def ruleFor : SyntaxTree.Tree → Option LineBreakRule
   | .node (.raw `Lean.Parser.Term.strictImplicitBinder) _ => some defaultRule
   | .node (.raw `Lean.Parser.Term.anonymousCtor) _ => some anonymousCtorRule
   | .node (.raw `Lean.Parser.Term.local) _ => some defaultRule
-  | .node (.raw `Lean.Parser.Term.instBinder) _ => some defaultRule
+  | .node (.raw `Lean.Parser.Term.instBinder) _ => some transparentRule
   | .node (.raw `Lean.Parser.Term.attrKind) _ => some defaultRule
   | .node (.raw `Lean.Parser.Term.attrInstance) _ => some defaultRule
   | .node (.raw `Lean.Parser.Term.attributes) _ => some defaultRule
