@@ -1,8 +1,8 @@
 # Contributing to LeanFmt
 
 LeanFmt follows the Lean community's maintenance conventions used by mathlib and
-CSLib, adapted for a formatter that intentionally depends only on Lean and
-Batteries.
+CSLib. The released formatter intentionally depends only on Lean. Batteries is
+confined to the separate `tools/linter` development package.
 
 ## Code standards
 

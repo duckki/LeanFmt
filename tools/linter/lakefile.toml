@@ -1,0 +1,17 @@
+name = "leanfmt-linter"
+version = "0.1.0"
+defaultTargets = ["runLinter"]
+
+[[require]]
+name = "leanfmt"
+path = "../.."
+
+[[require]]
+name = "batteries"
+scope = "leanprover-community"
+rev = "v4.32.0"
+
+[[lean_exe]]
+name = "runLinter"
+root = "Main"
+supportInterpreter = true

@@ -14,6 +14,10 @@ cat lean-toolchain
 
 The normal commands assume you are in the `leanfmt` repository root.
 
+The root package records our current development toolchain. CI also builds and
+tests the same source with supported previous minor versions. Keep compatibility
+changes on the main branch rather than maintaining a branch per Lean version.
+
 ## Build
 
 Build the library and default executable:
@@ -74,19 +78,47 @@ The repository uses the same Lake entry points adopted by mathlib and CSLib:
 ```sh
 lake build --wfail
 lake test --wfail
-lake lint
+make lint
 ```
 
-`--wfail` promotes Lean warnings to errors. `lake lint` runs Batteries'
-environment linter. The complete local review gate is `make check`; run
-`make shellcheck` when changing shell scripts. CI runs these checks for every
-pull request.
+`--wfail` promotes Lean warnings to errors. `make lint` runs Batteries'
+environment linter from the separate `tools/linter` Lake package. Batteries is
+therefore available to contributors without becoming a dependency of the
+released formatter. The complete local review gate is `make check`; run `make
+shellcheck` when changing shell scripts. CI runs these checks for every pull
+request.
 
-The project linter driver runs the enabled Batteries environment linters except
+The development linter runs the enabled Batteries environment linters except
 `docBlame`. LeanFmt exposes a small public formatter API, but most declarations
 are internal implementation details for syntax analysis, layout, diagnostics,
 and the CLI. Other linter findings fail the gate and should be fixed rather than
 added to a baseline.
+
+## Lean-version compatibility
+
+LeanFmt supports one source and release line across our current toolchain and
+supported previous minor versions. The current-toolchain CI job runs the complete
+maintenance gate. Compatibility jobs select each previous minor version in a
+disposable checkout and run only the build and test suite. Linting, fixtures,
+self-formatting, formatter diagnostics, and idempotency checks run once with our
+current toolchain.
+
+When adding or updating LeanFmt in a project on an older supported Lean version,
+preserve the project's toolchain during dependency resolution:
+
+```sh
+lake update --keep-toolchain
+```
+
+A normal `lake update` considers direct dependencies' `lean-toolchain` files and
+may update the root project to LeanFmt's current version. With
+`--keep-toolchain`, Lake retains the downstream version and compiles LeanFmt with
+it. This is required for reliable loading of the project's compiled parser
+extensions and imported environment.
+
+Add a maintenance branch for an older Lean version only if its implementation
+must diverge from `main`. Ordinary compatibility fixes belong on `main` and must
+continue to pass the full toolchain matrix.
 
 These options are intended for formatter development, not everyday user formatting:
 
@@ -293,8 +325,14 @@ A published repository can be consumed with Lake's Git dependency form:
 ```toml
 [[require]]
 name = "leanfmt"
-git = "https://example.com/leanfmt.git"
-rev = "main"
+git = "https://github.com/duckki/leanfmt.git"
+rev = "v0.1.2"
+```
+
+Resolve it without replacing the downstream project's Lean version:
+
+```sh
+lake update --keep-toolchain
 ```
 
 Downstream users can run:

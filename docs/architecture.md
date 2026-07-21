@@ -60,6 +60,11 @@ namespace, so the namespace is explicit in the module names. The library explici
 `LeanFmt/Tests/` without a `LeanFmt/Tests.lean` forwarding module. Fixtures remain under
 `Tests/Fixtures` because the test CLI reads them as files rather than importing them.
 
+The Batteries environment linter lives in a separate Lake package under
+`tools/linter`. That package depends on LeanFmt by a local path and may pin
+development-only lint dependencies. The root package and its manifest therefore
+describe only the library and executables distributed to downstream users.
+
 ## Pipeline
 
 Formatting a file follows this pipeline:

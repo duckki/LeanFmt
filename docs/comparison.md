@@ -425,8 +425,8 @@ pays for the properties most useful when formatting existing projects:
 
 ### pretty-lean: formatter definitions beside parser definitions
 
-The generic machinery used by pretty-lean is already part of Lean 4.32, not an API unique
-to the fork. [`Lean.PrettyPrinter.Formatter`][lean-formatter] formatting handlers are
+The generic machinery used by pretty-lean is part of Lean itself, not an API unique to
+the fork. [`Lean.PrettyPrinter.Formatter`][lean-formatter] formatting handlers are
 registered by syntax kind with `@[formatter]`, and parser combinators can have
 `@[combinator_formatter]` implementations. [`Lean.ParserCompiler`][lean-parser-compiler]
 derives handlers from parser definitions. The formatter traverses syntax and builds

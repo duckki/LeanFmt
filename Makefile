@@ -9,7 +9,7 @@ test:
 	time lake test --wfail
 
 lint:
-	time lake lint
+	time lake -d tools/linter exe runLinter
 
 fixtures:
 	time lake exe fmt-test --update-fixture --check Tests/Fixtures/*/*.leanfmt

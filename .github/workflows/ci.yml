@@ -16,6 +16,7 @@ permissions:
 
 jobs:
   lean:
+    name: Current toolchain
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -23,9 +24,30 @@ jobs:
         with:
           build-args: --wfail
           test-args: --wfail
+          lint: false
+      - name: Run local environment linters
+        run: lake -d tools/linter exe runLinter
       - name: Check fixtures and formatter invariants
         run: |
           lake exe fmt-test --update-fixture --check Tests/Fixtures/*/*.leanfmt
           lake exe fmt --check --check-exception --check-idempotent -r LeanFmt
       - name: Check whitespace errors
         run: git diff --check
+
+  compatibility:
+    name: Previous minor compatibility
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        lean: [v4.29.1, v4.30.0, v4.31.0]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Select compatibility toolchain
+        run: echo "leanprover/lean4:${{ matrix.lean }}" > lean-toolchain
+      - uses: leanprover/lean-action@v1
+        with:
+          build-args: --wfail
+          test-args: --wfail
+          lint: false
+          use-github-cache: false

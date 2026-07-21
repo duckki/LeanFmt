@@ -60,8 +60,21 @@ Add the Git dependency to `lakefile.toml`:
 [[require]]
 name = "leanfmt"
 git = "https://github.com/duckki/leanfmt.git"
-rev = "main"
+rev = "v0.1.2"
 ```
+
+Preserve the package's Lean version when resolving the dependency:
+
+```sh
+lake update --keep-toolchain
+```
+
+LeanFmt uses one source release across its supported Lean versions and tests the
+current toolchain and previous minor versions in CI. `--keep-toolchain` prevents
+Lake from replacing an older project's toolchain with the version recorded by
+LeanFmt. LeanFmt is then built with the project's selected Lean version, which is
+important because it loads that project's parser extensions and imported
+environments.
 
 Then format files or directories through Lake:
 

@@ -25,8 +25,12 @@ linked below remains the source of truth when this summary and the code diverge.
   generated expected output below it. Do not hand-edit the generated half.
 - `scripts/validate-external-projects.sh` validates the formatter against fresh
   clones of external Lean projects.
-- `lakefile.toml`, `lake-manifest.json`, and `lean-toolchain` define the package,
-  executables, dependencies, and pinned Lean version. `.lake/` is generated.
+- `tools/linter/` is a separate development-only Lake package that pins
+  Batteries and runs environment linters without adding Batteries to LeanFmt's
+  released dependency graph.
+- `lakefile.toml`, `lake-manifest.json`, and `lean-toolchain` define the released
+  package, executables, and canonical Lean version. The root package depends
+  only on Lean. `.lake/` is generated.
 - `.scratch/external-validation/` contains disposable external-validation clones
   and must remain untracked.
 
@@ -48,11 +52,12 @@ module responsibilities, diagnostics, CLI behavior, or validation commands.
 Every branch or PR should pass this review gate. Run focused checks while
 developing, then run the complete sequence before requesting review.
 
-1. Build and run the unit-style suite:
+1. Build, run the unit-style suite, and run the development linter:
 
    ```sh
    lake build
    lake test
+   make lint
    ```
 
 2. Regenerate every fixture after an intentional formatter change:
