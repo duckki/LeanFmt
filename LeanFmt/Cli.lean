@@ -368,8 +368,7 @@ def expandInputPaths (options : Options) : IO (List FilePath) := do
     files := files ++ (← expandInputPath options path)
   pure files
 
-def runOptions (options : Options) : IO UInt32 := do
-  let cache ← loadFormatterEnvironment options.environmentCacheSize
+def runOptionsWithCache (cache : EnvironmentCache) (options : Options) : IO UInt32 := do
   let files ← expandInputPaths options
   let mut changed := false
   let mut failed := false
@@ -384,6 +383,10 @@ def runOptions (options : Options) : IO UInt32 := do
   let diagnosticMode := options.checkException || options.checkIdempotent
   let formattingDifferenceFailed := options.check && !diagnosticMode && changed
   pure <| if failed || formattingDifferenceFailed then 1 else 0
+
+def runOptions (options : Options) : IO UInt32 := do
+  let cache ← loadFormatterEnvironment options.environmentCacheSize
+  runOptionsWithCache cache options
 
 def runMain (args : List String) : IO UInt32 := do
   match parseArgs args with
