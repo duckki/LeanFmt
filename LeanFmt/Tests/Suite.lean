@@ -1958,6 +1958,20 @@ def assertColumnIndentationIsConservative : IO Unit := do
   assertTrue "ordinary breaks indent from their rounded base"
     (Formatter.breakIndent 3 2 { index := 0, indentLevels := 1 } == 6)
 
+def assertCurrentLineFitChecksCompletedLines : IO Unit := do
+  let state : Formatter.RenderState :=
+    { source := "", currentLine := "12345", options := { lineWidth := 10 } }
+  assertTrue "line fit rejects an introduced completed-line overflow"
+    (!Formatter.currentLineFitsWith state "678901\nx")
+  let alreadyOverflowing : Formatter.RenderState :=
+    {
+      source := ""
+      currentLine := "12345678901"
+      options := { lineWidth := 10 }
+    }
+  assertTrue "line fit ignores an untouched pre-existing completed-line overflow"
+    (Formatter.currentLineFitsWith alreadyOverflowing "\nx")
+
 def tokenAt (lexeme : String) (start stop : String.Pos.Raw) : SyntaxTree.Token :=
   {
     role := .ident
@@ -4277,6 +4291,7 @@ def runExpressionAndRendererTests (env : Lean.Environment) : IO Unit := do
   assertLogicalArrowBreaksBalanced env
   assertChildFitCountsParentSuffix env
   assertColumnIndentationIsConservative
+  assertCurrentLineFitChecksCompletedLines
   assertSegmentBaseUsesRenderedStartColumn
   assertListApplicationColumnIndent env
   assertListApplicationSourceBreakIndent env

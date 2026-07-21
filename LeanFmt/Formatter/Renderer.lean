@@ -175,6 +175,18 @@ def currentLineAfterAppend (currentLine text : String) : String :=
   else
     currentLine ++ text
 
+def introducesCompletedLineOverflow
+    (currentLine text : String) (limit : Nat := maxLineWidth)
+    : Bool :=
+  let rec loop (lineWidth : Nat) (lineTouched : Bool) : List Char → Bool
+    | [] => false
+    | '\r' :: '\n' :: rest =>
+        (lineTouched && lineWidth > limit) || loop 0 false rest
+    | '\n' :: rest => (lineTouched && lineWidth > limit) || loop 0 false rest
+    | '\r' :: rest => (lineTouched && lineWidth > limit) || loop 0 false rest
+    | _ :: rest => loop (lineWidth + 1) true rest
+  loop currentLine.length false text.toList
+
 def RenderState.appendOutput (state : RenderState) (text : String) : RenderState :=
   if hasLineBreakChar text then
     let appended := appendedLines state.currentLine text state.options.lineWidth
@@ -591,10 +603,10 @@ partial def flatSegmentText (state : RenderState) (segment : LineBreakRules.Segm
   (renderFlatSegment { state with output := "", currentLine := "" } segment).output
 
 def currentLineFitsWith (state : RenderState) (suffix : String) : Bool :=
-  lineFitsWithTrailingWidth
-    (currentLineAfterAppend state.currentLine suffix)
-    state.lineFitSuffixWidth
-    state.options.lineWidth
+  !introducesCompletedLineOverflow state.currentLine suffix state.options.lineWidth
+  && lineFitsWithTrailingWidth
+      (currentLineAfterAppend state.currentLine suffix) state.lineFitSuffixWidth
+      state.options.lineWidth
 
 def firstLineWithBreakFlag (text : String) : String × Bool :=
   let rec loop : List Char → List Char → String × Bool
