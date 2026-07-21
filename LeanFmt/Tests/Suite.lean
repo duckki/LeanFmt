@@ -2920,6 +2920,19 @@ def assertStructureFieldTypeBreakIndentation (env : Lean.Environment) : IO Unit 
     Formatter.formatSourceWithEnv env source "structure-field-type-break-indent.lean"
   assertEq "structure field type break indentation" expected formatted
 
+def assertStructureExtendsBreaksBeforeWhereFields (env : Lean.Environment) : IO Unit := do
+  let source :=
+    "structure VeryLongStructureName (R : Type u) (A : Type v) [CommSemiring R] [Semiring A] [Algebra R A] : Type v extends ParentStructureName A where\n"
+    ++ "  field : Nat\n"
+  let expected :=
+    "structure VeryLongStructureName (R : Type u) (A : Type v) [CommSemiring R] [Semiring A]\n"
+    ++ "    [Algebra R A]\n"
+    ++ "    : Type v\n"
+    ++ "    extends ParentStructureName A where\n"
+    ++ "  field : Nat\n"
+  let formatted ← Formatter.formatSourceWithEnv env source "structure-extends-rule.lean"
+  assertEq "structure extends breaks before where fields" expected formatted
+
 def assertInductiveAlternativesBreakMandatory (env : Lean.Environment) : IO Unit := do
   let source := "inductive Color where | red | green | blue\n"
   let expected :=
@@ -4383,6 +4396,7 @@ def runCollectionAndDeclarationTests (env : Lean.Environment) : IO Unit := do
   assertConstructorBinderContinuesFromUnbrokenPrefix env
   assertStructureFieldsBreakMandatory env
   assertStructureFieldTypeBreakIndentation env
+  assertStructureExtendsBreaksBeforeWhereFields env
   assertInductiveAlternativesBreakMandatory env
   assertStructInstanceFieldsBreakMandatory env
   assertStructInstanceFieldsBreakMandatoryBetweenFields env

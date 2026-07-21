@@ -105,6 +105,11 @@ def Frame.nodeKind? (frame : Frame) : Option SyntaxTree.NodeKind :=
   | .node kind _ => some kind
   | _ => none
 
+partial def treeContainsLexemeForContext (lexeme : String) : SyntaxTree.Tree → Bool
+  | .missing => false
+  | .leaf token => token.lexeme == lexeme
+  | .node _ children => children.any (treeContainsLexemeForContext lexeme)
+
 def RuleContext.parentIsSingletonArrayItemWrapper (context : RuleContext) : Bool :=
   match context.ancestors with
   | parent :: grandparent :: _ =>
@@ -120,6 +125,13 @@ def RuleContext.parentIsStructureWhereWrapper (context : RuleContext) : Bool :=
       parent.rawKind? == some `Lean.Parser.Command.structure && parent.childIndex == 4
   | _ => false
 
+def RuleContext.parentStructureHasExtends (context : RuleContext) : Bool :=
+  match context.ancestors with
+  | parent :: _ =>
+      parent.rawKind? == some `Lean.Parser.Command.structure
+      && treeContainsLexemeForContext "extends" parent.segment.parent
+  | _ => false
+
 def RuleContext.parentIsVariableBinderList (context : RuleContext) : Bool :=
   match context.ancestors with
   | parent :: _ =>
@@ -130,7 +142,9 @@ def defaultInheritBase (context : RuleContext) (segment : Segment) : Bool :=
   context.parentIsSingletonArrayItemWrapper
   || segment.rawKind? == some `Lean.Parser.Term.letDecl
   || (segment.rawKind? == some `null && context.parentIsVariableBinderList)
-  || (segment.rawKind? == some `null && context.parentIsStructureWhereWrapper)
+  || (segment.rawKind? == some `null
+      && context.parentIsStructureWhereWrapper
+      && !context.parentStructureHasExtends)
 
 def parentIsSignatureParameters (context : RuleContext) : Bool :=
   match context.ancestors with
@@ -565,6 +579,10 @@ def derivingBreaks (_context : RuleContext) (segment : Segment) : List BreakPoin
 
 def structureBreaks (context : RuleContext) (segment : Segment) : List BreakPoint :=
   let annotationBreaks := leadingAnnotationBreaks context segment
+  let extendsBreak :=
+    match breakBeforeLexeme? segment "extends" 2 with
+    | some breakPoint => [breakPoint]
+    | none => []
   let fieldsBreak :=
     match firstChildRawKind? segment `Lean.Parser.Command.structFields with
     | some index =>
@@ -572,12 +590,21 @@ def structureBreaks (context : RuleContext) (segment : Segment) : List BreakPoin
         | some breakPoint => [breakPoint]
         | none => []
     | none => []
-  annotationBreaks ++ fieldsBreak ++ derivingBreaks context segment
+  annotationBreaks ++ extendsBreak ++ fieldsBreak ++ derivingBreaks context segment
 
 def structFieldsBreaks (_context : RuleContext) (segment : Segment) : List BreakPoint :=
   match leadingBreak? segment segment.start 1 with
   | some breakPoint => [breakPoint]
   | none => []
+
+def structureWhereFieldBreaks (context : RuleContext) (segment : Segment)
+    : List BreakPoint :=
+  if context.parentIsStructureWhereWrapper then
+    match breakAfterLexeme? segment "where" 0 with
+    | some breakPoint => [breakPoint]
+    | none => []
+  else
+    []
 
 def structureFieldBreaks (context : RuleContext) (segment : Segment) : List BreakPoint :=
   if parentIsRawKind context `Lean.Parser.Command.structFields then
@@ -1611,6 +1638,7 @@ def infixFlow (context : RuleContext) (segment : Segment) : Bool :=
 
 def nullBreaks (context : RuleContext) (segment : Segment) : List BreakPoint :=
   structureFieldBreaks context segment
+  ++ structureWhereFieldBreaks context segment
   ++ structInstFieldBreaks context segment
   ++ inductiveAlternativeBreaks context segment
   ++ quantifierBinderBreaks context segment
@@ -1627,6 +1655,7 @@ def nullBreaks (context : RuleContext) (segment : Segment) : List BreakPoint :=
 
 def nullBreaksMandatory (context : RuleContext) (segment : Segment) : Bool :=
   !(structureFieldBreaks context segment).isEmpty
+  || !(structureWhereFieldBreaks context segment).isEmpty
   || structInstFieldsMandatory context segment
   || !(inductiveAlternativeBreaks context segment).isEmpty
   || !(doSeqItemBreaks context segment).isEmpty

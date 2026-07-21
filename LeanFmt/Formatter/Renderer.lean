@@ -1191,7 +1191,13 @@ def ruleBreakBase
     (baseColumn baseIndentation : Nat)
     (breakPoint : LineBreakRules.BreakPoint)
     : SegmentBase :=
-  let base := naturalRuleBreakBase rule baseColumn baseIndentation breakPoint
+  let base :=
+    if state.context.parentIsStructureWhereWrapper
+        && state.context.parentStructureHasExtends
+        && breakPoint.indentLevels == 0 then
+      { column := 0, indentation := 0 }
+    else
+      naturalRuleBreakBase rule baseColumn baseIndentation breakPoint
   let shiftedIndentation :=
     if breakPoint.indentLevels == 0 then
       indentationLevelForColumn (breakIndent base.column base.indentation breakPoint)
