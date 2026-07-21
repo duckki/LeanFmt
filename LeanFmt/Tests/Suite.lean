@@ -3989,6 +3989,8 @@ def assertMathlibLowRiskSyntaxKindsHaveRules : IO Unit := do
       `precMax,
       `cfcTac,
       `adaptationNoteCmd,
+      `adaptationNoteTermStx,
+      `commandSuppress_compilation,
       `wikidataId,
       `goldenRatio.termφ,
       `goldenRatio.termψ,

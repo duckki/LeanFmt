@@ -2303,6 +2303,8 @@ def ruleFor : SyntaxTree.Tree → Option LineBreakRule
   | .node (.raw `precMax) _ => some defaultRule
   | .node (.raw `cfcTac) _ => some defaultRule
   | .node (.raw `adaptationNoteCmd) _ => some defaultRule
+  | .node (.raw `adaptationNoteTermStx) _ => some defaultRule
+  | .node (.raw `commandSuppress_compilation) _ => some defaultRule
   | .node (.raw `wikidataId) _ => some defaultRule
   | .node (.raw `goldenRatio.termφ) _ => some defaultRule
   | .node (.raw `goldenRatio.termψ) _ => some defaultRule
