@@ -492,7 +492,8 @@ def assertCommandAttributeBracketPayloadStaysAttached (env : Lean.Environment)
     "attribute [local instance] hasColimitsOfShape_of_finallySmall IsFiltered.isSifted FinallySmall.preservesColimitsOfShape_of_isFiltered\n"
   let expected :=
     "attribute [local instance]\n"
-    ++ "  hasColimitsOfShape_of_finallySmall IsFiltered.isSifted FinallySmall.preservesColimitsOfShape_of_isFiltered\n"
+    ++ "  hasColimitsOfShape_of_finallySmall IsFiltered.isSifted\n"
+    ++ "    FinallySmall.preservesColimitsOfShape_of_isFiltered\n"
   let formatted ←
     Formatter.formatSourceWithEnv env source "command-attribute-bracket-payload.lean"
   assertEq "command attribute keeps bracket payload attached" expected formatted

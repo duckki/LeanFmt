@@ -495,6 +495,12 @@ def openIdentifierList (context : RuleContext) : Bool :=
       parent.rawKind? == some `Lean.Parser.Command.openSimple && parent.childIndex == 0
   | _ => false
 
+def commandAttributeIdentifierList (context : RuleContext) : Bool :=
+  match context.ancestors with
+  | parent :: _ =>
+      parent.rawKind? == some `Lean.Parser.Command.attribute && parent.childIndex == 4
+  | _ => false
+
 def nullInheritBase (context : RuleContext) (segment : Segment) : Bool :=
   defaultInheritBase context segment
   || singletonArrayItemWrapper context segment
@@ -828,6 +834,16 @@ def variableBinderBreaks (context : RuleContext) (segment : Segment) : List Brea
 
 def openIdentifierBreaks (context : RuleContext) (segment : Segment) : List BreakPoint :=
   if openIdentifierList context then
+    match nonemptyChildIndexes segment with
+    | [] => []
+    | [_] => []
+    | _ :: rest => rest.filterMap fun index => boundaryBreak? segment index 1
+  else
+    []
+
+def commandAttributeIdentifierBreaks (context : RuleContext) (segment : Segment)
+    : List BreakPoint :=
+  if commandAttributeIdentifierList context then
     match nonemptyChildIndexes segment with
     | [] => []
     | [_] => []
@@ -1674,6 +1690,7 @@ def nullBreaks (context : RuleContext) (segment : Segment) : List BreakPoint :=
   ++ binderIdentifierBreaks context segment
   ++ variableBinderBreaks context segment
   ++ openIdentifierBreaks context segment
+  ++ commandAttributeIdentifierBreaks context segment
   ++ exportItemBreaks context segment
   ++ doSeqItemBreaks context segment
   ++ doLetArrowFallbackTailBreaks context segment
@@ -1712,6 +1729,7 @@ def nullRule : LineBreakRule :=
         || !(binderIdentifierBreaks context segment).isEmpty
         || !(variableBinderBreaks context segment).isEmpty
         || !(openIdentifierBreaks context segment).isEmpty
+        || !(commandAttributeIdentifierBreaks context segment).isEmpty
         || !(exportItemBreaks context segment).isEmpty
     inheritBase := nullInheritBase
     breakPoints := nullBreaks
