@@ -579,8 +579,7 @@ def structFieldsBreaks (_context : RuleContext) (segment : Segment) : List Break
   | some breakPoint => [breakPoint]
   | none => []
 
-def structureFieldBreaks (context : RuleContext) (segment : Segment)
-    : List BreakPoint :=
+def structureFieldBreaks (context : RuleContext) (segment : Segment) : List BreakPoint :=
   if parentIsRawKind context `Lean.Parser.Command.structFields then
     match nonemptyChildIndexes segment with
     | [] => []
@@ -610,8 +609,7 @@ def structInstFieldCount (segment : Segment) : Nat :=
       match segment.child? index with
       | some (.node (.raw `Lean.Parser.Term.structInstFields) children) =>
           count
-          + children.foldl (fun count child => count + structInstFieldChildCount child)
-              0
+          + children.foldl (fun count child => count + structInstFieldChildCount child) 0
       | _ => count)
     0
 
@@ -637,8 +635,7 @@ def hasMissingCommaBetweenFields (segment : Segment) : List Nat → Bool
       || hasMissingCommaBetweenFields segment (right :: rest)
   | _ => false
 
-def structInstFieldBreaks (context : RuleContext) (segment : Segment)
-    : List BreakPoint :=
+def structInstFieldBreaks (context : RuleContext) (segment : Segment) : List BreakPoint :=
   if parentIsRawKind context `Lean.Parser.Term.structInstFields then
     match structInstFieldIndexes segment with
     | [] => []
@@ -652,8 +649,7 @@ def structInstFieldValueBreaks (_context : RuleContext) (segment : Segment)
     : List BreakPoint :=
   match segment.indexes.find? fun index => childStartsWithLexeme segment index ":=" with
   | some assignmentIndex =>
-      match (nonemptyChildIndexes segment).find?
-              fun index => assignmentIndex < index with
+      match (nonemptyChildIndexes segment).find? fun index => assignmentIndex < index with
       | some valueIndex =>
           match boundaryBreak? segment valueIndex 1 with
           | some breakPoint => [breakPoint]
@@ -718,8 +714,7 @@ def anonymousCtorItemCount (segment : Segment) : Nat :=
       | none => 0
   | none => 0
 
-def anonymousCtorBreaks (_context : RuleContext) (segment : Segment)
-    : List BreakPoint :=
+def anonymousCtorBreaks (_context : RuleContext) (segment : Segment) : List BreakPoint :=
   if 1 < anonymousCtorItemCount segment then
     let itemBreak :=
       match firstChildRawKind? segment `null with
@@ -817,8 +812,7 @@ def structInstBreaks (_context : RuleContext) (segment : Segment) : List BreakPo
       else
         []
     match segment.indexes.find? fun index => childStartsWithLexeme segment index "{",
-          segment.indexes.find?
-            fun index => childStartsWithLexeme segment index "}" with
+          segment.indexes.find? fun index => childStartsWithLexeme segment index "}" with
     | some openIndex, some closeIndex =>
         let openBreak :=
           match (nonemptyChildIndexes segment).find? fun index => openIndex < index with
@@ -830,8 +824,7 @@ def structInstBreaks (_context : RuleContext) (segment : Segment) : List BreakPo
   else
     []
 
-def typeAscriptionBreaks (_context : RuleContext) (segment : Segment)
-    : List BreakPoint :=
+def typeAscriptionBreaks (_context : RuleContext) (segment : Segment) : List BreakPoint :=
   match segment.indexes.find? fun index => childStartsWithLexeme segment index ":" with
   | some index =>
       match boundaryBreak? segment index 1 with
@@ -844,8 +837,7 @@ def typeAscriptionBreaks (_context : RuleContext) (segment : Segment)
 def inductiveAlternativeBreaks (context : RuleContext) (segment : Segment)
     : List BreakPoint :=
   if parentIsRawKind context `Lean.Parser.Command.inductive then
-    match segment.indexes.filter
-            fun index => childStartsWithLexeme segment index "|" with
+    match segment.indexes.filter fun index => childStartsWithLexeme segment index "|" with
     | [] => []
     | _ :: rest =>
         rest.filterMap fun index => boundaryBreak? segment index 0
@@ -872,8 +864,7 @@ def binderIdentifierBreaks (context : RuleContext) (segment : Segment)
   else
     []
 
-def variableBinderBreaks (context : RuleContext) (segment : Segment)
-    : List BreakPoint :=
+def variableBinderBreaks (context : RuleContext) (segment : Segment) : List BreakPoint :=
   if variableBinderSequence context then
     match nonemptyChildIndexes segment with
     | [] => []
@@ -943,8 +934,7 @@ def exportBreaks (_context : RuleContext) (segment : Segment) : List BreakPoint 
     | some breakPoint => [breakPoint]
     | none => []
   let closeBreak :=
-    match segment.indexes.find?
-            fun index => childStartsWithLexeme segment index ")" with
+    match segment.indexes.find? fun index => childStartsWithLexeme segment index ")" with
     | some index =>
         match boundaryBreak? segment index 0 with
         | some breakPoint => [breakPoint]
@@ -1054,8 +1044,7 @@ def letRecBreaks (_context : RuleContext) (segment : Segment) : List BreakPoint 
   | some breakPoint => [breakPoint]
   | none => []
 
-def letRecEquationBreaks (_context : RuleContext) (segment : Segment)
-    : List BreakPoint :=
+def letRecEquationBreaks (_context : RuleContext) (segment : Segment) : List BreakPoint :=
   match firstChildRawKind? segment `Lean.Parser.Term.matchAlts with
   | some index =>
       match boundaryBreak? segment index 1 with
@@ -1162,15 +1151,12 @@ def letIdDeclBreaks (_context : RuleContext) (segment : Segment) : List BreakPoi
     | none => none
   [returnBreak, declarationValueBreak? segment].filterMap id
 
-def letPatternDeclBreaks (_context : RuleContext) (segment : Segment)
-    : List BreakPoint :=
+def letPatternDeclBreaks (_context : RuleContext) (segment : Segment) : List BreakPoint :=
   [breakAfterLexeme? segment ":=" 1].filterMap id
 
-def doLetArrowDeclBreaks (_context : RuleContext) (segment : Segment)
-    : List BreakPoint :=
+def doLetArrowDeclBreaks (_context : RuleContext) (segment : Segment) : List BreakPoint :=
   let valueBreak :=
-    match segment.indexes.find?
-            fun index => childStartsWithLexeme segment index "←" with
+    match segment.indexes.find? fun index => childStartsWithLexeme segment index "←" with
     | some assignmentIndex =>
         match (nonemptyChildIndexes segment).find?
                 fun index => assignmentIndex < index with
@@ -1216,9 +1202,7 @@ def doLetElseBreaks (_context : RuleContext) (segment : Segment) : List BreakPoi
       (nonemptyChildIndexes segment).find? fun index => fallbackIndex < index
     boundaryBreak? segment continuationIndex 0
   [
-    breakAfterLexeme? segment ":=" 1,
-    breakBeforeLexeme? segment "|" 0,
-    continuationBreak
+    breakAfterLexeme? segment ":=" 1, breakBeforeLexeme? segment "|" 0, continuationBreak
   ].filterMap
     id
 
@@ -1337,8 +1321,7 @@ def whereStructInstRule : LineBreakRule :=
     breakPoints := whereStructInstBreaks
   }
 
-def rawDefinitionBreaks (_context : RuleContext) (segment : Segment)
-    : List BreakPoint :=
+def rawDefinitionBreaks (_context : RuleContext) (segment : Segment) : List BreakPoint :=
   match boundaryBreak? segment 3 1 with
   | some breakPoint => [breakPoint]
   | none => []

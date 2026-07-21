@@ -26,8 +26,8 @@ def bang : Bool :=
   ! predicateWithAnExceptionallyLongName argumentOne argumentTwo argumentThree
       argumentFour argumentFive
 def compactBang : Bool :=
-  !predicateWithAnExceptionallyLongName argumentOne argumentTwo argumentThree
-    argumentFour argumentFive
+  !predicateWithAnExceptionallyLongName argumentOne argumentTwo argumentThree argumentFour
+    argumentFive
 def parenBang : Bool :=
   ! (predicateWithAnExceptionallyLongName argumentOne argumentTwo argumentThree
       argumentFour argumentFive)

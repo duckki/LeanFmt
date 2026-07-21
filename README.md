@@ -69,13 +69,16 @@ Then format files or directories through Lake:
 lake exe fmt LeanFmt/Formatter.lean
 lake exe fmt LeanFmt
 lake exe fmt --recursive LeanFmt
+lake exe fmt --line-width 100 --recursive Mathlib
 ```
 
 Directory arguments include directly contained `.lean` files. Pass
 `--recursive` or `-r` to include nested directories. Hidden files and
 directories discovered inside directory arguments are skipped by default.
 Explicitly supplied hidden paths are still processed. Pass `--include-hidden`
-to include hidden descendants during directory traversal.
+to include hidden descendants during directory traversal. LeanFmt uses a
+90-character line limit by default; pass `--line-width N` when a project uses a
+different convention.
 
 To verify formatting without changing files, use `--check`:
 

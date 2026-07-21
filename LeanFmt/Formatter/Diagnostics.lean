@@ -78,8 +78,7 @@ def realTokens (moduleTree : SyntaxTree.Module) : List SyntaxTree.Token :=
   moduleTree.sourceOrderedTokens.toList.filter fun token => !token.lexeme.isEmpty
 
 def isApplicationArgumentStart (token : SyntaxTree.Token) : Bool :=
-  token.role == .ident
-  || SpaceRules.stringIn token.lexeme ["(", "[", "{", "⟨", "⟪", "."]
+  token.role == .ident || SpaceRules.stringIn token.lexeme ["(", "[", "{", "⟨", "⟪", "."]
 
 def compactBangApplicationDiagnostic (bang head : SyntaxTree.Token) : Diagnostic :=
   {
@@ -202,11 +201,9 @@ partial def syntaxSignature : Syntax → SyntaxSignature
   | .atom _ value => .atom value
   | .ident _ rawValue value _ => .ident rawValue.toString value
   | .node _ kind children =>
-      .node kind
-      <| (children.map syntaxSignature).filter fun child => !child.isEmptyNull
+      .node kind <| (children.map syntaxSignature).filter fun child => !child.isEmptyNull
 
-partial def takeLineCommentAux (reversed : List Char)
-    : List Char → List Char × List Char
+partial def takeLineCommentAux (reversed : List Char) : List Char → List Char × List Char
   | [] => (reversed.reverse, [])
   | chars@('\n' :: _) => (reversed.reverse, chars)
   | chars@('\r' :: _) => (reversed.reverse, chars)
@@ -262,9 +259,7 @@ def tokenPreservationFragments
   match commentSpanForToken? syntaxCommentSpans token with
   | none =>
       let code := if token.lexeme.isEmpty then [] else [.code token.lexeme]
-      commentFragments token.leading.text
-      ++ code
-      ++ commentFragments token.trailing.text
+      commentFragments token.leading.text ++ code ++ commentFragments token.trailing.text
   | some span =>
       let leading :=
         if token.span.start == span.start then
@@ -283,8 +278,7 @@ def tokenPreservationFragments
           []
       leading ++ comment ++ trailing
 
-def preservationFragments (moduleTree : SyntaxTree.Module)
-    : List PreservationFragment :=
+def preservationFragments (moduleTree : SyntaxTree.Module) : List PreservationFragment :=
   let tokens :=
     moduleTree.sourceOrderedTokens.toList.filter
       fun token => SyntaxTree.tokenComesFromSource moduleTree.source token
@@ -410,7 +404,8 @@ def overflowIsExempt
   else
     suffixTokens.isEmpty
 
-def overflowOccurrences (moduleTree : SyntaxTree.Module) : List OverflowOccurrence :=
+def overflowOccurrences (moduleTree : SyntaxTree.Module) (options : Options := {})
+    : List OverflowOccurrence :=
   let tokens := realTokens moduleTree
   let indivisibleSpans :=
     preservedOriginalSpans moduleTree.tree ++ indivisibleOverflowSpans moduleTree.tree
@@ -420,9 +415,10 @@ def overflowOccurrences (moduleTree : SyntaxTree.Module) : List OverflowOccurren
     | line :: rest =>
         let nextLineStart := positionAfter lineStart (line ++ "\n")
         let remaining := loop (lineNumber + 1) nextLineStart rest
-        let overflowStart := positionAfter lineStart (line.take maxLineWidth).toString
+        let overflowStart :=
+          positionAfter lineStart (line.take options.lineWidth).toString
         let contentStop := positionAfter lineStart line.trimAsciiEnd.toString
-        if maxLineWidth < line.length
+        if options.lineWidth < line.length
             && !overflowIsExempt tokens indivisibleSpans overflowStart contentStop then
           { line := lineNumber, width := line.length, text := line } :: remaining
         else
@@ -430,6 +426,7 @@ def overflowOccurrences (moduleTree : SyntaxTree.Module) : List OverflowOccurren
   loop 1 0 (moduleTree.source.splitOn "\n")
 
 def formattingExceptions (sourceModule formattedModule : SyntaxTree.Module)
+    (options : Options := {})
     : List FormattingException :=
   let codeExceptions :=
     if preservesCodeIgnoringWhitespace sourceModule formattedModule then
@@ -437,7 +434,7 @@ def formattingExceptions (sourceModule formattedModule : SyntaxTree.Module)
     else
       [.codeChanged]
   let overflowExceptions :=
-    (overflowOccurrences formattedModule).map FormattingException.lineOverflow
+    (overflowOccurrences formattedModule options).map FormattingException.lineOverflow
   let missingRuleExceptions :=
     (missingRuleOccurrencesForModule sourceModule).map FormattingException.missingRule
   codeExceptions ++ overflowExceptions ++ missingRuleExceptions

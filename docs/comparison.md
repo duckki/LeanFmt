@@ -44,7 +44,7 @@ operators, tail indentation, and diagnostic checks should remain defining featur
 | Parsing context | Not applicable | Processes imports to load project syntax | Processes the file header; formatting requires parsing, not elaboration |
 | Current syntax scope | Describes common standard-library constructs | Common commands and terms, with lossless fallback and missing-rule diagnostics | Broad Lean parser coverage through parser and formatter registrations |
 | Indentation | Two spaces; declaration-header continuations use four | Two spaces | Lean `Format` default of two spaces |
-| Line width | No fixed limit | 88 characters | Lean `Format` default of 120, configurable through options |
+| Line width | No fixed limit | 90 characters | Lean `Format` default of 120, configurable through options |
 | Infix wrapping | Operator ends the preceding line | Operator begins the continuation line | Parser pretty-printing places an operator at the preceding line end in current tests |
 | Comments | Specifies documentation style and file policy | Preserves comment contents and reindents surrounding trivia | Retains source gaps, but current tests show comment text can be normalized |
 | Proofs | Gives semantic and tactical style advice | Preserves proof subtrees | Reformats tactic syntax |
@@ -245,7 +245,7 @@ inherits the break encoded by the parser formatter for that command.
 
 #### Default line width
 
-For an application whose flat form fits within 120 columns but not 88, LeanFmt's fixed
+For an application whose flat form fits within 120 columns but not 90, LeanFmt's default
 width produces a continuation:
 
 ```lean
@@ -671,15 +671,15 @@ Proof formatting could eventually be an opt-in subsystem with its own fixtures a
 preservation guarantees, but it should not be required for formatting declarations and
 propositions. Exact comment contents should remain invariant.
 
-### 7. Keep 88 columns fixed until configuration has a project model
+### 7. Keep 90 columns as the default, with explicit project override
 
 The official guide has no fixed width, while Lean's pretty-printer defaults to 120.
 This confirms that line width is project policy, not a Lean language standard.
 
-LeanFmt's 88-column default is coherent with its current fixtures and external
-validation. A width option should wait until formatting has been validated at several
-widths and the project can define where configuration lives, how CI discovers it, and
-whether one repository always has one canonical width.
+LeanFmt's 90-column default is coherent with its current fixtures and local style.
+Projects with a different convention can pass an explicit width through the CLI. The
+repository-level configuration question remains separate: until there is a project
+configuration file, CI should pass the intended width directly.
 
 ### 8. Continue treating diagnostics as part of formatting correctness
 

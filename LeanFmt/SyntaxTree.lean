@@ -464,8 +464,7 @@ def regroupRawNode (kind : SyntaxNodeKind) (children : Array Tree) : Tree :=
           #[
             receiver,
             operator,
-            .node .application
-              (#[head] ++ appendApplicationArgumentContainers children 3)
+            .node .application (#[head] ++ appendApplicationArgumentContainers children 3)
           ]
     | _, _, _ => .node (.raw kind) children
   else if isBinaryInfixRawNode kind children then
@@ -522,8 +521,7 @@ def regroupRawNode (kind : SyntaxNodeKind) (children : Array Tree) : Tree :=
   else if kind == `Lean.Parser.Term.match then
     match children.findIdx?
             fun child =>
-              (Tree.firstToken? child).map (fun token => token.lexeme)
-              == some "with" with
+              (Tree.firstToken? child).map (fun token => token.lexeme) == some "with" with
     | some withIndex =>
         match previousContentIndex? children withIndex with
         | some discriminantsIndex =>
@@ -643,11 +641,9 @@ def parseModuleSyntaxWithEnvCore
     parseModuleCommandsQuiet inputContext state messages commandState
       updateParserState #[]
   pure
-  <| (mkNode `Lean.Parser.Module.module
-        #[header, mkListNode commands]).raw.updateLeading
+  <| (mkNode `Lean.Parser.Module.module #[header, mkListNode commands]).raw.updateLeading
 
-def parseModuleSyntaxWithEnv (env : Environment) (source fileName : String)
-    : IO Syntax :=
+def parseModuleSyntaxWithEnv (env : Environment) (source fileName : String) : IO Syntax :=
   parseModuleSyntaxWithEnvCore env source fileName (updateParserState := true)
 
 def parseModuleSyntaxWithoutParserStateUpdates

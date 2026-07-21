@@ -27,12 +27,13 @@ end Debug
 
 /-! ## Public formatting API -/
 
-def formatModule (moduleTree : SyntaxTree.Module) : String :=
-  renderModuleTree moduleTree
+def formatModule (moduleTree : SyntaxTree.Module) (options : Options := {}) : String :=
+  renderModuleTree moduleTree options
 
 def formatModuleWithEnv (_env : Environment) (moduleTree : SyntaxTree.Module)
+    (options : Options := {})
     : IO String :=
-  pure <| formatModule moduleTree
+  pure <| formatModule moduleTree options
 
 namespace Internal
 
@@ -50,8 +51,10 @@ def parseModuleWithEnv (env : Environment) (source fileName : String)
   let rawSyntax ← SyntaxTree.parseModuleSyntaxWithEnv env source fileName
   pure <| buildModule source rawSyntax
 
-def formatPassWithEnv (env : Environment) (source fileName : String) : IO String := do
-  formatModuleWithEnv env (← parseModuleWithEnv env source fileName)
+def formatPassWithEnv
+    (env : Environment) (source fileName : String) (options : Options := {})
+    : IO String := do
+  formatModuleWithEnv env (← parseModuleWithEnv env source fileName) options
 
 def maxConvergencePasses : Nat := 4
 
@@ -67,13 +70,14 @@ partial def convergeSourceWithEnv
     (env : Environment) (source fileName : String)
     (passesRemaining : Nat := maxConvergencePasses)
     (seen : List String := []) (fallback : String := source)
+    (options : Options := {})
     : IO FormatResult := do
   if passesRemaining == 0 then
     warnConvergenceFallback fileName
       s!"formatting did not converge within {maxConvergencePasses} passes"
     pure { formatted := fallback, fellBack := true }
   else
-    let formatted ← formatPassWithEnv env source fileName
+    let formatted ← formatPassWithEnv env source fileName options
     if formatted == source then
       pure { formatted }
     else if seen.contains formatted then
@@ -82,7 +86,7 @@ partial def convergeSourceWithEnv
     else
       try
         convergeSourceWithEnv env formatted fileName (passesRemaining - 1)
-          (source :: seen) fallback
+          (source :: seen) fallback options
       catch _ =>
         warnConvergenceFallback fileName "an intermediate result did not parse"
         pure { formatted := fallback, fellBack := true }
@@ -91,47 +95,52 @@ end Internal
 
 def formatSourceWithEnvDetailed
     (env : Environment) (source fileName : String := "<input>")
+    (options : Options := {})
     : IO Internal.FormatResult :=
   let normalized := Internal.normalizeSource source
   Internal.convergeSourceWithEnv env normalized fileName Internal.maxConvergencePasses
+    [] normalized options
 
 def formatSourceWithEnv (env : Environment) (source fileName : String := "<input>")
+    (options : Options := {})
     : IO String := do
-  pure (← formatSourceWithEnvDetailed env source fileName).formatted
+  pure (← formatSourceWithEnvDetailed env source fileName options).formatted
 
 def defaultEnvironment : IO Environment :=
   SyntaxTree.importLeanEnvironment
 
-def formatSource (source fileName : String := "<input>") : IO String := do
-  formatSourceWithEnv (← defaultEnvironment) source fileName
+def formatSource (source fileName : String := "<input>") (options : Options := {})
+    : IO String := do
+  formatSourceWithEnv (← defaultEnvironment) source fileName options
 
 namespace Debug
 
 /-! ## Tracing and profiling -/
 
-def formatModuleWithTrace (moduleTree : SyntaxTree.Module) : String × String :=
-  renderModuleTreeWithTrace moduleTree
+def formatModuleWithTrace (moduleTree : SyntaxTree.Module) (options : Options := {})
+    : String × String :=
+  renderModuleTreeWithTrace moduleTree options
 
 def formatSourceProfiledWithEnv
     (env : Environment) (source fileName : String := "<input>")
+    (options : Options := {})
     : IO (String × FormatProfile) := do
   let totalStart ← IO.monoMsNow
-  let (normalizedSource, normalizeMs) ←
-    timeIO <| pure <| Internal.normalizeSource source
+  let (normalizedSource, normalizeMs) ← timeIO <| pure <| Internal.normalizeSource source
   let (rawSyntax, parseMs) ←
     timeIO <| SyntaxTree.parseModuleSyntaxWithEnv env normalizedSource fileName
   let (moduleTree, syntaxTreeMs) ←
     timeIO <| pure <| Internal.buildModule normalizedSource rawSyntax
   let (formatted, renderMs) ←
     timeIO <| do
-      let firstPass ← formatModuleWithEnv env moduleTree
+      let firstPass ← formatModuleWithEnv env moduleTree options
       if firstPass == normalizedSource then
         pure firstPass
       else
         pure
           (← Internal.convergeSourceWithEnv env firstPass fileName
               (Internal.maxConvergencePasses - 1) [normalizedSource]
-              normalizedSource).formatted
+              normalizedSource options).formatted
   let totalStop ← IO.monoMsNow
   pure
     (
@@ -147,10 +156,11 @@ def formatSourceProfiledWithEnv
 
 def formatSourceWithTraceWithEnv
     (env : Environment) (source fileName : String := "<input>")
+    (options : Options := {})
     : IO (String × String) := do
   let moduleTree ←
     Internal.parseModuleWithEnv env (Internal.normalizeSource source) fileName
-  pure <| formatModuleWithTrace moduleTree
+  pure <| formatModuleWithTrace moduleTree options
 
 end Debug
 

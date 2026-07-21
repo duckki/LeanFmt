@@ -11,6 +11,7 @@ structure Options where
   checkIdempotent : Bool := false
   recursive : Bool := false
   includeHidden : Bool := false
+  formatterOptions : Formatter.Options := {}
   environmentCacheSize : Nat := 1
   importEnvironmentFirst : Bool := false
   files : List FilePath := []
@@ -118,6 +119,8 @@ def usage : String :=
       "            Recursively format Lean files under directory arguments.",
       "  --include-hidden",
       "            Include hidden entries discovered during directory traversal.",
+      "  --line-width N",
+      s!"            Use N as the formatter line limit; default is {Formatter.maxLineWidth}.",
       "  -h, --help",
       "",
       "Internal debugging options (not intended for general use):",
@@ -145,6 +148,22 @@ def parseArgs (args : List String) : ParseResult :=
         loop { options with checkException := true } files rest
     | "--check-idempotent" :: rest =>
         loop { options with checkIdempotent := true } files rest
+    | "--line-width" :: value :: rest =>
+        match value.toNat? with
+        | some width =>
+            if width == 0 then
+              .error s!"invalid --line-width value: {value}"
+            else
+              loop
+                {
+                  options with
+                    formatterOptions :=
+                      { options.formatterOptions with lineWidth := width }
+                }
+                files rest
+        | none => .error s!"invalid --line-width value: {value}"
+    | "--line-width" :: [] =>
+        .error "--line-width requires a value"
     | "--env-cache-size" :: value :: rest =>
         match value.toNat? with
         | some size => loop { options with environmentCacheSize := size } files rest
@@ -165,8 +184,7 @@ def parseArgs (args : List String) : ParseResult :=
           loop options (FilePath.mk arg :: files) rest
   loop {} [] args
 
-def loadFormatterEnvironment (environmentCacheSize : Nat := 1)
-    : IO EnvironmentCache := do
+def loadFormatterEnvironment (environmentCacheSize : Nat := 1) : IO EnvironmentCache := do
   Lean.initSearchPath (← Lean.findSysroot)
   let default ← Formatter.defaultEnvironment
   let entries ← IO.mkRef []
@@ -181,8 +199,7 @@ def importsKey (imports : Array Lean.Import) : String :=
 def usesDefaultEnvironmentImports (imports : Array Lean.Import) : Bool :=
   imports
     == #[
-      { module := `Init : Lean.Import },
-      { module := `Init, isMeta := true : Lean.Import }
+      { module := `Init : Lean.Import }, { module := `Init, isMeta := true : Lean.Import }
     ]
   || imports.isEmpty
 
@@ -199,8 +216,7 @@ def EnvironmentCache.rememberEnvironment
   else
     cache.entries.modify
       fun entries =>
-        ((key, env) :: entries.filter (fun entry => entry.1 != key)).take
-          cache.maxEntries
+        ((key, env) :: entries.filter (fun entry => entry.1 != key)).take cache.maxEntries
 
 def EnvironmentCache.environmentForImports
     (cache : EnvironmentCache) (imports : Array Lean.Import)
@@ -234,6 +250,7 @@ def EnvironmentCache.environmentForSource
       cache.environmentForImports (← importsForSource normalized fileName)
 
 def reportFormattingException
+    (options : Options)
     (path : FilePath) (exception : Formatter.Diagnostics.FormattingException)
     (leanFormatter? : Option Formatter.Diagnostics.LeanFormatterAvailability := none)
     : IO Unit :=
@@ -242,7 +259,7 @@ def reportFormattingException
       IO.eprintln s!"non-whitespace changed: {path}"
   | .lineOverflow occurrence => do
       IO.eprintln
-        s!"line overflow: {path}:{occurrence.line}: {occurrence.width} > {Formatter.maxLineWidth}"
+        s!"line overflow: {path}:{occurrence.line}: {occurrence.width} > {options.formatterOptions.lineWidth}"
       IO.eprintln occurrence.text
   | .missingRule occurrence => do
       IO.eprintln s!"missing rule: {path}:{occurrence.line}: {occurrence.kind}"
@@ -264,7 +281,9 @@ def runDiagnosticChecks
         Formatter.Internal.parseModuleWithEnv env normalized path.toString
       let formattedModule ←
         Formatter.Internal.parseModuleWithEnv env formatted path.toString
-      pure <| Formatter.Diagnostics.formattingExceptions sourceModule formattedModule
+      pure
+      <| Formatter.Diagnostics.formattingExceptions sourceModule formattedModule
+          options.formatterOptions
     else
       pure []
   let mut exceptionCounts : ExceptionCounts := {}
@@ -275,12 +294,13 @@ def runDiagnosticChecks
           some
           <| Formatter.Diagnostics.leanFormatterAvailability env occurrence.syntaxKind?
       | _ => none
-    reportFormattingException path exception leanFormatter?
+    reportFormattingException options path exception leanFormatter?
     exceptionCounts := exceptionCounts.addFormattingException exception
     if let some availability := leanFormatter? then
       exceptionCounts := exceptionCounts.addMissingRuleAudit availability
   if options.checkIdempotent then
-    let formattedAgain ← Formatter.formatSourceWithEnv env formatted path.toString
+    let formattedAgain ←
+      Formatter.formatSourceWithEnv env formatted path.toString options.formatterOptions
     if formattedAgain != formatted then
       IO.eprintln s!"not idempotent: {path}"
       exceptionCounts :=
@@ -293,7 +313,9 @@ def formatFile (cache : EnvironmentCache) (options : Options) (path : FilePath)
     let source ← IO.FS.readFile path
     let env ←
       cache.environmentForSource source path.toString options.importEnvironmentFirst
-    let result ← Formatter.formatSourceWithEnvDetailed env source path.toString
+    let result ←
+      Formatter.formatSourceWithEnvDetailed env source path.toString
+        options.formatterOptions
     let formatted := result.formatted
     let exceptionCounts ←
       if result.fellBack then

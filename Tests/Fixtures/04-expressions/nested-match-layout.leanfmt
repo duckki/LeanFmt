@@ -57,7 +57,7 @@ def nestedPairMatchLongArm (xs ys : List Nat) : Option Nat -> List Nat
       | [], _ => []
       | _ :: _, [] => []
       | _ :: _, child :: children =>
-          veryLongFunctionName child children additionalArgumentOne
+          veryLongFunctionName child children moreChildren additionalArgumentOne
             additionalArgumentTwo
   | none => []
 
@@ -100,8 +100,7 @@ def parenthesizedNestedMatch (fieldDefinition? : Option Nat) (resolved? : Option
         | none => True
     | none => True)
 
-def nestedValueMatchInResult (completed : Result ResponseValue)
-    : Result ResponseValue :=
+def nestedValueMatchInResult (completed : Result ResponseValue) : Result ResponseValue :=
   match completed with
   | .error errors => .error errors
   | .ok (.null, errors) =>
@@ -132,12 +131,11 @@ def nestedPairMatchLongArm (xs ys : List Nat) : Option Nat -> List Nat
       | [], _ => []
       | _ :: _, [] => []
       | _ :: _, child :: children =>
-          veryLongFunctionName child children additionalArgumentOne
+          veryLongFunctionName child children moreChildren additionalArgumentOne
             additionalArgumentTwo
   | none => []
 
-def nestedOptionMatchInListMatch (selectionSet : List Nat) (field? : Option Nat)
-    : Prop :=
+def nestedOptionMatchInListMatch (selectionSet : List Nat) (field? : Option Nat) : Prop :=
   match selectionSet with
   | [] => True
   | _ :: _ =>

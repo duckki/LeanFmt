@@ -57,10 +57,11 @@ does not accidentally damage tactic layout.
 
 ### Keep fitting code compact
 
-LeanFmt uses an 88-character line limit and two-space indentation. Most
+LeanFmt uses a 90-character default line limit and two-space indentation. The
+line limit is configurable for projects with a different convention. Most
 constructs are first considered in a single-line form. A construct breaks only
-when it is structurally multiline, an accepted source break applies, or the
-flat form does not fit.
+when it is structurally multiline, an accepted source break applies, or the flat
+form does not fit.
 
 The line limit counts displayed Lean characters in the formatter's string
 model: symbols such as `∀`, `∧`, and `→` count as one character.

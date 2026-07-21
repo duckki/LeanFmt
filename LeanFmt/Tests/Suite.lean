@@ -43,8 +43,7 @@ def assertSyntaxTreeRoundTrip (env : Lean.Environment) : IO Unit := do
 def assertSyntaxTreeWhereRoundTrip (env : Lean.Environment) : IO Unit := do
   let source :=
     "def outer : Nat :=\n" ++ "  inner\n" ++ "where\n" ++ "  inner : Nat := 0\n"
-  let moduleTree ←
-    SyntaxTree.parseModuleStringWithEnv env source "syntax-tree-where.lean"
+  let moduleTree ← SyntaxTree.parseModuleStringWithEnv env source "syntax-tree-where.lean"
   assertEq "syntax tree where reconstruction" source moduleTree.reconstruct
 
 def assertPreservationDetectsSyntaxChange (env : Lean.Environment) : IO Unit := do
@@ -63,8 +62,7 @@ def assertOverlappingQuotationTokensRemoved (env : Lean.Environment) : IO Unit :
     ++ "macro_rules\n"
     ++ "  | `(field $name:str { $selection,* }) =>\n"
     ++ "      `(Selection.field $name [$selection,*])\n"
-  let moduleTree ←
-    SyntaxTree.parseModuleStringWithEnv env source "quotation-overlap.lean"
+  let moduleTree ← SyntaxTree.parseModuleStringWithEnv env source "quotation-overlap.lean"
   assertEq "quotation overlap syntax tree reconstruction" source moduleTree.reconstruct
   let formatted ← Formatter.formatSourceWithEnv env source "quotation-overlap.lean"
   assertTrue "quotation formatting preserves non-whitespace"
@@ -80,8 +78,7 @@ def assertTacticQuotationAntiquotationPreserved (env : Lean.Environment) : IO Un
     ++ "  `(tactic|\n"
     ++ "    first | exact $(Lean.mkIdent `True.intro):term | exact $(Lean.mkIdent `True.intro):term)\n"
   let result ←
-    Formatter.formatSourceWithEnvDetailed env source
-      "tactic-quotation-antiquotation.lean"
+    Formatter.formatSourceWithEnvDetailed env source "tactic-quotation-antiquotation.lean"
   assertTrue "tactic quotation antiquotation does not fall back" (!result.fellBack)
   assertTrue "tactic quotation antiquotation preserves code"
     (← codePreservedIgnoringWhitespace env source result.formatted)
@@ -117,8 +114,7 @@ def assertSafeArrayIndexKeepsPostfixQuestion (env : Lean.Environment) : IO Unit 
     Formatter.formatSourceWithEnv env formatted "safe-array-index-formatted.lean"
   assertEq "safe array index formatting is idempotent" formatted formattedAgain
 
-def assertPostfixSuperscriptSpacingPreservesParse (env : Lean.Environment)
-    : IO Unit := do
+def assertPostfixSuperscriptSpacingPreservesParse (env : Lean.Environment) : IO Unit := do
   let source :=
     "def applyInverse {G : Type} [Inv G] (f : G -> G -> G) (m n : G) :=\n"
     ++ "  f m⁻¹ n\n"
@@ -194,8 +190,7 @@ def assertCustomNotationBracketSpacing : IO Unit := do
     (Formatter.SpaceRules.spaceBetweenTokens
       (syntheticAtomToken "vec") (syntheticAtomToken "ᵥ*"))
 
-def assertOperatorLikeModifierTokenPreservesParse (env : Lean.Environment)
-    : IO Unit := do
+def assertOperatorLikeModifierTokenPreservesParse (env : Lean.Environment) : IO Unit := do
   let source :=
     "def vecMul (left right : Nat) := left + right\n"
     ++ "infixl:70 \" ᵥ* \" => vecMul\n"
@@ -203,8 +198,7 @@ def assertOperatorLikeModifierTokenPreservesParse (env : Lean.Environment)
   let formatted ← Formatter.formatSourceWithEnv env source "operator-like-modifier.lean"
   assertTrue "operator-like modifier token formatting preserves code"
     (← codePreservedIgnoringWhitespace env source formatted)
-  assertTextContains "operator-like modifier token keeps left boundary"
-    formatted "1 ᵥ* 2"
+  assertTextContains "operator-like modifier token keeps left boundary" formatted "1 ᵥ* 2"
   assertTextLacks "operator-like modifier token does not attach to left operand"
     formatted "1ᵥ*"
 
@@ -233,8 +227,7 @@ def assertCommandInWrapperPreservesBreakAfterIn (env : Lean.Environment) : IO Un
   assertTextContains "command in wrapper keeps command break after in"
     formatted "variable {p q r s t u v w : Prop} in\ntheorem"
 
-def assertLeadingDotPatternConstructorsStayTight (env : Lean.Environment)
-    : IO Unit := do
+def assertLeadingDotPatternConstructorsStayTight (env : Lean.Environment) : IO Unit := do
   let source :=
     "inductive Side where\n"
     ++ "  | inl\n"
@@ -325,8 +318,7 @@ def assertLayoutSensitiveTermsRemainParseableAndIdempotent (env : Lean.Environme
 
 def assertGroupedApplication (env : Lean.Environment) : IO Unit := do
   let moduleTree ←
-    SyntaxTree.parseModuleStringWithEnv env
-      "def x := f a b\n" "grouped-application.lean"
+    SyntaxTree.parseModuleStringWithEnv env "def x := f a b\n" "grouped-application.lean"
   assertTrue "application node exists" (moduleTree.tree.containsNodeKind .application)
   match moduleTree.tree.firstNodeChildCount? .application with
   | some 3 => pure ()
@@ -411,8 +403,7 @@ def assertTrailingLineCommentPreserved (env : Lean.Environment) : IO Unit := do
   let formatted ← Formatter.formatSourceWithEnv env source "trailing-line-comment.lean"
   assertEq "trailing line comment preserved" source formatted
 
-def assertAnonymousConstructorAfterListKeepsSpace (env : Lean.Environment)
-    : IO Unit := do
+def assertAnonymousConstructorAfterListKeepsSpace (env : Lean.Environment) : IO Unit := do
   let source :=
     "def listThenConstructor : Prop := selectionSetTypeConditionFeasible schema objectType [objectType] .allFields selectionSet\n"
   let formatted ←
@@ -447,8 +438,7 @@ def assertAttributesFlowBeforeDeclarations (env : Lean.Environment) : IO Unit :=
     ++ "  | right\n"
   let formatted ←
     Formatter.formatSourceWithEnv env source "fitting-attribute-declarations.lean"
-  assertEq "attributes stay inline only with single-line declarations" expected
-    formatted
+  assertEq "attributes stay inline only with single-line declarations" expected formatted
 
   let longSource :=
     "@[simp] theorem theoremNameWithEnoughCharactersToRequireAnAttributeHeaderBreak (value : VeryLongInputTypeName) : VeryLongOutputTypeName := proof\n"
@@ -475,8 +465,7 @@ def assertAttributesFlowBeforeDeclarations (env : Lean.Environment) : IO Unit :=
 
 def assertPrivateTheoremModifierStaysOnHeader (env : Lean.Environment) : IO Unit := do
   let source := "private theorem privateTheoremModifier : True := by\n" ++ "  trivial\n"
-  let formatted ←
-    Formatter.formatSourceWithEnv env source "private-theorem-modifier.lean"
+  let formatted ← Formatter.formatSourceWithEnv env source "private-theorem-modifier.lean"
   assertEq "private theorem modifier stays on header" source formatted
 
 def assertDoBlockPreservesBodyBreak (env : Lean.Environment) : IO Unit := do
@@ -613,8 +602,7 @@ def assertDoLetExprFallbackBreaksBeforeContinuation (env : Lean.Environment)
     Formatter.formatSourceWithEnv env formatted "do-let-expr-fallback-formatted.lean"
   assertEq "do let_expr fallback formatting is idempotent" formatted formattedAgain
 
-def assertDoMatchExprAlternativesPreserveBranches (env : Lean.Environment)
-    : IO Unit := do
+def assertDoMatchExprAlternativesPreserveBranches (env : Lean.Environment) : IO Unit := do
   let source :=
     "import Lean\n\n"
     ++ "open Lean Meta\n\n"
@@ -717,16 +705,14 @@ def assertDoControlWrapperRules (env : Lean.Environment) : IO Unit := do
     ++ "        + thirdExtremelyLongBinderNameForInfixDepth\n"
     ++ "      in shortCollection do\n"
     ++ "    pure ()\n"
-  let formatted ←
-    Formatter.formatSourceWithEnv env source "do-control-wrapper-rules.lean"
+  let formatted ← Formatter.formatSourceWithEnv env source "do-control-wrapper-rules.lean"
   assertEq "do control wrapper rules" expected formatted
 
 def assertReturnDoesNotBreakBeforeValue (env : Lean.Environment) : IO Unit := do
   let source :=
     "def returnAnonymousConstructor : Result := do\n"
     ++ "  return ⟨veryLongFunctionNameForReturnConstructor firstArgument secondArgument, anotherVeryLongFunctionNameForReturnConstructor thirdArgument fourthArgument⟩\n"
-  let formatted ←
-    Formatter.formatSourceWithEnv env source "return-constructor-break.lean"
+  let formatted ← Formatter.formatSourceWithEnv env source "return-constructor-break.lean"
   assertTextLacks "return keeps value on same line" formatted "return\n"
   let _ ←
     SyntaxTree.parseModuleStringWithEnv env formatted "return-constructor-break.lean"
@@ -809,8 +795,7 @@ def assertPipeProjectionDoesNotBreakAfterDot (env : Lean.Environment) : IO Unit 
     ++ "  veryLongFunctionNameForPipeProjectionFormatting firstArgument secondArgument thirdArgument |>.trans (anotherVeryLongFunctionNameForPipeProjectionFormatting fourthArgument fifthArgument) |>.symm\n"
   let formatted ←
     Formatter.formatSourceWithEnv env source "pipe-projection-chain-dot.lean"
-  assertTextContains "pipe projection chain keeps dot member attached"
-    formatted "|>.symm"
+  assertTextContains "pipe projection chain keeps dot member attached" formatted "|>.symm"
   assertTextLacks "pipe projection chain does not break after dot" formatted "|>.\n"
   let _ ←
     SyntaxTree.parseModuleStringWithEnv env formatted "pipe-projection-chain-dot.lean"
@@ -884,8 +869,7 @@ def assertShowProofTermUntouched (env : Lean.Environment) : IO Unit := do
   let formatted ← Formatter.formatSourceWithEnv env source "show-proof-term.lean"
   assertTrue "show proof term preserves code"
     (← codePreservedIgnoringWhitespace env source formatted)
-  assertTextContains "show proof term keeps tactic body break"
-    formatted "show True by\n"
+  assertTextContains "show proof term keeps tactic body break" formatted "show True by\n"
   assertTextLacks "show proof term does not flatten tactic body" formatted "by trivial"
 
 def assertTheoremTermProofBodyUntouched (env : Lean.Environment) : IO Unit := do
@@ -905,8 +889,7 @@ def assertTheoremEquationProofBodyUntouched (env : Lean.Environment) : IO Unit :
     ++ "  | _ + 1 => by\n"
     ++ "      trivial\n"
   let formatted ←
-    Formatter.formatSourceWithEnv env source
-      "theorem-equation-proof-body-untouched.lean"
+    Formatter.formatSourceWithEnv env source "theorem-equation-proof-body-untouched.lean"
   assertEq "theorem equation proof body untouched" source formatted
 
 def assertDefinitionContainingProofUntouched (env : Lean.Environment) : IO Unit := do
@@ -918,8 +901,7 @@ def assertDefinitionContainingProofUntouched (env : Lean.Environment) : IO Unit 
     ++ "  proof := by\n"
     ++ "    trivial\n"
   let formatted ←
-    Formatter.formatSourceWithEnv env
-      source "definition-containing-proof-untouched.lean"
+    Formatter.formatSourceWithEnv env source "definition-containing-proof-untouched.lean"
   assertEq "definition containing proof untouched" source formatted
 
 def assertInstanceContainingProofUntouched (env : Lean.Environment) : IO Unit := do
@@ -953,12 +935,11 @@ def assertBasicDeclarationBreak (env : Lean.Environment) : IO Unit := do
   let formatted ← Formatter.formatSourceWithEnv env source "declaration-break.lean"
   assertEq "declaration body break" expected formatted
 
-def assertDeclarationValueInfixBreaksAfterAssign (env : Lean.Environment)
-    : IO Unit := do
+def assertDeclarationValueInfixBreaksAfterAssign (env : Lean.Environment) : IO Unit := do
   let source :=
-    "def declarationValueInfixBreakWithLongEnoughHeader : Nat := inferInstanceAs <| OfNat Nat 0\n"
+    "def declarationValueInfixBreakWithLongEnoughHeaderExtra : Nat := inferInstanceAs <| OfNat Nat 0\n"
   let expected :=
-    "def declarationValueInfixBreakWithLongEnoughHeader : Nat :=\n"
+    "def declarationValueInfixBreakWithLongEnoughHeaderExtra : Nat :=\n"
     ++ "  inferInstanceAs <| OfNat Nat 0\n"
   let formatted ←
     Formatter.formatSourceWithEnv env source "declaration-value-infix-break.lean"
@@ -1015,8 +996,7 @@ def assertProofValuesRemainLayoutIslands (env : Lean.Environment) : IO Unit := d
   let directFormattedAgain ←
     Formatter.formatSourceWithEnv env directFormatted
       "direct-proof-value-layout-formatted.lean"
-  assertEq "direct proof value layout is idempotent"
-    directFormatted directFormattedAgain
+  assertEq "direct proof value layout is idempotent" directFormatted directFormattedAgain
   let whereSource :=
     "theorem whereStructInstProofField (h : VeryLongHypothesisNameForLayoutTesting) : VeryLongTargetTypeNameForLayoutTesting where\n"
     ++ "  field := fun s t hsA htA hs ht hEq => by\n"
@@ -1146,8 +1126,7 @@ def assertAbsoluteValueDelimitersStayAttached (env : Lean.Environment) : IO Unit
       "absolute-value-delimiters-formatted.lean"
   assertEq "absolute value formatting is idempotent" result.formatted formattedAgain
 
-def assertSignatureParametersUseLeadingSourceBreakAfterFlatFails
-    (env : Lean.Environment)
+def assertSignatureParametersUseLeadingSourceBreakAfterFlatFails (env : Lean.Environment)
     : IO Unit := do
   let source :=
     "def definitionSourceBreakAfterNameWhenLongEnoughForLayout\n"
@@ -1163,8 +1142,7 @@ def assertSignatureParametersUseLeadingSourceBreakAfterFlatFails
 def assertDefinitionSourceBreakAfterAssignOverridesFlat (env : Lean.Environment)
     : IO Unit := do
   let source := "def definitionSourceBreakAfterAssign : Nat :=\n" ++ "  value\n"
-  let formatted ←
-    Formatter.formatSourceWithEnv env source "definition-source-assign.lean"
+  let formatted ← Formatter.formatSourceWithEnv env source "definition-source-assign.lean"
   assertEq "definition source break after assignment overrides flat" source formatted
 
 def assertSelfFormattingLetAndArrayRegressions (env : Lean.Environment) : IO Unit := do
@@ -1196,8 +1174,7 @@ def assertSelfFormattingLetAndArrayRegressions (env : Lean.Environment) : IO Uni
     ++ "      (#[], consumedUntil)\n"
     ++ "  children\n"
   let destructuringLetFormatted ←
-    Formatter.formatSourceWithEnv env destructuringLet
-      "destructuring-let-assignment.lean"
+    Formatter.formatSourceWithEnv env destructuringLet "destructuring-let-assignment.lean"
   assertEq "destructuring let breaks after assignment"
     destructuringLetExpected destructuringLetFormatted
 
@@ -1214,8 +1191,7 @@ def assertSelfFormattingLetAndArrayRegressions (env : Lean.Environment) : IO Uni
     ++ "  use coreContext\n"
   let typedLetFormatted ←
     Formatter.formatSourceWithEnv env typedLet "typed-let-header.lean"
-  assertEq "let keyword stays with declaration header" typedLetExpected
-    typedLetFormatted
+  assertEq "let keyword stays with declaration header" typedLetExpected typedLetFormatted
 
 def assertCliSelfFormattingRegressions (env : Lean.Environment) : IO Unit := do
   let interpolation :=
@@ -1332,8 +1308,7 @@ def assertCliSelfFormattingRegressions (env : Lean.Environment) : IO Unit := do
     ++ "    timeIO <| pure <| SpaceRules.normalizeLineEndings source\n"
     ++ "  pure (normalizedSource, normalizeMs)\n"
   let monadicTupleLetFormatted ←
-    Formatter.formatSourceWithEnv env monadicTupleLet
-      "monadic-tuple-let-assignment.lean"
+    Formatter.formatSourceWithEnv env monadicTupleLet "monadic-tuple-let-assignment.lean"
   assertEq "monadic tuple let breaks after assignment"
     monadicTupleLetExpected monadicTupleLetFormatted
 
@@ -1468,7 +1443,7 @@ def assertSelfFormattingRulePriorities (env : Lean.Environment) : IO Unit := do
     ++ "    (variableDefinitions : List VariableDefinition)\n"
     ++ "    (parentType : Name)\n"
     ++ "    : Selection -> Prop\n"
-    ++ "  | fieldSelection@(.field _responseName fieldName _arguments _directives selectionSet)\n"
+    ++ "  | fieldSelection@(.field _responseName fieldName _arguments _directives veryLongSelectionSet)\n"
     ++ "    =>\n"
     ++ "      Validation.selectionValid schema variableDefinitions parentType fieldSelection\n"
   let longAliasPatternExpected :=
@@ -1477,7 +1452,7 @@ def assertSelfFormattingRulePriorities (env : Lean.Environment) : IO Unit := do
     ++ "    (parentType : Name)\n"
     ++ "    : Selection -> Prop\n"
     ++ "  | fieldSelection@(\n"
-    ++ "        .field _responseName fieldName _arguments _directives selectionSet) =>\n"
+    ++ "        .field _responseName fieldName _arguments _directives veryLongSelectionSet) =>\n"
     ++ "      Validation.selectionValid schema variableDefinitions parentType fieldSelection\n"
   let longAliasPatternFormatted ←
     Formatter.formatSourceWithEnv env longAliasPattern "long-alias-pattern.lean"
@@ -1541,14 +1516,14 @@ def assertSelfFormattingRulePriorities (env : Lean.Environment) : IO Unit := do
 
   let bangConjunction :=
     "def choose isFlow state segment breakPoints :=\n"
-    ++ "  if !isFlow && !(sourceBreaksAllowedByBreakPointsInState state segment breakPoints).isEmpty then\n"
+    ++ "  if !isFlow && !(sourceBreaksAllowedByBreakPointsInCurrentState state segment breakPoints).isEmpty then\n"
     ++ "    first\n"
     ++ "  else\n"
     ++ "    second\n"
   let bangConjunctionExpected :=
     "def choose isFlow state segment breakPoints :=\n"
     ++ "  if !isFlow\n"
-    ++ "      && !(sourceBreaksAllowedByBreakPointsInState state segment\n"
+    ++ "      && !(sourceBreaksAllowedByBreakPointsInCurrentState state segment\n"
     ++ "            breakPoints).isEmpty then\n"
     ++ "    first\n"
     ++ "  else\n"
@@ -1635,8 +1610,8 @@ def assertApplicationFlow (env : Lean.Environment) : IO Unit := do
     "def treeApplicationBody : Result := veryLongFunctionNameForTreeFormatting firstArgumentNameForTree secondArgumentNameForTree thirdArgumentNameForTree\n"
   let expected :=
     "def treeApplicationBody : Result :=\n"
-    ++ "  veryLongFunctionNameForTreeFormatting firstArgumentNameForTree\n"
-    ++ "    secondArgumentNameForTree thirdArgumentNameForTree\n"
+    ++ "  veryLongFunctionNameForTreeFormatting firstArgumentNameForTree secondArgumentNameForTree\n"
+    ++ "    thirdArgumentNameForTree\n"
   let formatted ← Formatter.formatSourceWithEnv env source "application-flow.lean"
   assertEq "application flow" expected formatted
 
@@ -1683,8 +1658,7 @@ def assertApplicationArgumentUsesHeadAnchorAfterTypeBreak (env : Lean.Environmen
   assertEq "application argument uses head anchor after type break" expected formatted
 
 def assertLetExpressionKeepsBodyBreak (env : Lean.Environment) : IO Unit := do
-  let source :=
-    "def letBodyBreak : Result :=\n" ++ "  let value := f a\n" ++ "  value\n"
+  let source := "def letBodyBreak : Result :=\n" ++ "  let value := f a\n" ++ "  value\n"
   let formatted ← Formatter.formatSourceWithEnv env source "let-body-break.lean"
   assertEq "let expression body break" source formatted
 
@@ -1704,9 +1678,7 @@ def assertLetExpressionBlocksFlatRendering (env : Lean.Environment) : IO Unit :=
   let source :=
     "def letBodyBlocksFlat : Prop := let first := value\n" ++ "  Result first\n"
   let expected :=
-    "def letBodyBlocksFlat : Prop :=\n"
-    ++ "  let first := value\n"
-    ++ "  Result first\n"
+    "def letBodyBlocksFlat : Prop :=\n" ++ "  let first := value\n" ++ "  Result first\n"
   let formatted ← Formatter.formatSourceWithEnv env source "let-flat-rendering.lean"
   assertEq "let expression blocks flat rendering" expected formatted
 
@@ -1745,8 +1717,7 @@ def assertLetBodyAfterInfixClosesLetLayout (env : Lean.Environment) : IO Unit :=
     ++ "          fields\n"
     ++ "      ResponseMergeReady next\n"
   let formatted ←
-    Formatter.formatSourceWithEnv env source
-      "let-body-after-infix-closes-let-layout.lean"
+    Formatter.formatSourceWithEnv env source "let-body-after-infix-closes-let-layout.lean"
   assertEq "let body after infix closes let layout" expected formatted
 
 def assertDeclarationTypeBreak (env : Lean.Environment) : IO Unit := do
@@ -1848,8 +1819,7 @@ def assertSignatureParametersStayOnHeaderWhenTheyFit (env : Lean.Environment)
     "def lookupVariableValue? (variableValues : VariableValues) (name : Name)\n"
     ++ "    : Option InputValue :=\n"
     ++ "  body\n"
-  let formatted ←
-    Formatter.formatSourceWithEnv env source "signature-parameters-fit.lean"
+  let formatted ← Formatter.formatSourceWithEnv env source "signature-parameters-fit.lean"
   assertEq "signature parameters stay on header when they fit" expected formatted
 
 def assertSignatureParameterSourceBreakFallback (env : Lean.Environment) : IO Unit := do
@@ -1928,8 +1898,7 @@ def assertReturnTypeInfixIndent (env : Lean.Environment) : IO Unit := do
     ++ "    : VeryLongReturnInputTypeWithEnoughCharactersForLayoutTesting\n"
     ++ "      -> VeryLongReturnOutputTypeWithEnoughCharactersForLayoutTesting :=\n"
     ++ "  body\n"
-  let formatted ←
-    Formatter.formatSourceWithEnv env source "return-type-infix-indent.lean"
+  let formatted ← Formatter.formatSourceWithEnv env source "return-type-infix-indent.lean"
   assertEq "return type infix indentation" expected formatted
 
 def assertReturnTypeArrowFlows (env : Lean.Environment) : IO Unit := do
@@ -1978,8 +1947,7 @@ def assertChildFitCountsParentSuffix (env : Lean.Environment) : IO Unit := do
     ++ "      -> ∀ typeName, (schema.getPossibleTypes typeName).Nodup := by\n"
     ++ "  intro hschema\n"
     ++ "  exact proof\n"
-  let formatted ←
-    Formatter.formatSourceWithEnv env source "child-fit-parent-suffix.lean"
+  let formatted ← Formatter.formatSourceWithEnv env source "child-fit-parent-suffix.lean"
   assertEq "child fit counts parent suffix" expected formatted
 
 def assertColumnIndentationIsConservative : IO Unit := do
@@ -2117,9 +2085,7 @@ def assertInfixLeftDepth (env : Lean.Environment) : IO Unit := do
 
 def assertInfixIgnoresFittingSourceBreaks (env : Lean.Environment) : IO Unit := do
   let source :=
-    "def sourceBreakInfix : Prop :=\n"
-    ++ "  firstCondition\n"
-    ++ "  ∧ secondCondition\n"
+    "def sourceBreakInfix : Prop :=\n" ++ "  firstCondition\n" ++ "  ∧ secondCondition\n"
   let expected :=
     "def sourceBreakInfix : Prop :=\n" ++ "  firstCondition ∧ secondCondition\n"
   let formatted ← Formatter.formatSourceWithEnv env source "infix-source-breaks.lean"
@@ -2127,8 +2093,7 @@ def assertInfixIgnoresFittingSourceBreaks (env : Lean.Environment) : IO Unit := 
 
 def assertInfixIgnoresArbitrarySourceBreaks (env : Lean.Environment) : IO Unit := do
   let source :=
-    "def arbitraryInfixSourceBreak : Prop := firstCondition ∧\n"
-    ++ "  secondCondition\n"
+    "def arbitraryInfixSourceBreak : Prop := firstCondition ∧\n" ++ "  secondCondition\n"
   let expected :=
     "def arbitraryInfixSourceBreak : Prop := firstCondition ∧ secondCondition\n"
   let formatted ←
@@ -2146,19 +2111,18 @@ def assertInfixRhsFitsBeforeSourceBreaks (env : Lean.Environment) : IO Unit := d
     "def selectionDirectiveFree : Selection -> Prop\n"
     ++ "  | .field _responseName _fieldName _arguments directives selectionSet =>\n"
     ++ "      directives = [] ∧ selectionSetDirectiveFree selectionSet\n"
-  let formatted ←
-    Formatter.formatSourceWithEnv env source "selection-directive-free.lean"
+  let formatted ← Formatter.formatSourceWithEnv env source "selection-directive-free.lean"
   assertEq "infix RHS fits before source breaks" expected formatted
 
 def assertLogicalArrowSourceBreakIdempotent (env : Lean.Environment) : IO Unit := do
   let source :=
     "def logicalArrowSourceBreak : Prop :=\n"
     ++ "  schema.typesOverlapBool parentType typeCondition = true ->\n"
-    ++ "    ∀ objectType, body objectType\n"
+    ++ "    ∀ objectType, bodyWithAdditionalContext objectType contextValue\n"
   let expected :=
     "def logicalArrowSourceBreak : Prop :=\n"
     ++ "  schema.typesOverlapBool parentType typeCondition = true\n"
-    ++ "  -> ∀ objectType, body objectType\n"
+    ++ "  -> ∀ objectType, bodyWithAdditionalContext objectType contextValue\n"
   let once ← Formatter.formatSourceWithEnv env source "logical-arrow-source-break.lean"
   assertEq "logical arrow ignores source break before quantifier" expected once
   let twice ← Formatter.formatSourceWithEnv env once "logical-arrow-source-break.lean"
@@ -2170,14 +2134,14 @@ def assertApplicationSourceBreakInInfixLeftOperand (env : Lean.Environment)
     "def equalityInWrappedImplicationOperand : Prop :=\n"
     ++ "  operationBoolVarsComplete operation variableValues\n"
     ++ "  -> Execution.executeQueryWithFuel schema resolvers variableValues operation fuel\n"
-    ++ "      source\n"
+    ++ "      veryLongSourceArgumentName\n"
     ++ "      = Execution.executeQueryWithFuel schema resolvers variableValues\n"
     ++ "          (completeNormalizeOperation schema operation) fuel source\n"
   let expected :=
     "def equalityInWrappedImplicationOperand : Prop :=\n"
     ++ "  operationBoolVarsComplete operation variableValues\n"
     ++ "  -> Execution.executeQueryWithFuel schema resolvers variableValues operation fuel\n"
-    ++ "        source\n"
+    ++ "        veryLongSourceArgumentName\n"
     ++ "      = Execution.executeQueryWithFuel schema resolvers variableValues\n"
     ++ "          (completeNormalizeOperation schema operation) fuel source\n"
   let formatted ←
@@ -2220,8 +2184,7 @@ def assertApplicationFlowBreakKeepsInfixDepthIdempotent (env : Lean.Environment)
       "application-flow-infix-depth-idempotent.lean"
   assertEq "application flow break keeps infix depth" expected once
   let twice ←
-    Formatter.formatSourceWithEnv env once
-      "application-flow-infix-depth-idempotent.lean"
+    Formatter.formatSourceWithEnv env once "application-flow-infix-depth-idempotent.lean"
   assertEq "application flow break keeps infix depth idempotent" once twice
 
 def assertQuantifierBodyIgnoresParentInfixLeftDepth (env : Lean.Environment)
@@ -2243,8 +2206,7 @@ def assertQuantifierBodyIgnoresParentInfixLeftDepth (env : Lean.Environment)
       "quantifier-body-ignore-parent-infix-depth.lean"
   assertEq "quantifier body ignores parent infix-left depth" expected formatted
 
-def assertParenthesizedQuantifierBlockIgnoresParentInfixLeftDepth
-    (env : Lean.Environment)
+def assertParenthesizedQuantifierBlockIgnoresParentInfixLeftDepth (env : Lean.Environment)
     : IO Unit := do
   let source :=
     "def parenthesizedConjunctionBlockSequence : Prop :=\n"
@@ -2334,15 +2296,14 @@ def assertNestedInfixKeepsHierarchy (env : Lean.Environment) : IO Unit := do
     Formatter.formatSourceWithEnv env source "nested-infix-lhs-hierarchy.lean"
   assertEq "nested infix keeps hierarchy" expected formatted
 
-def assertApplicationInNestedInfixKeepsHierarchy (env : Lean.Environment)
-    : IO Unit := do
+def assertApplicationInNestedInfixKeepsHierarchy (env : Lean.Environment) : IO Unit := do
   let source :=
     "def nestedApplicationConsAppend : Prop :=\n"
     ++ "  premise\n"
     ++ "  -> VisitSubfieldsFlatCollectsFreshPrefixes schema resolvers variableValues\n"
     ++ "      depth parentType source\n"
     ++ "      (Selection.field responseName fieldName arguments fieldDirectives\n"
-    ++ "          fieldSelectionSet\n"
+    ++ "          veryLongFieldSelectionSetName\n"
     ++ "        :: inlineSelectionSet\n"
     ++ "        ++ rest)\n"
   let expected :=
@@ -2351,12 +2312,11 @@ def assertApplicationInNestedInfixKeepsHierarchy (env : Lean.Environment)
     ++ "  -> VisitSubfieldsFlatCollectsFreshPrefixes schema resolvers variableValues\n"
     ++ "      depth parentType source\n"
     ++ "      (Selection.field responseName fieldName arguments fieldDirectives\n"
-    ++ "            fieldSelectionSet\n"
+    ++ "            veryLongFieldSelectionSetName\n"
     ++ "          :: inlineSelectionSet\n"
     ++ "        ++ rest)\n"
   let formatted ←
-    Formatter.formatSourceWithEnv env source
-      "application-in-nested-infix-hierarchy.lean"
+    Formatter.formatSourceWithEnv env source "application-in-nested-infix-hierarchy.lean"
   assertEq "application in nested infix keeps hierarchy" expected formatted
 
 def assertNestedLogicalApplicationLhsKeepsHierarchy (env : Lean.Environment)
@@ -2462,8 +2422,7 @@ def assertTermMatchAlternativesStayOnOwnLines (env : Lean.Environment) : IO Unit
     ++ "  match variableValues with\n"
     ++ "  | [] => none\n"
     ++ "  | (variableName, value) :: rest => value\n"
-  let formatted ←
-    Formatter.formatSourceWithEnv env source "term-match-alternatives.lean"
+  let formatted ← Formatter.formatSourceWithEnv env source "term-match-alternatives.lean"
   assertEq "term match alternatives stay on own lines" source formatted
 
 def assertLetMatchAlternativesAlign (env : Lean.Environment) : IO Unit := do
@@ -2498,8 +2457,7 @@ def assertIfThenElseBreaksBalanced (env : Lean.Environment) : IO Unit := do
   let formatted ← Formatter.formatSourceWithEnv env source "if-then-else-balanced.lean"
   assertEq "if-then-else balanced breaks" expected formatted
 
-def assertParenthesizedIfAlignsBeforeBranchIndent (env : Lean.Environment)
-    : IO Unit := do
+def assertParenthesizedIfAlignsBeforeBranchIndent (env : Lean.Environment) : IO Unit := do
   let source :=
     "def diagnosticExit : UInt32 :=\n"
     ++ "  pure\n"
@@ -2573,10 +2531,8 @@ def assertMatchDiscriminantsFlowAfterCommas (env : Lean.Environment) : IO Unit :
     ++ "  | some before,\n"
     ++ "    some after,\n"
     ++ "    some around => result\n"
-  let formatted ←
-    Formatter.formatSourceWithEnv env source "match-discriminants-flow.lean"
-  assertEq "match discriminants flow after commas aligned under first" expected
-    formatted
+  let formatted ← Formatter.formatSourceWithEnv env source "match-discriminants-flow.lean"
+  assertEq "match discriminants flow after commas aligned under first" expected formatted
 
 def assertMatchPeerBreakConsistency (env : Lean.Environment) : IO Unit := do
   assertMatchArmPatternsHonorSourceBreaks env
@@ -2591,8 +2547,7 @@ def assertMatchDiscriminantApplicationIndent (env : Lean.Environment) : IO Unit 
     ++ "  | [] => 0\n"
     ++ "  | _ :: rest => rest.length\n"
   let formatted ←
-    Formatter.formatSourceWithEnv env
-      source "match-discriminant-application-indent.lean"
+    Formatter.formatSourceWithEnv env source "match-discriminant-application-indent.lean"
   assertEq "match discriminant application indentation" source formatted
 
 def assertNestedTermMatchAlternativesAlign (env : Lean.Environment) : IO Unit := do
@@ -2638,8 +2593,7 @@ def assertNestedMatchAfterLambdaAlignsWithMatch (env : Lean.Environment) : IO Un
     Formatter.formatSourceWithEnv env source "nested-match-after-lambda-aligns.lean"
   assertEq "nested match after lambda aligns with match" expected formatted
 
-def assertPrefixedMatchAlternativesAlignWithMatch (env : Lean.Environment)
-    : IO Unit := do
+def assertPrefixedMatchAlternativesAlignWithMatch (env : Lean.Environment) : IO Unit := do
   let source :=
     "def nestedOptionMatchInListMatch (selectionSet : List Nat) (field? : Option Nat) : Prop :=\n"
     ++ "  match selectionSet with\n"
@@ -2650,8 +2604,7 @@ def assertPrefixedMatchAlternativesAlignWithMatch (env : Lean.Environment)
     ++ "      | none => False\n"
     ++ "      | some fieldDefinition => True\n"
   let expected :=
-    "def nestedOptionMatchInListMatch (selectionSet : List Nat) (field? : Option Nat)\n"
-    ++ "    : Prop :=\n"
+    "def nestedOptionMatchInListMatch (selectionSet : List Nat) (field? : Option Nat) : Prop :=\n"
     ++ "  match selectionSet with\n"
     ++ "  | [] => True\n"
     ++ "  | _ :: _ =>\n"
@@ -2727,8 +2680,8 @@ def assertQuantifierIdentifierSequenceFlows (env : Lean.Environment) : IO Unit :
     ++ "rightSuffixFields rightSuffixErrors, True\n"
   let expected :=
     "def quantifiedPrefixes : Prop :=\n"
-    ++ "  ∃ leftPrefixFields leftPrefixErrors rightPrefixFields rightPrefixErrors\n"
-    ++ "      leftSuffixFields leftSuffixErrors rightSuffixFields rightSuffixErrors,\n"
+    ++ "  ∃ leftPrefixFields leftPrefixErrors rightPrefixFields rightPrefixErrors leftSuffixFields\n"
+    ++ "      leftSuffixErrors rightSuffixFields rightSuffixErrors,\n"
     ++ "    True\n"
   let formatted ←
     Formatter.formatSourceWithEnv env source "quantifier-identifier-sequence.lean"
@@ -2771,8 +2724,7 @@ def assertArrowQuantifierKeepsQuantifierOnArrowLine (env : Lean.Environment)
     ++ "    ∨ ¬ schema.objectType right.parentType)\n"
     ++ "  -> ∀ objectType,\n"
     ++ "      FieldsInSetCanMerge schema objectType (left.selectionSet ++ right.selectionSet)\n"
-  let formatted ←
-    Formatter.formatSourceWithEnv env source "arrow-quantifier-operand.lean"
+  let formatted ← Formatter.formatSourceWithEnv env source "arrow-quantifier-operand.lean"
   assertEq "arrow quantifier keeps quantifier on arrow line" expected formatted
 
 def assertArrowMatchKeepsMatchOnArrowLine (env : Lean.Environment) : IO Unit := do
@@ -3185,6 +3137,8 @@ def assertCliParsing : IO Unit := do
     LeanFmt.Cli.usage "--import-env-first"
   assertTextContains "CLI help documents hidden-path override"
     LeanFmt.Cli.usage "--include-hidden"
+  assertTextContains "CLI help documents line-width override"
+    LeanFmt.Cli.usage "--line-width"
   assertTextLacks "CLI help omits replaced preservation option"
     LeanFmt.Cli.usage "--check-preserves-code"
   assertTextLacks "CLI help omits replaced unknown-rule option"
@@ -3195,8 +3149,7 @@ def assertCliParsing : IO Unit := do
       assertTrue "CLI file order"
         (options.files.map toString == ["GraphQL.lean", "LeanFmt.lean"])
   | result =>
-      throw
-      <| IO.userError s!"CLI parser should accept --check and files: {repr result}"
+      throw <| IO.userError s!"CLI parser should accept --check and files: {repr result}"
   match LeanFmt.Cli.parseArgs ["--check-exception", "GraphQL.lean"] with
   | .run options =>
       assertTrue "CLI exception check flag" options.checkException
@@ -3233,18 +3186,33 @@ def assertCliParsing : IO Unit := do
       throw
       <| IO.userError
           s!"CLI parser should accept --env-cache-size and files: {repr result}"
+  match LeanFmt.Cli.parseArgs ["--line-width", "100", "GraphQL.lean"] with
+  | .run options =>
+      assertTrue "CLI line-width flag" (options.formatterOptions.lineWidth == 100)
+  | result =>
+      throw
+      <| IO.userError s!"CLI parser should accept --line-width and files: {repr result}"
+
+def assertLineWidthOptionAffectsFormatting (env : Lean.Environment) : IO Unit := do
+  let source :=
+    "def wideApplication := veryLongFunctionName firstArgument secondArgument thirdArgument\n"
+  let narrow ←
+    Formatter.formatSourceWithEnv env source "line-width-option.lean" { lineWidth := 40 }
+  let wide ←
+    Formatter.formatSourceWithEnv env source "line-width-option.lean" { lineWidth := 120 }
+  assertTrue "line-width option changes rendered layout" (narrow != wide)
+  assertEq "wide line-width option keeps fitting source flat" source wide
+  let _ ← SyntaxTree.parseModuleStringWithEnv env narrow "line-width-option.lean"
   match LeanFmt.Cli.parseArgs ["--env-cache-size", "nope", "GraphQL.lean"] with
   | .error "invalid --env-cache-size value: nope" => pure ()
   | result =>
       throw
-      <| IO.userError
-          s!"CLI parser should reject invalid --env-cache-size: {repr result}"
+      <| IO.userError s!"CLI parser should reject invalid --env-cache-size: {repr result}"
   match LeanFmt.Cli.parseArgs ["--env-cache-size"] with
   | .error "--env-cache-size requires a value" => pure ()
   | result =>
       throw
-      <| IO.userError
-          s!"CLI parser should require --env-cache-size value: {repr result}"
+      <| IO.userError s!"CLI parser should require --env-cache-size value: {repr result}"
   match LeanFmt.Cli.parseArgs ["--import-env-first", "GraphQL.lean"] with
   | .run options =>
       assertTrue "CLI import-first environment flag" options.importEnvironmentFirst
@@ -3259,8 +3227,7 @@ def assertCliParsing : IO Unit := do
           s!"unknown option: {testOnlyOption}" message
     | result =>
         throw
-        <| IO.userError
-            s!"public CLI should reject {testOnlyOption}, got: {repr result}"
+        <| IO.userError s!"public CLI should reject {testOnlyOption}, got: {repr result}"
   match Cli.parseArgs ["--profile", "GraphQL.lean"] with
   | .run options =>
       assertTrue "CLI profile flag" options.profile
@@ -3311,8 +3278,7 @@ def assertEnvironmentCacheBound (env : Lean.Environment) : IO Unit := do
       : String :=
     String.intercalate "," (entries.map Prod.fst)
   let entries ← IO.mkRef []
-  let cache : LeanFmt.Cli.EnvironmentCache :=
-    { default := env, maxEntries := 2, entries }
+  let cache : LeanFmt.Cli.EnvironmentCache := { default := env, maxEntries := 2, entries }
   cache.rememberEnvironment "first" env
   cache.rememberEnvironment "second" env
   cache.rememberEnvironment "third" env
@@ -3333,8 +3299,7 @@ def assertFormattingExceptionChecks (env : Lean.Environment) : IO Unit := do
   assertTrue "token edits do not preserve code"
     (!(← codePreservedIgnoringWhitespace env "def x : Nat := 0\n" "def y : Nat := 0\n"))
   assertTrue "whitespace cannot move an identifier boundary"
-    (!(← codePreservedIgnoringWhitespace env
-          "def value := ab c\n" "def value := a bc\n"))
+    (!(← codePreservedIgnoringWhitespace env "def value := ab c\n" "def value := a bc\n"))
   assertTrue "whitespace outside comments is normalized"
     (← codePreservedIgnoringWhitespace env
         "def value:=0-- keep  spaces\n"
@@ -3378,6 +3343,9 @@ def assertFormattingExceptionChecks (env : Lean.Environment) : IO Unit := do
       assertTrue "overflow occurrence width" (Formatter.maxLineWidth < occurrence.width)
   | occurrences =>
       throw <| IO.userError s!"expected one overflow occurrence, got {repr occurrences}"
+  assertTrue "overflow diagnostics respect custom line width"
+    (Formatter.Diagnostics.overflowOccurrences overflowModule
+      { lineWidth := 120 }).isEmpty
   let singleTokenOverflow := s!"def overflow := {longIdentifier}\n"
   let singleTokenModule ←
     SyntaxTree.parseModuleStringWithEnv env singleTokenOverflow
@@ -3440,8 +3408,7 @@ def assertFormattingExceptionChecks (env : Lean.Environment) : IO Unit := do
       "string-comma-overflow.lean"
   assertTrue "string and trailing comma tree overflow is exempt"
     (Formatter.Diagnostics.overflowOccurrences stringCommaModule).isEmpty
-  let atomicCommaOverflow :=
-    "def values := [\n  " ++ longIdentifier ++ ",\n  short,\n]\n"
+  let atomicCommaOverflow := "def values := [\n  " ++ longIdentifier ++ ",\n  short,\n]\n"
   let atomicCommaModule ←
     SyntaxTree.parseModuleStringWithEnv env atomicCommaOverflow
       "atomic-comma-overflow.lean"
@@ -3490,9 +3457,7 @@ def assertCliChecksStillFormatUnlessCheck (env : Lean.Environment) : IO Unit := 
 
   let overflowFile := root / "Overflow.lean"
   let overflowSource :=
-    "def "
-    ++ String.ofList (List.replicate (Formatter.maxLineWidth + 1) 'x')
-    ++ " := 0\n"
+    "def " ++ String.ofList (List.replicate (Formatter.maxLineWidth + 1) 'x') ++ " := 0\n"
   IO.FS.writeFile overflowFile overflowSource
   let afterExceptionFile := root / "AfterException.lean"
   let afterExceptionSource := "def  afterException  : Nat := 0\n"
@@ -3964,8 +3929,7 @@ def assertMathlibLowRiskSyntaxKindsHaveRules : IO Unit := do
         (rule.breakPoints {} vectorSegment
           == [{ index := 1, indentLevels := 1 }, { index := 2, indentLevels := 0 }])
       let itemSegment := Formatter.LineBreakRules.Segment.ofTree vectorItems
-      let itemContext :=
-        ({} : Formatter.LineBreakRules.RuleContext).push vectorSegment 1
+      let itemContext := ({} : Formatter.LineBreakRules.RuleContext).push vectorSegment 1
       assertTrue "matrix vector notation item wrapper uses array item breaks"
         (Formatter.LineBreakRules.arrayItemBreaks itemContext itemSegment
           == [{ index := 2, indentLevels := 0 }])
@@ -4086,8 +4050,7 @@ def assertSyntaxDeclarationsHaveRules (env : Lean.Environment) : IO Unit := do
     SyntaxTree.parseModuleStringWithEnv env source "syntax-declaration-rules.lean"
   assertTrue "syntax declarations have complete rule coverage"
     (Formatter.Diagnostics.missingRuleOccurrencesForModule moduleTree).isEmpty
-  let formatted ←
-    Formatter.formatSourceWithEnv env source "syntax-declaration-rules.lean"
+  let formatted ← Formatter.formatSourceWithEnv env source "syntax-declaration-rules.lean"
   assertTextContains "syntax separator stays tight" formatted "term,*"
 
 def assertParserStateUpdatesAfterSyntaxCommands (env : Lean.Environment) : IO Unit := do
@@ -4191,6 +4154,7 @@ def runBasicFormattingTests (env : Lean.Environment) : IO Unit := do
   assertFormatterConvergencePassLimit
   assertFormatterFallbackResultIsObservable env
   assertLayoutSensitiveTermsRemainParseableAndIdempotent env
+  assertLineWidthOptionAffectsFormatting env
   assertHardWhitespaceFormatting env
   assertImportsStayOnSeparateLines env
   assertLongImportStaysOnOneLine env

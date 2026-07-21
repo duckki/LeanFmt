@@ -13,6 +13,7 @@ readonly BUILD_FILES_PER_BATCH="${LEANFMT_VALIDATION_BUILD_BATCH_SIZE:-${LEANFMT
 readonly FORMATTER_FILES_PER_BATCH="${LEANFMT_VALIDATION_FORMATTER_BATCH_SIZE:-1}"
 readonly FORMATTER_ENV_CACHE_SIZE="${LEANFMT_VALIDATION_FORMATTER_ENV_CACHE_SIZE:-0}"
 readonly FORMATTER_IMPORT_ENV_FIRST="${LEANFMT_VALIDATION_IMPORT_ENV_FIRST:-1}"
+readonly FORMATTER_LINE_WIDTH="${LEANFMT_VALIDATION_LINE_WIDTH:-}"
 readonly DEFAULT_FILE_SELECTOR="${LEANFMT_VALIDATION_FILE_PATTERN:-*.lean}"
 readonly CSLIB_URL="https://github.com/leanprover/cslib.git"
 readonly MATHLIB_URL="https://github.com/leanprover-community/mathlib4.git"
@@ -205,6 +206,9 @@ run_formatter() {
   if [[ "$FORMATTER_IMPORT_ENV_FIRST" == "1" ]]; then
     formatter_options+=(--import-env-first)
   fi
+  if [[ -n "$FORMATTER_LINE_WIDTH" ]]; then
+    formatter_options+=(--line-width "$FORMATTER_LINE_WIDTH")
+  fi
 
   (
     cd "$project_dir" || exit 1
@@ -227,6 +231,10 @@ main() {
     "$FORMATTER_ENV_CACHE_SIZE" || return $?
   validate_boolean LEANFMT_VALIDATION_IMPORT_ENV_FIRST \
     "$FORMATTER_IMPORT_ENV_FIRST" || return $?
+  if [[ -n "$FORMATTER_LINE_WIDTH" ]]; then
+    validate_positive_integer LEANFMT_VALIDATION_LINE_WIDTH \
+      "$FORMATTER_LINE_WIDTH" || return $?
+  fi
 
   if (($# > 0)); then
     projects=()

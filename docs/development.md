@@ -59,11 +59,13 @@ Format or check a directory:
 ```sh
 lake exe fmt Some/Directory
 lake exe fmt --check --recursive Some/Directory
+lake exe fmt --line-width 100 --check --recursive Some/Directory
 ```
 
 `--recursive` or `-r` makes directory arguments include nested `.lean` files.
 Hidden entries discovered during directory traversal are skipped unless
 `--include-hidden` is passed; an explicitly supplied hidden path is still processed.
+`--line-width N` overrides the default 90-character formatter line limit.
 
 ## Validation checks
 
@@ -371,7 +373,9 @@ to retain up to `N` imported environments. External validation also passes
 `--import-env-first` to the formatter by default so mathlib files do not first
 attempt a whole-file parse with LeanFmt's default Lean environment; set
 `LEANFMT_VALIDATION_IMPORT_ENV_FIRST=0` to restore the ordinary CLI strategy of
-trying the default environment before loading source imports.
+trying the default environment before loading source imports. Set
+`LEANFMT_VALIDATION_LINE_WIDTH=N` to pass a project-specific line width to every
+formatter invocation.
 
 For the default all-file selector, the pre- and post-format build phases run
 `lake build`. When a narrower selector is used, the script converts selected

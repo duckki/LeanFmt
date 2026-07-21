@@ -4,9 +4,9 @@ def adjacentQuantifiers : Prop :=
   body x y
 
 def mixedAdjacentQuantifiers : Prop :=
-  ∃ objectType,
+  ∃ objectTypeEx,
   ∀ typeCondition,
-  typeCondition ∈ typeConditions -> objectType ∈ schema.getPossibleTypes typeCondition
+  typeCondition ∈ typeConditions -> objectTypeEx ∈ schema.getPossibleTypes typeCondition
 
 def intervenedQuantifier : Prop :=
   ∀ x,
@@ -65,10 +65,10 @@ def adjacentQuantifiers : Prop :=
   ∀ x, ∀ y, body x y
 
 def mixedAdjacentQuantifiers : Prop :=
-  ∃ objectType,
+  ∃ objectTypeEx,
     ∀ typeCondition,
       typeCondition ∈ typeConditions
-      -> objectType ∈ schema.getPossibleTypes typeCondition
+      -> objectTypeEx ∈ schema.getPossibleTypes typeCondition
 
 def intervenedQuantifier : Prop :=
   ∀ x, ! ∀ y, body x y

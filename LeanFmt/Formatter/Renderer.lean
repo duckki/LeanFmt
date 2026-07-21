@@ -8,7 +8,11 @@ namespace Formatter
 /-! ## Output and indentation state -/
 
 def maxLineWidth : Nat :=
-  88
+  90
+
+structure Options where
+  lineWidth : Nat := maxLineWidth
+deriving BEq, Repr
 
 def indentationSpaces : Nat :=
   2
@@ -16,20 +20,25 @@ def indentationSpaces : Nat :=
 def lineWidth (text : String) : Nat :=
   text.length
 
-def lineFits (text : String) : Bool :=
-  lineWidth text <= maxLineWidth
+def lineFits (text : String) (limit : Nat := maxLineWidth) : Bool :=
+  lineWidth text <= limit
 
-def linesFit (text : String) : Bool :=
-  (SpaceRules.normalizeLineEndings text).splitOn "\n" |>.all lineFits
+def linesFit (text : String) (limit : Nat := maxLineWidth) : Bool :=
+  (SpaceRules.normalizeLineEndings text).splitOn "\n"
+  |>.all fun line => lineFits line limit
 
-def lineFitsWithTrailingWidth (line : String) (trailingWidth : Nat) : Bool :=
-  lineWidth line + trailingWidth <= maxLineWidth
+def lineFitsWithTrailingWidth
+    (line : String) (trailingWidth : Nat) (limit : Nat := maxLineWidth)
+    : Bool :=
+  lineWidth line + trailingWidth <= limit
 
-def linesFitWithTrailingWidth (text : String) (trailingWidth : Nat) : Bool :=
+def linesFitWithTrailingWidth
+    (text : String) (trailingWidth : Nat) (limit : Nat := maxLineWidth)
+    : Bool :=
   let rec loop : List String → Bool
-    | [] => trailingWidth <= maxLineWidth
-    | [line] => lineFitsWithTrailingWidth line trailingWidth
-    | line :: rest => lineFits line && loop rest
+    | [] => trailingWidth <= limit
+    | [line] => lineFitsWithTrailingWidth line trailingWidth limit
+    | line :: rest => lineFits line limit && loop rest
   loop <| (SpaceRules.normalizeLineEndings text).splitOn "\n"
 
 def spaces (count : Nat) : String :=
@@ -52,7 +61,8 @@ structure AppendedLines where
   completedLineOverflowCount : Nat
   currentLine : String
 
-def appendedLines (currentLine text : String) : AppendedLines :=
+def appendedLines (currentLine text : String) (limit : Nat := maxLineWidth)
+    : AppendedLines :=
   let rec loop (lineWidth breakCount overflowCount : Nat) (current : List Char)
       : List Char → AppendedLines
     | [] =>
@@ -63,13 +73,13 @@ def appendedLines (currentLine text : String) : AppendedLines :=
         }
     | '\r' :: '\n' :: rest =>
         loop 0 (breakCount + 1)
-          (overflowCount + if lineWidth > maxLineWidth then 1 else 0) [] rest
+          (overflowCount + if lineWidth > limit then 1 else 0) [] rest
     | '\n' :: rest =>
         loop 0 (breakCount + 1)
-          (overflowCount + if lineWidth > maxLineWidth then 1 else 0) [] rest
+          (overflowCount + if lineWidth > limit then 1 else 0) [] rest
     | '\r' :: rest =>
         loop 0 (breakCount + 1)
-          (overflowCount + if lineWidth > maxLineWidth then 1 else 0) [] rest
+          (overflowCount + if lineWidth > limit then 1 else 0) [] rest
     | char :: rest =>
         loop (lineWidth + 1) breakCount overflowCount (char :: current) rest
   loop currentLine.length 0 0 [] text.toList
@@ -96,6 +106,7 @@ structure TailIndentationAnchor where
 deriving Repr
 
 structure RenderState where
+  options : Options := {}
   source : String
   output : String := ""
   outputLineBreakCount : Nat := 0
@@ -166,7 +177,7 @@ def currentLineAfterAppend (currentLine text : String) : String :=
 
 def RenderState.appendOutput (state : RenderState) (text : String) : RenderState :=
   if hasLineBreakChar text then
-    let appended := appendedLines state.currentLine text
+    let appended := appendedLines state.currentLine text state.options.lineWidth
     {
       state with
         output := state.output ++ text
@@ -308,6 +319,7 @@ def outputIntroducedLineBreak (before after : RenderState) : Bool :=
 def renderedCandidateFits (before after : RenderState) : Bool :=
   before.completedLineOverflowCount == after.completedLineOverflowCount
   && lineFitsWithTrailingWidth after.currentLine after.lineFitSuffixWidth
+      after.options.lineWidth
 
 def RenderState.segmentStartBaseFor
     (state : RenderState) (segment : LineBreakRules.Segment)
@@ -318,8 +330,7 @@ def RenderState.segmentStartBaseFor
     | none => state.currentColumn
   { column, indentation := indentationLevelForColumn column }
 
-def RenderState.preserveBlankBoundaryBefore
-    (state : RenderState) (tree : SyntaxTree.Tree)
+def RenderState.preserveBlankBoundaryBefore (state : RenderState) (tree : SyntaxTree.Tree)
     : RenderState :=
   match state.lastToken?, state.pendingIndent?, SyntaxTree.Tree.firstToken? tree with
   | some left, none, some right =>
@@ -339,7 +350,7 @@ def renderedTreeIsMultiline (before after : RenderState) (tree : SyntaxTree.Tree
       | some token =>
           let whitespace := prepared.defaultWhitespace token
           if hasLineBreakChar whitespace then
-            (appendedLines "" whitespace).lineBreakCount
+            (appendedLines "" whitespace prepared.options.lineWidth).lineBreakCount
           else
             0
       | none => 0
@@ -545,8 +556,7 @@ def RenderState.emitOriginalTree
         else
           match state.lastToken? with
           | some leftToken =>
-              SyntaxTree.sourceText state.source leftToken.span.stop
-                firstToken.span.start
+              SyntaxTree.sourceText state.source leftToken.span.stop firstToken.span.start
           | none => firstToken.leading.text
       let sourceText :=
         SyntaxTree.sourceText state.source firstToken.span.start lastToken.span.stop
@@ -584,6 +594,7 @@ def currentLineFitsWith (state : RenderState) (suffix : String) : Bool :=
   lineFitsWithTrailingWidth
     (currentLineAfterAppend state.currentLine suffix)
     state.lineFitSuffixWidth
+    state.options.lineWidth
 
 def firstLineWithBreakFlag (text : String) : String × Bool :=
   let rec loop : List Char → List Char → String × Bool
@@ -845,8 +856,7 @@ def lineFitSuffixForChild
     : Nat :=
   let suffixStop := firstRuleBreakAfter state.context segment index suffixStop
   let suffixSegment := segment.slice segment.start suffixStop
-  let (localSuffix, reachedEnd) :=
-    lineFitSuffixAfterChild state suffixSegment index child
+  let (localSuffix, reachedEnd) := lineFitSuffixAfterChild state suffixSegment index child
   let inheritedSuffix :=
     if suffixStop == segment.stop && reachedEnd then
       state.lineFitSuffixWidth
@@ -1124,8 +1134,7 @@ def computeRuleBreakShift
   | some tailIndentation =>
       let required :=
         requiredTailIndentation state segment rule baseColumn tailIndentation
-      let minimum? :=
-        leastNaturalBreakIndentation? rule baseColumn baseIndentation points
+      let minimum? := leastNaturalBreakIndentation? rule baseColumn baseIndentation points
       required - minimum?.getD required
   | none => 0
 
@@ -1231,6 +1240,7 @@ def FlowRenderContext.childFirstLineFits
   let (rendered, _) := renderFirstLineOfTree probe child
   !outputIntroducedLineBreak probe rendered
   && lineFitsWithTrailingWidth rendered.currentLine rendered.lineFitSuffixWidth
+      rendered.options.lineWidth
 
 def FlowRenderContext.withBreak
     (flow : FlowRenderContext) (state : RenderState)
@@ -1439,10 +1449,7 @@ partial def renderNestedSegment
     if inheritsBase || !childRule.alignStartToIndentation childContext childSegment then
       state
     else if flatSegmentFits
-              {
-                state with
-                  context := childContext, lineFitSuffixWidth := lineFitSuffix
-              }
+              { state with context := childContext, lineFitSuffixWidth := lineFitSuffix }
               childSegment then
       state
     else
@@ -1576,8 +1583,7 @@ partial def renderFlowSegment
   match SyntaxTree.Tree.firstToken? segment.parent with
   | none => renderChildren state segment
   | some _ =>
-      let flow : FlowRenderContext :=
-        { segment, rule, breakPoints, entryState := state }
+      let flow : FlowRenderContext := { segment, rule, breakPoints, entryState := state }
       renderFlowChildren state flow segment.start false
 
 partial def renderFlowChildren
@@ -1615,8 +1621,7 @@ partial def renderFlowChildren
                 match flow.breakAt? index with
                 | some breakPoint => flow.withBreak state breakPoint
                 | none =>
-                    state.withPendingIndent
-                      (state.segmentBaseIndent + indentationSpaces)
+                    state.withPendingIndent (state.segmentBaseIndent + indentationSpaces)
               renderNestedAndContinue state
 
 partial def renderBalancedSegment
@@ -1672,16 +1677,18 @@ def RenderState.finalTrivia (state : RenderState) : String :=
   | none =>
       SpaceRules.cleanFinalTrivia state.source
 
-def renderModuleTree (moduleTree : SyntaxTree.Module) : String :=
+def renderModuleTree (moduleTree : SyntaxTree.Module) (options : Options := {})
+    : String :=
   let state :=
-    renderSegment { source := moduleTree.source }
+    renderSegment { options, source := moduleTree.source }
       (LineBreakRules.Segment.ofTree moduleTree.tree)
   SpaceRules.normalizeFinalNewline (state.output ++ state.finalTrivia)
 
-def renderModuleTreeWithTrace (moduleTree : SyntaxTree.Module) : String × String :=
+def renderModuleTreeWithTrace (moduleTree : SyntaxTree.Module) (options : Options := {})
+    : String × String :=
   let state :=
     renderSegment
-      { source := moduleTree.source, trace := { enabled := true } }
+      { options, source := moduleTree.source, trace := { enabled := true } }
       (LineBreakRules.Segment.ofTree moduleTree.tree)
   let formatted := SpaceRules.normalizeFinalNewline (state.output ++ state.finalTrivia)
   (formatted, state.trace.formatWithOutput formatted)

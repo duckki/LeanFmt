@@ -381,9 +381,9 @@ For each segment:
    wrapping.
 11. For non-flow rules with break points, apply all returned breaks simultaneously.
 
-Flat rendering is speculative. The renderer can render into temporary output, check
-`maxLineWidth`, and keep or discard that result. This is why rules return only break
-opportunities and do not need access to line width.
+Flat rendering is speculative. The renderer can render into temporary output, check the
+configured line width, and keep or discard that result. This is why rules return only
+break opportunities and do not need access to line width.
 
 ### Source breaks
 

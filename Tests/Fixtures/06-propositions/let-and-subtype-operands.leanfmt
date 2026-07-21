@@ -20,7 +20,7 @@ def ordinaryLetApplicationOperand : Result :=
   let head :=
     executeField schema resolvers variableValues fuel source responseName fields extraArgument
   let tail :=
-    executeCollectedFields schema resolvers variableValues fuel source rest extraArgument
+    executeCollectedFields schema resolvers variableValues fuel source rest more extraArgument
   Result.combine List.append head tail
 
 def ordinaryLetExistingContinuationOperand : Result :=
@@ -78,7 +78,7 @@ def ordinaryLetApplicationOperand : Result :=
     executeField schema resolvers variableValues fuel source responseName fields
       extraArgument
   let tail :=
-    executeCollectedFields schema resolvers variableValues fuel source rest
+    executeCollectedFields schema resolvers variableValues fuel source rest more
       extraArgument
   Result.combine List.append head tail
 
