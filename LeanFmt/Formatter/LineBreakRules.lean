@@ -216,6 +216,11 @@ def treeHasContent : SyntaxTree.Tree → Bool
   | .leaf token => !token.lexeme.isEmpty
   | .node _ children => !children.isEmpty
 
+def treeIsRawKind (tree : SyntaxTree.Tree) (kind : Lean.SyntaxNodeKind) : Bool :=
+  match tree with
+  | .node (.raw treeKind) _ => treeKind == kind
+  | _ => false
+
 partial def treeFirstLexeme? : SyntaxTree.Tree → Option String
   | .missing => none
   | .leaf token =>
@@ -258,6 +263,56 @@ def nonemptyChildIndexes (segment : Segment) : List Nat :=
       match segment.child? index with
       | some child => treeHasContent child
       | none => false
+
+def tokenChildIndexes (segment : Segment) : List Nat :=
+  segment.indexes.filter
+    fun index =>
+      match segment.child? index with
+      | some child => child.firstToken?.isSome
+      | none => false
+
+inductive TopLevelCommandKind where
+  | moduleKeyword
+  | publicImport
+  | ordinaryImport
+  | moduleDoc
+  | declaration
+  | other
+deriving BEq, Repr
+
+def topLevelCommandKind (tree : SyntaxTree.Tree) : TopLevelCommandKind :=
+  if treeIsRawKind tree `Lean.Parser.Module.moduleTk then
+    .moduleKeyword
+  else if treeIsRawKind tree `Lean.Parser.Module.import then
+    if treeFirstLexeme? tree == some "public" then .publicImport else .ordinaryImport
+  else if treeIsRawKind tree `Lean.Parser.Command.moduleDoc then
+    .moduleDoc
+  else if treeIsRawKind tree `Lean.Parser.Command.declaration then
+    .declaration
+  else
+    .other
+
+inductive TopLevelCommandSequenceKind where
+  | module
+  | header
+  | imports
+  | commands
+deriving BEq, Repr
+
+def topLevelCommandSequenceKind? (context : RuleContext) (segment : Segment)
+    : Option TopLevelCommandSequenceKind :=
+  if segment.rawKind? == some `Lean.Parser.Module.module then
+    some .module
+  else if segment.rawKind? == some `Lean.Parser.Module.header then
+    some .header
+  else if segment.rawKind? == some `null
+          && parentIsRawKind context `Lean.Parser.Module.header then
+    some .imports
+  else if segment.rawKind? == some `null
+          && parentIsRawKind context `Lean.Parser.Module.module then
+    some .commands
+  else
+    none
 
 def breakBeforeLexeme? (segment : Segment) (lexeme : String) (indentLevels : Nat)
     : Option BreakPoint := do
@@ -929,6 +984,26 @@ def exportItemBreaks (context : RuleContext) (segment : Segment) : List BreakPoi
 def moduleImportBreaks (context : RuleContext) (segment : Segment) : List BreakPoint :=
   if parentIsRawKind context `Lean.Parser.Module.header then
     match nonemptyChildIndexes segment with
+    | [] => []
+    | [_] => []
+    | _ :: rest =>
+        rest.filterMap fun index => boundaryBreak? segment index 0
+  else
+    []
+
+def moduleHeaderBreaks (_context : RuleContext) (segment : Segment) : List BreakPoint :=
+  if segment.rawKind? == some `Lean.Parser.Module.header then
+    match tokenChildIndexes segment with
+    | [] => []
+    | [_] => []
+    | _ :: rest =>
+        rest.filterMap fun index => boundaryBreak? segment index 0
+  else
+    []
+
+def moduleBodyBreaks (_context : RuleContext) (segment : Segment) : List BreakPoint :=
+  if segment.rawKind? == some `Lean.Parser.Module.module then
+    match tokenChildIndexes segment with
     | [] => []
     | [_] => []
     | _ :: rest =>
@@ -1851,7 +1926,16 @@ def letRecEquationRule : LineBreakRule :=
   }
 
 def moduleRule : LineBreakRule :=
-  { name := "module" }
+  {
+    name := "module"
+    mandatory :=
+      fun context segment =>
+        !(moduleHeaderBreaks context segment).isEmpty
+        || !(moduleBodyBreaks context segment).isEmpty
+    breakPoints :=
+      fun context segment =>
+        moduleHeaderBreaks context segment ++ moduleBodyBreaks context segment
+  }
 
 def setOptionRule : LineBreakRule :=
   {

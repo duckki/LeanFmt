@@ -1,0 +1,35 @@
+module
+public import Lean
+
+public import Init
+import Std
+
+import Lean.Elab
+/-! Module documentation -/
+structure First where
+  value : Nat
+def one := 1
+def two := 2
+structure Second where
+  value : Nat
+-----------------------------------------------------------------------------------------
+-- leanfmt: expected output below (DO NOT EDIT)
+-----------------------------------------------------------------------------------------
+module
+
+public import Lean
+public import Init
+
+import Std
+import Lean.Elab
+
+/-! Module documentation -/
+
+structure First where
+  value : Nat
+
+def one := 1
+def two := 2
+
+structure Second where
+  value : Nat

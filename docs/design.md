@@ -248,10 +248,20 @@ The containing application may break before the whole interpolated string.
 ## Modules and commands
 
 Imports and top-level commands start on separate lines. Their order is
-preserved. Blank lines from the source may separate logical groups.
+preserved. A `module` command, consecutive `public import` commands,
+consecutive ordinary imports, and the following command form separate groups
+with one blank line. Imports within one group have no blank lines between them.
 
 ```lean
-import Init
+module
+
+public import Lean
+public import Std
+
+import Lean.Elab
+import Lean.Parser
+
+/-! # Example -/
 
 namespace Example
 
@@ -259,6 +269,29 @@ def answer : Nat := 42
 
 end Example
 ```
+
+A module docstring is separated from the first declaration. Leading comments
+and declaration docstrings stay attached to the command they describe.
+
+Multiline top-level declarations have a blank line between them and adjacent
+declarations. Short one-line declarations may remain grouped without blank
+lines:
+
+```lean
+structure Point where
+  x : Nat
+  y : Nat
+
+def origin := Point.mk 0 0
+def unitX := Point.mk 1 0
+
+structure Segment where
+  start : Point
+  stop : Point
+```
+
+Existing blank lines may still separate short declaration groups and other
+top-level commands.
 
 A long individual import is not split internally. Syntax declarations and
 other command forms keep their tokens and use either an explicit command rule

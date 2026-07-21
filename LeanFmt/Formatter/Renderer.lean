@@ -105,6 +105,11 @@ structure TailIndentationAnchor where
   indentation : Nat
 deriving Repr
 
+inductive CommandBoundarySpacing where
+  | lineBreak
+  | blankLine
+deriving BEq, Repr
+
 structure RenderState where
   options : Options := {}
   source : String
@@ -114,6 +119,7 @@ structure RenderState where
   currentLine : String := ""
   lastToken? : Option SyntaxTree.Token := none
   pendingIndent? : Option Nat := none
+  pendingCommandBoundary? : Option CommandBoundarySpacing := none
   segmentBaseColumn : Nat := 0
   segmentIndentation : Nat := 0
   tailIndentation? : Option Nat := none
@@ -233,6 +239,58 @@ def RenderState.currentIndent (state : RenderState) : Nat :=
 def RenderState.segmentBaseIndent (state : RenderState) : Nat :=
   state.segmentIndentation * indentationSpaces
 
+def ensureBlankLineBeforeIndentation (text indentation : String) : String :=
+  let lineSuffix := "\n" ++ indentation
+  let blankSuffix := "\n\n" ++ indentation
+  if text.endsWith blankSuffix then
+    text
+  else if text.endsWith lineSuffix then
+    (text.dropEnd lineSuffix.length).toString ++ blankSuffix
+  else
+    text ++ blankSuffix
+
+def commentTriviaStartsOnNewLine (trivia : String) : Bool :=
+  match trivia.toList.dropWhile SpaceRules.isHorizontalWhitespace with
+  | '\n' :: _ | '\r' :: _ => true
+  | _ => false
+
+def ensureBlankLineBeforeLeadingComment (text : String) : String :=
+  if text.startsWith "\n\n" || text.startsWith "\r\n\r\n" then
+    text
+  else if text.startsWith "\n" || text.startsWith "\r\n" then
+    "\n" ++ text
+  else
+    "\n\n" ++ text
+
+def commentTriviaForBoundary
+    (trivia indentation : String) (spacing : CommandBoundarySpacing)
+    : String :=
+  let adjusted := SpaceRules.commentTriviaForBreak trivia indentation
+  if spacing == .blankLine then
+    if commentTriviaStartsOnNewLine trivia then
+      ensureBlankLineBeforeLeadingComment adjusted
+    else
+      ensureBlankLineBeforeIndentation adjusted indentation
+  else
+    adjusted
+
+def whitespaceForPendingBoundary
+    (trivia indentation : String) (commandBoundary? : Option CommandBoundarySpacing)
+    : String :=
+  if SpaceRules.hasCommentStart trivia then
+    match commandBoundary? with
+    | some spacing => commentTriviaForBoundary trivia indentation spacing
+    | none => SpaceRules.commentTriviaForBreak trivia indentation
+  else
+    match commandBoundary? with
+    | none =>
+        if hasBlankLineStructure trivia then
+          "\n\n" ++ indentation
+        else
+          "\n" ++ indentation
+    | some .lineBreak => "\n" ++ indentation
+    | some .blankLine => "\n\n" ++ indentation
+
 def RenderState.defaultWhitespace (state : RenderState) (token : SyntaxTree.Token)
     (preserveLines : Bool := false)
     : String :=
@@ -240,20 +298,11 @@ def RenderState.defaultWhitespace (state : RenderState) (token : SyntaxTree.Toke
   | some left, some indent =>
       let trivia := SyntaxTree.sourceText state.source left.span.stop token.span.start
       let indentation := spaces indent
-      if SpaceRules.hasCommentStart trivia then
-        SpaceRules.commentTriviaForBreak trivia indentation
-      else if hasBlankLineStructure trivia then
-        "\n\n" ++ indentation
-      else
-        "\n" ++ indentation
+      whitespaceForPendingBoundary trivia indentation state.pendingCommandBoundary?
   | none, some indent =>
       let indentation := spaces indent
-      if SpaceRules.hasCommentStart token.leading.text then
-        SpaceRules.commentTriviaForBreak token.leading.text indentation
-      else if hasBlankLineStructure token.leading.text then
-        "\n\n" ++ indentation
-      else
-        "\n" ++ indentation
+      whitespaceForPendingBoundary token.leading.text indentation
+        state.pendingCommandBoundary?
   | none, none =>
       if SpaceRules.hasCommentStart token.leading.text then
         SpaceRules.reindentCommentTrivia token.leading.text ""
@@ -300,12 +349,14 @@ def RenderState.emitToken (state : RenderState) (token : SyntaxTree.Token)
           (state.defaultWhitespace token preserveLines ++ token.lexeme) with
         lastToken? := some token
         pendingIndent? := none
+        pendingCommandBoundary? := none
     }
 
 def RenderState.withPendingIndent (state : RenderState) (indent : Nat) : RenderState :=
   {
     state with
       pendingIndent? := some indent
+      pendingCommandBoundary? := none
       tailIndentation? := none
       segmentBaseColumn := indent
       segmentIndentation := indentationLevelForColumn indent
@@ -592,6 +643,7 @@ def RenderState.emitOriginalTree
         state.appendOutput <| leading ++ sourceText with
           lastToken? := some lastToken
           pendingIndent? := none
+          pendingCommandBoundary? := none
       }
   | _, _ => state
 
@@ -831,6 +883,7 @@ def RenderState.firstLineOfOriginalTree (state : RenderState) (tree : SyntaxTree
           state.appendOutput firstLine with
             lastToken? := some lastToken
             pendingIndent? := none
+            pendingCommandBoundary? := none
         },
         stopped
       )
@@ -851,6 +904,7 @@ partial def renderFirstLineOfTree (state : RenderState) (tree : SyntaxTree.Tree)
             state.appendOutput firstLine with
               lastToken? := some token
               pendingIndent? := none
+              pendingCommandBoundary? := none
           },
           stopped
         )
@@ -1350,6 +1404,39 @@ def FlowRenderContext.stateForForcedNestedChild?
   | none =>
       if index == flow.segment.start then some state else none
 
+def segmentRangeFirstTree? (segment : LineBreakRules.Segment) (start stop : Nat)
+    : Option SyntaxTree.Tree :=
+  (List.range (stop - start)).foldl
+    (fun found offset =>
+      match found with
+      | some tree => some tree
+      | none =>
+          match segment.child? (start + offset) with
+          | some tree => if tree.firstToken?.isSome then some tree else none
+          | none => none)
+    none
+
+def commandBoundarySpacing?
+    (sequenceKind : LineBreakRules.TopLevelCommandSequenceKind)
+    (previous current : SyntaxTree.Tree)
+    (previousMultiline currentMultiline : Bool)
+    : Option CommandBoundarySpacing :=
+  match sequenceKind with
+  | .module | .header => some .blankLine
+  | .imports =>
+      match LineBreakRules.topLevelCommandKind previous,
+            LineBreakRules.topLevelCommandKind current with
+      | .publicImport, .publicImport | .ordinaryImport, .ordinaryImport =>
+          some .lineBreak
+      | _, _ => some .blankLine
+  | .commands =>
+      match LineBreakRules.topLevelCommandKind previous,
+            LineBreakRules.topLevelCommandKind current with
+      | .moduleDoc, _ => some .blankLine
+      | .declaration, .declaration =>
+          if previousMultiline || currentMultiline then some .blankLine else none
+      | _, _ => none
+
 /-! ## Recursive rendering -/
 
 mutual
@@ -1558,7 +1645,8 @@ partial def renderNestedSegment
       childState.emitOriginalTree child
         (respectPendingIndent :=
           (isProofTree child && !treeHasLineBreakTrivia child)
-          || isProofLemmaCommand child)
+          || isProofLemmaCommand child
+          || state.pendingCommandBoundary?.isSome)
     else
       renderSegment childState childSegment (some (childRule, childBreakPoints))
   scope.restore rendered
@@ -1710,6 +1798,8 @@ partial def renderBalancedSegment
     let entryIndentation := state.segmentIndentation
     let entryBaseColumn := state.segmentBaseColumn
     let entryTailIndentation? := state.tailIndentation?
+    let commandSequenceKind? :=
+      LineBreakRules.topLevelCommandSequenceKind? state.context segment
     let stateForPiece (state : RenderState) (_start _stop : Nat) (firstPiece : Bool)
         : RenderState :=
       if firstPiece then
@@ -1730,17 +1820,42 @@ partial def renderBalancedSegment
           tailIndentation? := entryTailIndentation?
           lineFitSuffixWidth := state.lineFitSuffixWidth
       }
-    let rec loop (state : RenderState) (start : Nat) (firstPiece : Bool)
+    let rec loop
+        (state : RenderState) (start : Nat) (firstPiece : Bool)
+        (previousTree? : Option SyntaxTree.Tree) (previousMultiline : Bool)
         : List LineBreakRules.BreakPoint → RenderState
-      | [] => renderPiece state start segment.stop firstPiece true
-      | breakPoint :: rest =>
-          let state := renderPiece state start breakPoint.index firstPiece
-          let base :=
-            ruleBreakBase state segment rule entryBaseColumn entryIndentation breakPoint
-          let state := state.withRuleBreakIndent base.column base.indentation breakPoint
-          let rest := rest.dropWhile fun next => next.index == breakPoint.index
-          loop state breakPoint.index false rest
-    loop state segment.start true breakPoints
+      | breaks =>
+          let stop := breaks.head?.map (·.index) |>.getD segment.stop
+          let finalPiece := breaks.isEmpty
+          let currentTree? := segmentRangeFirstTree? segment start stop
+          let probe := renderPiece state start stop firstPiece finalPiece
+          let currentMultiline :=
+            match currentTree? with
+            | some tree => renderedTreeIsMultiline state probe tree
+            | none => false
+          let commandBoundary? := do
+            let sequenceKind ← commandSequenceKind?
+            let previousTree ← previousTree?
+            let currentTree ← currentTree?
+            commandBoundarySpacing? sequenceKind previousTree currentTree
+              previousMultiline currentMultiline
+          let rendered :=
+            match commandBoundary? with
+            | none => probe
+            | some spacing =>
+                renderPiece { state with pendingCommandBoundary? := some spacing }
+                  start stop firstPiece finalPiece
+          match breaks with
+          | [] => rendered
+          | breakPoint :: rest =>
+              let base :=
+                ruleBreakBase rendered segment rule
+                  entryBaseColumn entryIndentation breakPoint
+              let state :=
+                rendered.withRuleBreakIndent base.column base.indentation breakPoint
+              let rest := rest.dropWhile fun next => next.index == breakPoint.index
+              loop state breakPoint.index false currentTree? currentMultiline rest
+    loop state segment.start true none false breakPoints
 
 end
 

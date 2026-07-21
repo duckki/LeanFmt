@@ -278,6 +278,20 @@ A `BreakPoint` index means "break before child at this index." `indentLevels` is
 logical two-space continuation count. It is not an absolute column and not a token
 anchor.
 
+Top-level command sequences are the one file-layout specialization. `LineBreakRules`
+classifies module, header, import, and command sequences and catalogs command nodes as
+module keywords, public or ordinary imports, module docstrings, declarations, or other
+commands. This exposes syntax facts without encoding vertical spacing in every
+`BreakPoint`.
+
+When the renderer processes one of those sequences, it probes each command with the
+ordinary rule machinery and observes whether the result is multiline. It then chooses
+the boundary between adjacent commands: import groups use fixed grouping, module
+docstrings are separated from following commands, and adjacent declarations receive a
+blank line when either renders multiline. Leading comments and docstrings remain attached
+to their command. Other syntax sequences retain the ordinary source-preserving boundary
+behavior.
+
 `ruleFor : SyntaxTree.Tree -> Option LineBreakRule` is the dispatch table. It has no
 ordered candidate list. A known node maps to exactly one rule. Unknown raw nodes return
 `none`; `formattingRuleFor` maps that to `defaultRule` for rendering.

@@ -378,6 +378,59 @@ def assertImportsStayOnSeparateLines (env : Lean.Environment) : IO Unit := do
   let formatted ← Formatter.formatSourceWithEnv env source "imports.lean"
   assertEq "imports stay on separate lines" source formatted
 
+def assertModuleHeaderGroupsUseBlankLines (env : Lean.Environment) : IO Unit := do
+  let source :=
+    "module\n"
+    ++ "public import Lean\n"
+    ++ "\n"
+    ++ "public import Init\n"
+    ++ "import Std\n"
+    ++ "\n"
+    ++ "import Lean.Elab\n"
+    ++ "/-! Module documentation -/\n"
+    ++ "def value := 0\n"
+  let expected :=
+    "module\n"
+    ++ "\n"
+    ++ "public import Lean\n"
+    ++ "public import Init\n"
+    ++ "\n"
+    ++ "import Std\n"
+    ++ "import Lean.Elab\n"
+    ++ "\n"
+    ++ "/-! Module documentation -/\n"
+    ++ "\n"
+    ++ "def value := 0\n"
+  let formatted ← Formatter.formatSourceWithEnv env source "module-header-groups.lean"
+  assertEq "module header groups use blank lines" expected formatted
+
+def assertMultilineTopLevelDeclarationsUseBlankLines (env : Lean.Environment)
+    : IO Unit := do
+  let source :=
+    "structure First where\n"
+    ++ "  value : Nat -- trailing field comment\n"
+    ++ "def one := 1\n"
+    ++ "def two := 2\n"
+    ++ "structure Second where\n"
+    ++ "  value : Nat\n"
+    ++ "structure Third where\n"
+    ++ "  value : Nat\n"
+  let expected :=
+    "structure First where\n"
+    ++ "  value : Nat -- trailing field comment\n"
+    ++ "\n"
+    ++ "def one := 1\n"
+    ++ "def two := 2\n"
+    ++ "\n"
+    ++ "structure Second where\n"
+    ++ "  value : Nat\n"
+    ++ "\n"
+    ++ "structure Third where\n"
+    ++ "  value : Nat\n"
+  let formatted ←
+    Formatter.formatSourceWithEnv env source "top-level-declaration-spacing.lean"
+  assertEq "multiline top-level declarations use blank lines" expected formatted
+
 def assertLongImportStaysOnOneLine (env : Lean.Environment) : IO Unit := do
   let source :=
     "import GraphQL.Algorithms.ExecutionUngrouped.Equivalence.AppendSelection.SingleFieldGroup\n"
@@ -408,7 +461,9 @@ def assertCommentsDoNotBlockFormatting (env : Lean.Environment) : IO Unit := do
     ++ "      veryLongIdentifierNameThatPushesTheDefinitionBodyPastTheWidthLimit\n"
   let expected :=
     "/-! Module comment -/\n"
+    ++ "\n"
     ++ "def first : Nat := 0\n"
+    ++ "\n"
     ++ "-- keep line comment\n"
     ++ "def commentedDeclarationBody : Nat := -- keep body comment\n"
     ++ "  veryLongIdentifierNameThatPushesTheDefinitionBodyPastTheWidthLimit\n"
@@ -418,10 +473,15 @@ def assertCommentsDoNotBlockFormatting (env : Lean.Environment) : IO Unit := do
     "/-! Ground-typed normalization smoke tests use `*InputQuery` and `*OutputSnapshot` pairs. -/\n"
     ++ "/-- Declaration documentation keeps  its exact internal whitespace and line shape. -/\n"
     ++ "def documented : Nat := 0\n"
+  let syntaxCommentExpected :=
+    "/-! Ground-typed normalization smoke tests use `*InputQuery` and `*OutputSnapshot` pairs. -/\n"
+    ++ "\n"
+    ++ "/-- Declaration documentation keeps  its exact internal whitespace and line shape. -/\n"
+    ++ "def documented : Nat := 0\n"
   let syntaxCommentFormatted ←
     Formatter.formatSourceWithEnv env syntaxCommentSource "syntax-comments.lean"
-  assertEq "syntax comments preserve exact source text"
-    syntaxCommentSource syntaxCommentFormatted
+  assertEq "syntax comments preserve contents across command spacing"
+    syntaxCommentExpected syntaxCommentFormatted
 
 def assertLeadingCommentsPreserved (env : Lean.Environment) : IO Unit := do
   let source := "-- module comment\n" ++ "\n" ++
@@ -460,9 +520,11 @@ def assertAttributesFlowBeforeDeclarations (env : Lean.Environment) : IO Unit :=
   let expected :=
     "@[simp] theorem eraseP_nil : [].eraseP p = [] := rfl\n"
     ++ "@[inline] def idNat (x : Nat) : Nat := x\n"
+    ++ "\n"
     ++ "@[ext]\n"
     ++ "structure Point where\n"
     ++ "  x : Nat\n"
+    ++ "\n"
     ++ "@[derive Repr]\n"
     ++ "inductive Choice where\n"
     ++ "  | left\n"
@@ -4481,6 +4543,8 @@ def runBasicFormattingTests (env : Lean.Environment) : IO Unit := do
   assertLineWidthOptionAffectsFormatting env
   assertHardWhitespaceFormatting env
   assertImportsStayOnSeparateLines env
+  assertModuleHeaderGroupsUseBlankLines env
+  assertMultilineTopLevelDeclarationsUseBlankLines env
   assertLongImportStaysOnOneLine env
   assertNamespaceCommandsStayOnSeparateLines env
   assertOpenCommandListBreaksFromOpenColumn env

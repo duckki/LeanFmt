@@ -22,21 +22,27 @@ theorem duplicateArgumentNamesRejected
 def propNegation : Prop :=
   ¬ predicateWithAnExceptionallyLongName argumentOne argumentTwo argumentThree
       argumentFour argumentFive
+
 def bang : Bool :=
   ! predicateWithAnExceptionallyLongName argumentOne argumentTwo argumentThree
       argumentFour argumentFive
+
 def compactBang : Bool :=
   !predicateWithAnExceptionallyLongName argumentOne argumentTwo argumentThree argumentFour
     argumentFive
+
 def parenBang : Bool :=
   ! (predicateWithAnExceptionallyLongName argumentOne argumentTwo argumentThree
       argumentFour argumentFive)
+
 def parenCompactBang : Bool :=
   !(predicateWithAnExceptionallyLongName argumentOne argumentTwo argumentThree
       argumentFour argumentFive)
+
 def numericNegation : Int :=
   -numericValueWithAnExceptionallyLongName argumentOne argumentTwo argumentThree
     argumentFour argumentFive
+
 def bitwiseComplement : UInt64 :=
   ~~~bitwiseValueWithAnExceptionallyLongName argumentOne argumentTwo argumentThree
       argumentFour argumentFive
