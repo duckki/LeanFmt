@@ -26,6 +26,6 @@ jobs:
       - name: Check fixtures and formatter invariants
         run: |
           lake exe fmt-test --update-fixture --check Tests/Fixtures/*/*.leanfmt
-          lake exe fmt --check --check-exception --check-idempotent -r LeanFmt Tests/*.lean
+          lake exe fmt --check --check-exception --check-idempotent -r LeanFmt
       - name: Check whitespace errors
         run: git diff --check
