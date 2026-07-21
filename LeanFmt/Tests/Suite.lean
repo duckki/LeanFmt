@@ -4161,6 +4161,17 @@ def assertParserStateUpdatesAfterSyntaxCommands (env : Lean.Environment) : IO Un
   assertTrue "syntax command parser-state updates preserve parseability"
     (!(moduleTree.tokens.isEmpty))
 
+def assertSyntaxAuthoringDefinitionPreservesCode (env : Lean.Environment) : IO Unit := do
+  let source :=
+    "syntax \"customTerm\" : term\n"
+    ++ "def quotedSyntax : Lean.Elab.Term.TermElabM Lean.Syntax := do\n"
+    ++ "  `(customTerm)\n"
+  let result ←
+    Formatter.formatSourceWithEnvDetailed env source "syntax-authoring-definition.lean"
+  assertTrue "syntax authoring definition does not fall back" (!result.fellBack)
+  assertTrue "syntax authoring definition preserves code"
+    (← codePreservedIgnoringWhitespace env source result.formatted)
+
 def assertCustomBracedTermSyntaxKeepsNestedSourceLayout (env : Lean.Environment)
     : IO Unit := do
   let source :=
@@ -4407,6 +4418,7 @@ def runCliAndArchitectureTests (env : Lean.Environment) : IO Unit := do
   assertCheckCommandHasRule env
   assertSyntaxDeclarationsHaveRules env
   assertParserStateUpdatesAfterSyntaxCommands env
+  assertSyntaxAuthoringDefinitionPreservesCode env
   assertCustomBracedTermSyntaxKeepsNestedSourceLayout env
   assertPrefixedTermWrappersHaveRules env
   assertCslibStyleCoreSyntaxHasRules env
