@@ -679,8 +679,19 @@ def parseModuleSyntaxWithEnvCore
   let (header, state, messages) ← Parser.parseHeader inputContext
   let commandState := Elab.Command.mkState env
   let commands ←
-    parseModuleCommandsQuiet inputContext state messages commandState
-      updateParserState #[]
+    try
+      parseModuleCommandsQuiet inputContext state messages commandState
+        updateParserState #[]
+    catch parseError =>
+      if updateParserState then
+        let frontendState ← Elab.IO.processCommands inputContext state commandState
+        let commands :=
+          frontendState.commands.filter
+            fun command =>
+              !Parser.isTerminalCommand command
+        pure commands
+      else
+        throw parseError
   pure
   <| (mkNode `Lean.Parser.Module.module #[header, mkListNode commands]).raw.updateLeading
 

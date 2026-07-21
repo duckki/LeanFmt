@@ -386,9 +386,19 @@ def isProofTree (tree : SyntaxTree.Tree) : Bool :=
 
 def isQuotationTree : SyntaxTree.Tree → Bool
   | .node (.raw `Lean.Parser.Term.quot) _ => true
+  | .node (.raw `Lean.Parser.Term.precheckedQuot) _ => true
   | .node (.raw `Lean.Parser.Tactic.quot) _ => true
   | .node (.raw `Qq.«termQ(__)») _ => true
+  | .node kind _ =>
+      let kindName := SyntaxTree.nodeKindName kind
+      kindName == "antiquotName" || SpaceRules.containsSubstring kindName ".antiquot"
   | _ => false
+
+partial def containsQuotationTree : SyntaxTree.Tree → Bool
+  | .missing => false
+  | .leaf _ => false
+  | tree@(.node _ children) =>
+      isQuotationTree tree || children.any containsQuotationTree
 
 def isQqSyntaxTree : SyntaxTree.Tree → Bool
   | .node (.raw `Qq.«termQ(__)») _ => true
@@ -396,6 +406,8 @@ def isQqSyntaxTree : SyntaxTree.Tree → Bool
   | _ => false
 
 def isLayoutSensitiveCommand : SyntaxTree.Tree → Bool
+  | .node (.raw `Lean.Parser.Command.syntax) _ => true
+  | .node (.raw `Lean.Parser.Command.syntaxAbbrev) _ => true
   | .node (.raw `Lean.Parser.Command.macro_rules) _ => true
   | .node (.raw `Lean.Parser.«command_Simproc_decl_(_):=_») _ => true
   | _ => false
@@ -487,6 +499,19 @@ def isDefinitionContainingProof (tree : SyntaxTree.Tree) : Bool :=
   | .node (.raw `Lean.Parser.Command.abbrev) _ => containsProofTree tree
   | _ => false
 
+def isDefinitionContainingQuotation (tree : SyntaxTree.Tree) : Bool :=
+  match tree with
+  | .node .definition _ => containsQuotationTree tree
+  | .node (.raw `Lean.Parser.Command.definition) _ => containsQuotationTree tree
+  | .node (.raw `Lean.Parser.Command.abbrev) _ => containsQuotationTree tree
+  | .node (.raw `Lean.Parser.Command.declaration) _ => containsQuotationTree tree
+  | _ => false
+
+def isQuotationLayoutIsland (tree : SyntaxTree.Tree) : Bool :=
+  match tree with
+  | .node (.raw `Lean.Parser.Term.set_option) _ => containsQuotationTree tree
+  | _ => false
+
 def isProofLayoutIsland (tree : SyntaxTree.Tree) : Bool :=
   match tree with
   | .node (.raw `Lean.Parser.Command.declValSimple) _ =>
@@ -525,9 +550,11 @@ def shouldEmitOriginalTree (tree : SyntaxTree.Tree) : Bool :=
   || isProofLemmaCommand tree
   || isAttributeModifierBlock tree
   || isDefinitionContainingProof tree
+  || isDefinitionContainingQuotation tree
   || isCalcTree tree
   || isCommentSensitiveMatchExpr tree
   || isHaveTree tree
+  || isQuotationLayoutIsland tree
   || isQuotationTree tree
   || isQqSyntaxTree tree
   || isLayoutSensitiveCommand tree
