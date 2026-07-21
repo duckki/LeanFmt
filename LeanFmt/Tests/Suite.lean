@@ -782,6 +782,27 @@ def assertLongPipeProjectionKeepsTightDot (env : Lean.Environment) : IO Unit := 
     SyntaxTree.parseModuleStringWithEnv env formatted
       "long-pipe-projection-tight-dot.lean"
 
+def assertPipeProjectionInDeclarationTypeIndentsContinuation (env : Lean.Environment)
+    : IO Unit := do
+  let source :=
+    "theorem collectedExecutableFields_responseNames_nodup_of_singletons\n"
+    ++ "    (groups : List (Name × List ExecutableField))\n"
+    ++ "    (hsingletons\n"
+    ++ "      : ∀ responseName fields, (responseName, fields) ∈ groups -> fields.length = 1)\n"
+    ++ "    : (collectedExecutableFields groups).map (fun field => field.responseName) |>.Nodup := by\n"
+    ++ "  exact proof\n"
+  let expected :=
+    "theorem collectedExecutableFields_responseNames_nodup_of_singletons\n"
+    ++ "    (groups : List (Name × List ExecutableField))\n"
+    ++ "    (hsingletons\n"
+    ++ "      : ∀ responseName fields, (responseName, fields) ∈ groups -> fields.length = 1)\n"
+    ++ "    : (collectedExecutableFields groups).map (fun field => field.responseName)\n"
+    ++ "      |>.Nodup := by\n"
+    ++ "  exact proof\n"
+  let formatted ←
+    Formatter.formatSourceWithEnv env source "pipe-projection-type-continuation.lean"
+  assertEq "pipe projection in declaration type indents continuation" expected formatted
+
 def assertPipeProjectionDoesNotBreakAfterDot (env : Lean.Environment) : IO Unit := do
   let source :=
     "def pipeProjectionChain : Result :=\n"
@@ -4088,6 +4109,22 @@ def assertParserStateUpdatesAfterSyntaxCommands (env : Lean.Environment) : IO Un
   assertTrue "syntax command parser-state updates preserve parseability"
     (!(moduleTree.tokens.isEmpty))
 
+def assertCustomBracedTermSyntaxKeepsNestedSourceLayout (env : Lean.Environment)
+    : IO Unit := do
+  let source :=
+    "syntax \"query \" \"{\" term,* \"}\" : term\n"
+    ++ "syntax \"field \" str : term\n"
+    ++ "syntax \"field \" str \" {\" term,* \"}\" : term\n"
+    ++ "syntax \"on \" str \" {\" term,* \"}\" : term\n"
+    ++ "\n"
+    ++ "def abstractFieldOutputSnapshot : Operation :=\n"
+    ++ "  query\n"
+    ++ "    { field \"search\"\n"
+    ++ "        { on \"Human\" { field \"id\", field \"homePlanet\" }, on \"Droid\" { field \"id\" } } }\n"
+  let formatted ←
+    Formatter.formatSourceWithEnv env source "custom-braced-term-source-layout.lean"
+  assertEq "custom braced term syntax keeps nested source layout" source formatted
+
 def assertPrefixedTermWrappersHaveRules (env : Lean.Environment) : IO Unit := do
   let source :=
     "def nestedAction : IO Nat := do\n"
@@ -4172,6 +4209,7 @@ def runBasicFormattingTests (env : Lean.Environment) : IO Unit := do
   assertProjectionChainDoesNotBreakBeforeDot env
   assertPipeProjectionKeepsTightDot env
   assertLongPipeProjectionKeepsTightDot env
+  assertPipeProjectionInDeclarationTypeIndentsContinuation env
   assertPipeProjectionDoesNotBreakAfterDot env
   assertMatchAltProofRhsKeepsByOnArrowLine env
   assertRecordBraceSpacing env
@@ -4310,6 +4348,7 @@ def runCliAndArchitectureTests (env : Lean.Environment) : IO Unit := do
   assertCheckCommandHasRule env
   assertSyntaxDeclarationsHaveRules env
   assertParserStateUpdatesAfterSyntaxCommands env
+  assertCustomBracedTermSyntaxKeepsNestedSourceLayout env
   assertPrefixedTermWrappersHaveRules env
   assertCslibStyleCoreSyntaxHasRules env
 

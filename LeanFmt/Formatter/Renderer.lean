@@ -394,6 +394,26 @@ partial def treeHasCommentTrivia : SyntaxTree.Tree → Bool
   | .leaf token => tokenHasCommentTrivia token
   | .node _ children => children.any treeHasCommentTrivia
 
+def tokenHasLineBreakTrivia (token : SyntaxTree.Token) : Bool :=
+  SpaceRules.hasLineStructure token.leading.text
+  || SpaceRules.hasLineStructure token.trailing.text
+
+partial def treeHasLineBreakTrivia : SyntaxTree.Tree → Bool
+  | .missing => false
+  | .leaf token => tokenHasLineBreakTrivia token
+  | .node _ children => children.any treeHasLineBreakTrivia
+
+def isCustomBracedTermSyntaxKindName (kindName : String) : Bool :=
+  kindName != "«term{_}»"
+  && (kindName.startsWith "«term" || SpaceRules.containsSubstring kindName ".«term")
+  && SpaceRules.containsSubstring kindName "{_}"
+
+def isCustomBracedTermSyntaxTree : SyntaxTree.Tree → Bool
+  | tree@(.node kind _) =>
+      isCustomBracedTermSyntaxKindName (SyntaxTree.nodeKindName kind)
+      && treeHasLineBreakTrivia tree
+  | _ => false
+
 def isCommentSensitiveMatchExpr : SyntaxTree.Tree → Bool
   | tree@(.node (.raw `Lean.Parser.Term.matchExpr) _) =>
       treeHasCommentTrivia tree
@@ -482,6 +502,7 @@ def shouldEmitOriginalTree (tree : SyntaxTree.Tree) : Bool :=
   || isQqSyntaxTree tree
   || isLayoutSensitiveCommand tree
   || isMathlibTacticSyntaxTree tree
+  || isCustomBracedTermSyntaxTree tree
   || isSyntaxCommentTree tree
 
 def isTheoremValueChild (parent : SyntaxTree.Tree) (index : Nat) : Bool :=

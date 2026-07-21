@@ -1119,7 +1119,9 @@ to understand it. Formatting developers can use `--check-exception` to identify
 syntax that deserves an explicit rule.
 
 Unknown syntax is lossless, but its whitespace is not guaranteed to remain
-byte-for-byte unchanged.
+byte-for-byte unchanged. Multiline custom braced term syntax is a conservative
+exception: LeanFmt keeps its source layout instead of canonicalizing indentation for
+an extension-owned DSL.
 
 A short custom syntax declaration can remain flat:
 

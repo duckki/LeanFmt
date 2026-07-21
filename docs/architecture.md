@@ -572,7 +572,9 @@ The escape hatch is intentionally narrow. If a non-proof syntax form is unsafe, 
 specific transparent/default rule or a grouping change before adding another original
 source region. Mathlib tactic extension nodes whose names start with `Mathlib.Tactic.`
 are currently original-source islands because their syntax is extension-owned and often
-already encodes tactic-specific layout requirements.
+already encodes tactic-specific layout requirements. Multiline custom braced term
+syntax is also emitted from original source so LeanFmt does not invent a layout for an
+extension-owned DSL whose braces may carry domain-specific structure.
 
 ## Diagnostics and formatter exceptions
 

@@ -1016,7 +1016,7 @@ def pipeProjRule : LineBreakRule :=
   {
     name := "pipeProj"
     flow := fun _ _ => true
-    inheritBase := fun _ _ => true
+    liftsTailIndentation := fun _ _ => true
     breakPoints := pipeProjBreaks
   }
 
