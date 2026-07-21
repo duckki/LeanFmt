@@ -1,8 +1,9 @@
-# Comparison with Lean style guidance and pretty-lean
+# Comparison with Lean style guides and pretty-lean
 
 This report compares LeanFmt with:
 
 - the [Lean 4 standard-library style guide][lean-style];
+- the [Lean community library style guide][community-style];
 - [pretty-lean][pretty-lean], a Lean compiler fork with an integrated formatter.
 
 LeanFmt's current normative style remains [design.md](design.md), and its implementation
@@ -10,10 +11,11 @@ model is documented in [architecture.md](architecture.md). This report is compar
 it does not override either document.
 
 The comparison concerns their current documented behavior and implementation. The
-official style guide is a policy for human contributors, not a formatter specification,
-and it explicitly applies only to Lean's standard library. pretty-lean is an experimental
-implementation rather than an established style standard. Its checked-in tests are
-therefore treated as evidence of current behavior, not as recommendations.
+two style guides are policies for human contributors, not formatter specifications. The
+first applies to Lean's standard library; the community guide describes conventions used
+by mathlib and related community libraries. pretty-lean is an experimental implementation
+rather than an established style standard. Its checked-in tests are therefore treated as
+evidence of current behavior, not as recommendations.
 
 ## Executive summary
 
@@ -22,36 +24,34 @@ LeanFmt occupies a distinct point in the design space:
 - It is a standalone, project-usable formatter rather than a compiler fork.
 - It preserves source tokens, token order, comments, and proof regions instead of
   reconstructing Lean code from a smaller semantic AST.
-- It chooses one deterministic layout where the official guide intentionally allows
-  human judgement.
-- Its leading-operator layout is a deliberate and important departure from official
-  standard-library style.
+- It chooses one deterministic layout where the style guides intentionally allow human
+  judgement.
+- Its leading-operator layout deliberately departs from both documented styles.
 - It avoids the toolchain replacement required by pretty-lean.
 - It does not yet offer pretty-lean's editor integration or range formatting.
 
 The strongest ideas to borrow are not wholesale formatting styles. They are
-pretty-lean's parser-aware extensibility, editor workflow, and check mode; the official
-guide's clear separation between mechanical layout and broader source policy; and Lean's
-generic parser-formatter registry. LeanFmt's losslessness, proof preservation, leading
-operators, tail indentation, and diagnostic checks should remain defining features.
+pretty-lean's parser-aware extensibility, editor workflow, and check mode; the style
+guides' separation between mechanical layout and broader source policy; the community
+guide's concrete continuation and proof-layout examples; and Lean's generic
+parser-formatter registry. LeanFmt's losslessness, proof preservation, leading operators,
+tail indentation, and diagnostic checks should remain defining features.
 
 ## At a glance
 
-| Dimension | Official style guide | LeanFmt | pretty-lean |
-| --- | --- | --- | --- |
-| Nature | Human style policy for Lean's standard library | Standalone formatter and library | Fork of the Lean compiler and language server |
-| Layout model | Multiple layouts are often permitted; readability decides | Syntax rules plus a lossless tree and stateful renderer | Lean parser formatters produce `Std.Format` documents |
-| Parsing context | Not applicable | Processes imports to load project syntax | Processes the file header; formatting requires parsing, not elaboration |
-| Current syntax scope | Describes common standard-library constructs | Common commands and terms, with lossless fallback and missing-rule diagnostics | Broad Lean parser coverage through parser and formatter registrations |
-| Indentation | Two spaces; declaration-header continuations use four | Two spaces | Lean `Format` default of two spaces |
-| Line width | No fixed limit | 90 characters | Lean `Format` default of 120, configurable through options |
-| Infix wrapping | Operator ends the preceding line | Operator begins the continuation line | Parser pretty-printing places an operator at the preceding line end in current tests |
-| Comments | Specifies documentation style and file policy | Preserves comment contents and reindents surrounding trivia | Retains source gaps, but current tests show comment text can be normalized |
-| Proofs | Gives semantic and tactical style advice | Preserves proof subtrees | Reformats tactic syntax |
-| Unknown/custom syntax | Requires public syntax policy but says nothing about formatter fallback | Keeps tokens, uses generic layout, and reports missing rules | Parser authors can register or synthesize formatters with their syntax |
-| Editor support | Not applicable | None built in | Full-document and command-overlapping range formatting through LSP |
-| CLI/CI | Not applicable | In-place formatting, recursive discovery, check mode, and diagnostic checks | `lake format`, `lake fmt`, `lean --format`, and `--format-check`; CLI is marked WIP |
-| Safety checks | Review by contributors | Code preservation, overflow, missing rules, convergence, and optional idempotency | Per-command fallback when pretty-printing fails; check mode detects changes |
+| Dimension | Standard-library guide | Community guide | LeanFmt | pretty-lean |
+| --- | --- | --- | --- | --- |
+| Nature | Human policy for Lean's standard library | Human policy for community libraries | Standalone formatter and library | Fork of the Lean compiler and language server |
+| Layout model | Several layouts are often permitted | Concrete conventions, still guided by readability | Syntax rules plus a lossless tree and stateful renderer | Lean parser formatters produce `Std.Format` documents |
+| Parsing context | Not applicable | Not applicable | Processes imports to load project syntax | Processes the file header; formatting requires parsing, not elaboration |
+| Indentation | Two spaces; declaration-header continuations use four | Two spaces; multiline theorem statements use four | Two spaces | Lean `Format` default of two spaces |
+| Line width | No fixed limit | At most 100 characters | 90 characters | Lean `Format` default of 120, configurable through options |
+| Infix wrapping | Operator ends the preceding line | Operator ends the preceding line | Operator begins the continuation line | Parser pretty-printing places an operator at the preceding line end in current tests |
+| Comments | Specifies documentation style and file policy | Specifies headers, module docs, and declaration docs | Preserves comment contents and reindents surrounding trivia | Retains source gaps, but current tests show comment text can be normalized |
+| Proofs | Gives semantic and tactical style advice | Prefers readable tactic and calculation layouts | Preserves proof subtrees | Reformats tactic syntax |
+| Unknown/custom syntax | Requires public syntax policy but says nothing about formatter fallback | Not addressed as a formatting mechanism | Keeps tokens, uses generic layout, and reports missing rules | Parser authors can register or synthesize formatters with their syntax |
+| CLI/CI | Not applicable | Linters and human review complement the guide | In-place formatting, recursive discovery, check mode, and diagnostic checks | `lake format`, `lake fmt`, `lean --format`, and `--format-check`; CLI is marked WIP |
+| Safety checks | Review by contributors | Review and library linters | Code preservation, overflow, missing rules, convergence, and optional idempotency | Per-command fallback when pretty-printing fails; check mode detects changes |
 
 ## Target-by-target formatting comparison
 
@@ -113,20 +113,24 @@ should remain covered by a focused test rather than emerge accidentally from fit
 
 #### Attribute placement
 
-LeanFmt gives an attribute its own line:
-
-```lean
-@[simp]
-theorem eraseP_nil : [].eraseP p = [] := rfl
-```
-
-The official guide also permits an attribute on the declaration line:
+LeanFmt keeps a fitting attribute and declaration together when the source does:
 
 ```lean
 @[simp] theorem eraseP_nil : [].eraseP p = [] := rfl
 ```
 
-The guide accepts both forms, while LeanFmt selects the first as its canonical layout.
+It preserves a source break between them, and it breaks after the attribute when the
+declaration itself must become multiline:
+
+```lean
+@[simp]
+theorem eraseP_cons (a : α) (l : List α)
+    : (a :: l).eraseP p = conditionalResult := by
+  proof
+```
+
+The official guide permits both placements. LeanFmt is intentionally source-sensitive at
+this boundary rather than selecting only one of them.
 
 #### Multiline collections
 
@@ -193,6 +197,150 @@ The guide also covers copyright headers, module documentation, documentation moo
 public-syntax review, and proof-engineering practices. These are editorial or semantic
 policies, not alternate whitespace layouts. LeanFmt appropriately leaves them to linters
 and reviewers.
+
+### Lean community library style guide
+
+The [Lean community guide][community-style] is more expansive than the standard-library
+guide. It combines whitespace conventions with library organization, naming, Unicode,
+documentation, statement design, proof style, and performance advice. It explicitly
+presents these as guidelines rather than rigid rules. LeanFmt overlaps with its
+mechanical layout subset while leaving editorial and semantic choices to authors,
+linters, and review.
+
+#### Default line width
+
+LeanFmt uses 90 columns by default, so a line in the guide's 91–100-column allowance can
+wrap:
+
+```lean
+def result :=
+  resolveFieldWithValidatedArguments schema parentType sourceValue fieldDefinition
+```
+
+The community guide permits lines up to 100 characters, so the same expression may stay
+on one line:
+
+```lean
+def result := resolveFieldWithValidatedArguments schema parentType sourceValue fieldDefinition
+```
+
+The difference is configurable rather than structural: a community project can pass
+`--line-width 100`. LeanFmt should retain its own default instead of treating the
+community limit as universal.
+
+#### Leading versus trailing infix operators
+
+LeanFmt begins continuation lines with infix operators:
+
+```lean
+firstCondition
+&& secondCondition
+&& thirdCondition
+```
+
+The community guide asks that an infix operator remain before the line break:
+
+```lean
+firstCondition &&
+  secondCondition &&
+  thirdCondition
+```
+
+This is the same intentional difference as with the standard-library guide. Adopting the
+community direction would remove the motivation for some tail indentation, but would
+also discard LeanFmt's vertical operator spine and its existing logical layout.
+
+#### Declaration statements and proof indentation
+
+LeanFmt places a wrapped declaration colon at the beginning of a header component and
+uses leading operators in the result type:
+
+```lean
+theorem resolvesField (schema : Schema) (field : Field)
+    : FieldIsDefined schema field
+      → ArgumentsAreValid schema field
+      → ResolutionSucceeds schema field := by
+  proof
+```
+
+The community guide keeps the colon and operators before their line breaks. It indents a
+multiline theorem statement by four spaces while keeping the proof only two spaces in
+from the declaration:
+
+```lean
+theorem resolvesField (schema : Schema) (field : Field) :
+    FieldIsDefined schema field →
+    ArgumentsAreValid schema field →
+    ResolutionSucceeds schema field := by
+  proof
+```
+
+The two styles agree that `by` should remain attached to the preceding statement and
+that the proof has a stable two-space base. Their difference is how the statement itself
+communicates continuation.
+
+#### Balanced collections versus argument alignment
+
+LeanFmt gives a multiline anonymous constructor balanced delimiters and one item per
+line:
+
+```lean
+theorem result : (P → Q) ∧ (R → S) :=
+  ⟨
+    fun h => firstProof h,
+    fun h => secondProof h
+  ⟩
+```
+
+The community guide gives an example in which constructor arguments align beneath the
+first argument and the delimiters remain attached:
+
+```lean
+theorem result : (P → Q) ∧ (R → S) :=
+  ⟨fun h => firstProof h,
+   fun h => secondProof h⟩
+```
+
+The community form is compact and preserves horizontal alignment. LeanFmt's balanced
+form scales more uniformly when either item becomes multiline and avoids using the first
+item's starting column as a lasting indentation anchor.
+
+#### Proof source policy versus proof preservation
+
+LeanFmt deliberately preserves the contents of a proof subtree, including a short tactic
+sequence written on one line:
+
+```lean
+example : Goal := by
+  rw [h]; exact result
+```
+
+The community guide permits compact tactic sequences in limited cases but generally
+prefers one tactic invocation per line:
+
+```lean
+example : Goal := by
+  rw [h]
+  exact result
+```
+
+Likewise, the guide describes alignment alternatives for `calc`, focusing dots, named
+cases, and when to use term or tactic mode. These are valuable authoring conventions,
+but applying them mechanically would require LeanFmt to take ownership of proof layout.
+That would conflict with its current conservative proof-preservation boundary.
+
+#### Source policy outside formatting
+
+The community guide also recommends explicit binder and return types, hypotheses to the
+left of the declaration colon, `where` syntax for instances, preferred Unicode notation,
+module headers and docstrings, declaration docstrings, naming conventions, and proof or
+API design practices. These recommendations may require changing syntax or meaning; they
+belong in linters, editor assistance, and review rather than LeanFmt's whitespace rules.
+
+The immediate lesson for LeanFmt is narrower: document its intentional leading-operator,
+wrapped-colon, balanced-delimiter, width, and proof-preservation differences clearly.
+The guide is also a strong source of corpus examples for compatibility tests, even when
+LeanFmt deliberately produces a different canonical layout.
 
 ### pretty-lean
 
@@ -610,7 +758,8 @@ name, at minimum:
 - leading infix operators instead of the official trailing-operator style;
 - a leading declaration type colon on wrapped headers;
 - deterministic balanced collections where the guide permits alternatives;
-- attributes on their own line rather than either same-line or separate placement;
+- source-sensitive attribute placement, with a required break before a multiline
+  declaration;
 - lexeme and proof preservation instead of Unicode and tactic-style normalization;
 - preservation of both tight and spaced flat structure braces.
 
@@ -630,12 +779,13 @@ should first be explained as head indentation, a tail floor, balanced breaks, or
 breaks; a renderer change is justified only when none of those concepts can express the
 layout.
 
-### 3. Add an official-style compatibility fixture group
+### 3. Add style-guide compatibility fixture groups
 
-Build focused fixtures from the official guide for the rules LeanFmt intends to share:
-applications, `if`, matches, structures, `where`, termination suffixes, `deriving`, `do`,
-and non-orphaned delimiters. Put deliberate divergences in an adjacent group whose names
-state the choice, such as `leading-infix` and `leading-declaration-colon`.
+Build focused fixtures from both style guides for the rules LeanFmt intends to share:
+applications, declaration and proof bases, `if`, matches, structures, `where`,
+termination suffixes, `deriving`, `do`, and non-orphaned delimiters. Put deliberate
+divergences in an adjacent group whose names state the choice, such as `leading-infix`,
+`leading-declaration-colon`, and `balanced-constructor`.
 
 This will catch accidental drift without turning a flexible human guide into an
 incorrect claim of complete conformance.
@@ -673,8 +823,9 @@ propositions. Exact comment contents should remain invariant.
 
 ### 7. Keep 90 columns as the default, with explicit project override
 
-The official guide has no fixed width, while Lean's pretty-printer defaults to 120.
-This confirms that line width is project policy, not a Lean language standard.
+The standard-library guide has no fixed width, the community guide uses 100, and Lean's
+pretty-printer defaults to 120. This confirms that line width is project policy, not a
+Lean language standard.
 
 LeanFmt's 90-column default is coherent with its current fixtures and local style.
 Projects with a different convention can pass an explicit width through the CLI. The
@@ -691,10 +842,10 @@ formatter changed only what it promised to change.”
 
 ## Conclusion
 
-LeanFmt should not try to become an exact implementation of the Lean standard-library
-guide. The guide contains valuable shared conventions, but it permits human choices and
-includes editorial policies outside a formatter's scope. LeanFmt is better understood as
-an opinionated, lossless Lean style with explicit departures where vertical structure is
+LeanFmt should not try to become an exact implementation of either Lean style guide.
+They contain valuable shared conventions, but permit human choices and include editorial
+or semantic policies outside a formatter's scope. LeanFmt is better understood as an
+opinionated, lossless Lean style with explicit departures where vertical structure is
 clearer.
 
 pretty-lean offers the best model for grammar-owned extension rules and editor
@@ -704,13 +855,14 @@ attempting mathlib syntax, but its tests do not establish mathlib-grade formatti
 correctness.
 
 The practical direction is therefore evolutionary: keep the present formatting model,
-make its differences explicit, test the shared official conventions, audit and
+make its differences explicit, test the shared community conventions, audit and
 selectively reuse Lean's parser-formatter metadata, and add editor integration without
 sacrificing token, comment, proof, or diagnostic guarantees.
 
 ## Sources
 
 - [Lean 4 standard-library style guide][lean-style]
+- [Lean community library style guide][community-style]
 - [Lean formatter registry and combinators][lean-formatter]
 - [Lean parser compiler][lean-parser-compiler]
 - [Lean pretty-printer entry points][lean-pretty-printer]
@@ -722,6 +874,7 @@ sacrificing token, comment, proof, or diagnostic guarantees.
 - [pretty-lean application formatter][pretty-app-formatter]
 
 [lean-style]: https://github.com/leanprover/lean4/blob/master/doc/std/style.md
+[community-style]: https://leanprover-community.github.io/contribute/style.html
 [lean-formatter]: https://github.com/leanprover/lean4/blob/master/src/Lean/PrettyPrinter/Formatter.lean
 [lean-parser-compiler]: https://github.com/leanprover/lean4/blob/master/src/Lean/ParserCompiler.lean
 [lean-pretty-printer]: https://github.com/leanprover/lean4/blob/master/src/Lean/PrettyPrinter.lean
