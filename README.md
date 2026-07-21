@@ -76,6 +76,11 @@ LeanFmt. LeanFmt is then built with the project's selected Lean version, which i
 important because it loads that project's parser extensions and imported
 environments.
 
+Projects that do not want LeanFmt in their published dependency graph may place
+the requirement in a separate development-tool Lake package instead. That tool
+package should also depend on the project by a local path so LeanFmt can load the
+project's dependencies and parser extensions.
+
 Then format files or directories through Lake:
 
 ```sh
