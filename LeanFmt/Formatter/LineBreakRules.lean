@@ -2153,6 +2153,8 @@ def ruleFor : SyntaxTree.Tree → Option LineBreakRule
   | .node (.raw `BigOperators.bigexpect) _ => some defaultRule
   | .node (.raw `BigOperators.bigOpBinders) _ => some defaultRule
   | .node (.raw `BigOperators.bigOpBinder) _ => some defaultRule
+  | .node (.raw `«DistribMulActionHomLocal≺») _ => some defaultRule
+  | .node (.raw `«DistribMulActionHomIdLocal≺») _ => some defaultRule
   | .node (.raw `Std.termF!_) _ => some defaultRule
   | .node (.raw `Batteries.ExtendedBinder.extBinders) _ => some defaultRule
   | .node (.raw `Batteries.ExtendedBinder.extBinder) _ => some defaultRule
@@ -2161,6 +2163,8 @@ def ruleFor : SyntaxTree.Tree → Option LineBreakRule
   | .node (.raw `choice) _ => some transparentRule
   | .node (.raw `Lean.Parser.Syntax.atom) _ => some transparentRule
   | .node (.raw `Lean.Parser.Syntax.cat) _ => some transparentRule
+  | .node (.raw `Lean.Parser.Syntax.paren) _ => some transparentRule
+  | .node (.raw `stx_?) _ => some transparentRule
   | .node (.raw `«stx_,*») _ => some transparentRule
   | .node (.raw `Lean.Parser.Term.quot) _ => some defaultRule
   | .node (.raw `Lean.Parser.Tactic.quot) _ => some defaultRule
@@ -2192,6 +2196,7 @@ def ruleFor : SyntaxTree.Tree → Option LineBreakRule
   | .node (.raw `Parser.Attr.functor_norm) _ => some defaultRule
   | .node (.raw `Parser.Attr.fin_omega) _ => some defaultRule
   | .node (.raw `Mathlib.Tactic.ToAdditive.to_additive) _ => some defaultRule
+  | .node (.raw `Lean.Elab.Command.irredDefLemma) _ => some defaultRule
   | .node (.raw `Mathlib.Tactic.MkIff.mkIff) _ => some defaultRule
   | .node (.raw `Mathlib.Tactic.Translate.attrArgs) _ => some defaultRule
   | .node (.raw `Mathlib.Tactic.Translate.bracketedOption) _ => some defaultRule

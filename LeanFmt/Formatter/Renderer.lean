@@ -437,6 +437,13 @@ def isCustomBracedTermSyntaxTree : SyntaxTree.Tree → Bool
       && treeHasLineBreakTrivia tree
   | _ => false
 
+def isCustomSubalgebraAdjoinSyntaxTree : SyntaxTree.Tree → Bool
+  | .node
+      (.raw `Algebra.Subalgebra.AlgHom.Subalgebra.Subalgebra.Algebra.subalgebra_adjoin)
+      _ =>
+      true
+  | _ => false
+
 def isCommentSensitiveMatchExpr : SyntaxTree.Tree → Bool
   | tree@(.node (.raw `Lean.Parser.Term.matchExpr) _) =>
       treeHasCommentTrivia tree
@@ -526,6 +533,7 @@ def shouldEmitOriginalTree (tree : SyntaxTree.Tree) : Bool :=
   || isLayoutSensitiveCommand tree
   || isMathlibTacticSyntaxTree tree
   || isCustomBracedTermSyntaxTree tree
+  || isCustomSubalgebraAdjoinSyntaxTree tree
   || isSyntaxCommentTree tree
 
 def isTheoremValueChild (parent : SyntaxTree.Tree) (index : Nat) : Bool :=

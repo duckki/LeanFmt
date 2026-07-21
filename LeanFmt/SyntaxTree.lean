@@ -652,7 +652,14 @@ partial def parseModuleCommandsQuiet
     Parser.parseCommand inputContext { env, options := {} } state messages
   if Parser.isTerminalCommand command then
     if messages.hasUnreported then
-      throw <| IO.userError "failed to parse file"
+      let messageTexts ← messages.toList.mapM fun message => message.toString
+      let details := "\n".intercalate messageTexts
+      throw
+      <| IO.userError
+      <|  if details.isEmpty then
+            "failed to parse file"
+          else
+            s!"failed to parse file:\n{details}"
     else
       pure commands
   else
