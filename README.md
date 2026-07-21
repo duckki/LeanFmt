@@ -72,7 +72,10 @@ lake exe fmt --recursive LeanFmt
 ```
 
 Directory arguments include directly contained `.lean` files. Pass
-`--recursive` or `-r` to include nested directories.
+`--recursive` or `-r` to include nested directories. Hidden files and
+directories discovered inside directory arguments are skipped by default.
+Explicitly supplied hidden paths are still processed. Pass `--include-hidden`
+to include hidden descendants during directory traversal.
 
 To verify formatting without changing files, use `--check`:
 

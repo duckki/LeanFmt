@@ -10,6 +10,7 @@ structure Options where
   checkException : Bool := false
   checkIdempotent : Bool := false
   recursive : Bool := false
+  includeHidden : Bool := false
   environmentCacheSize : Nat := 1
   importEnvironmentFirst : Bool := false
   files : List FilePath := []
@@ -109,12 +110,14 @@ deriving DecidableEq, Repr
 def usage : String :=
   String.intercalate "\n"
     [
-      "Usage: fmt [--check] [--recursive] PATH...",
+      "Usage: fmt [--check] [--recursive] [--include-hidden] PATH...",
       "",
       "Options:",
       "  --check   Check whether files are already formatted without rewriting them.",
       "  -r, --recursive",
       "            Recursively format Lean files under directory arguments.",
+      "  --include-hidden",
+      "            Include hidden entries discovered during directory traversal.",
       "  -h, --help",
       "",
       "Internal debugging options (not intended for general use):",
@@ -152,6 +155,8 @@ def parseArgs (args : List String) : ParseResult :=
         loop { options with importEnvironmentFirst := true } files rest
     | "--recursive" :: rest | "-r" :: rest =>
         loop { options with recursive := true } files rest
+    | "--include-hidden" :: rest =>
+        loop { options with includeHidden := true } files rest
     | "-h" :: _ | "--help" :: _ => .help
     | arg :: rest =>
         if arg.startsWith "-" then
@@ -313,20 +318,24 @@ def formatFile (cache : EnvironmentCache) (options : Options) (path : FilePath)
 
 def isLeanFile (path : FilePath) : Bool := path.extension == some "lean"
 
-partial def leanFilesInDirectory (recursive : Bool) (dir : FilePath)
+def isHiddenName (name : String) : Bool :=
+  name.startsWith "." && name != "." && name != ".."
+
+partial def leanFilesInDirectory (options : Options) (dir : FilePath)
     : IO (List FilePath) := do
   let mut files := []
   for entry in (← dir.readDir) do
-    if (← entry.path.isDir) then
-      if recursive && entry.fileName != ".lake" then
-        files := files ++ (← leanFilesInDirectory recursive entry.path)
-    else if isLeanFile entry.path then
-      files := files ++ [entry.path]
+    if options.includeHidden || !isHiddenName entry.fileName then
+      if (← entry.path.isDir) then
+        if options.recursive then
+          files := files ++ (← leanFilesInDirectory options entry.path)
+      else if isLeanFile entry.path then
+        files := files ++ [entry.path]
   pure files
 
 def expandInputPath (options : Options) (path : FilePath) : IO (List FilePath) := do
   if (← path.pathExists) && (← path.isDir) then
-    leanFilesInDirectory options.recursive path
+    leanFilesInDirectory options path
   else
     pure [path]
 

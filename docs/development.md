@@ -62,6 +62,8 @@ lake exe fmt --check --recursive Some/Directory
 ```
 
 `--recursive` or `-r` makes directory arguments include nested `.lean` files.
+Hidden entries discovered during directory traversal are skipped unless
+`--include-hidden` is passed; an explicitly supplied hidden path is still processed.
 
 ## Validation checks
 

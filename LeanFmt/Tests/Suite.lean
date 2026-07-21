@@ -3016,6 +3016,8 @@ def assertCliParsing : IO Unit := do
     LeanFmt.Cli.usage "--env-cache-size"
   assertTextContains "CLI help documents import-first environment control"
     LeanFmt.Cli.usage "--import-env-first"
+  assertTextContains "CLI help documents hidden-path override"
+    LeanFmt.Cli.usage "--include-hidden"
   assertTextLacks "CLI help omits replaced preservation option"
     LeanFmt.Cli.usage "--check-preserves-code"
   assertTextLacks "CLI help omits replaced unknown-rule option"
@@ -3111,6 +3113,11 @@ def assertCliParsing : IO Unit := do
   | .run _ => pure ()
   | result =>
       throw <| IO.userError s!"CLI parser should accept -r: {repr result}"
+  match LeanFmt.Cli.parseArgs ["--include-hidden", "GraphQL"] with
+  | .run options =>
+      assertTrue "CLI include-hidden flag" options.includeHidden
+  | result =>
+      throw <| IO.userError s!"CLI parser should accept --include-hidden: {repr result}"
   match Cli.parseArgs ["--update-fixture", "--trace-renderer", "fixture.leanfmt"] with
   | .run options =>
       assertTrue "CLI update fixture trace mode" (options.mode == .updateFixture)
@@ -3306,7 +3313,8 @@ def assertCliChecksStillFormatUnlessCheck (env : Lean.Environment) : IO Unit := 
   let preservingSource := "def  preserving  : Nat := 0\n"
   IO.FS.writeFile preservingFile preservingSource
   let preservingExitCode ←
-    LeanFmt.Cli.runOptions { checkException := true, files := [preservingFile] }
+    LeanFmt.Cli.runOptions
+      { checkException := true, includeHidden := true, files := [preservingFile] }
   assertTrue "CLI exception check still formats" (preservingExitCode == 0)
   let preservingFormatted ←
     Formatter.formatSourceWithEnv env preservingSource preservingFile.toString
@@ -3324,7 +3332,11 @@ def assertCliChecksStillFormatUnlessCheck (env : Lean.Environment) : IO Unit := 
   IO.FS.writeFile afterExceptionFile afterExceptionSource
   let overflowExitCode ←
     LeanFmt.Cli.runOptions
-      { checkException := true, files := [overflowFile, afterExceptionFile] }
+      {
+        checkException := true
+        includeHidden := true
+        files := [overflowFile, afterExceptionFile]
+      }
   assertTrue "CLI exception check rejects remaining overflow" (overflowExitCode == 1)
   assertEq "CLI exception failure prevents writes"
     overflowSource (← IO.FS.readFile overflowFile)
@@ -3337,7 +3349,8 @@ def assertCliChecksStillFormatUnlessCheck (env : Lean.Environment) : IO Unit := 
   let idempotentSource := "def  idempotent  : Nat := 0\n"
   IO.FS.writeFile idempotentFile idempotentSource
   let idempotentExitCode ←
-    LeanFmt.Cli.runOptions { checkIdempotent := true, files := [idempotentFile] }
+    LeanFmt.Cli.runOptions
+      { checkIdempotent := true, includeHidden := true, files := [idempotentFile] }
   assertTrue "CLI idempotence check still formats" (idempotentExitCode == 0)
   let idempotentFormatted ←
     Formatter.formatSourceWithEnv env idempotentSource idempotentFile.toString
@@ -3353,6 +3366,7 @@ def assertCliChecksStillFormatUnlessCheck (env : Lean.Environment) : IO Unit := 
         check := true
         checkException := true
         checkIdempotent := true
+        includeHidden := true
         files := [checkedFile]
       }
   assertTrue "CLI diagnostic --check ignores formatting changes" (checkedExitCode == 0)
@@ -3360,7 +3374,8 @@ def assertCliChecksStillFormatUnlessCheck (env : Lean.Environment) : IO Unit := 
     checkedSource (← IO.FS.readFile checkedFile)
 
   let ordinaryCheckExitCode ←
-    LeanFmt.Cli.runOptions { check := true, files := [checkedFile] }
+    LeanFmt.Cli.runOptions
+      { check := true, includeHidden := true, files := [checkedFile] }
   assertTrue "CLI ordinary --check still fails on formatting changes"
     (ordinaryCheckExitCode == 1)
 
@@ -3374,7 +3389,7 @@ def assertCliFormatsDirectory (env : Lean.Environment) : IO Unit := do
   let nestedSource := "def  nested  : Nat := 0\n"
   IO.FS.writeFile topFile topSource
   IO.FS.writeFile nestedFile nestedSource
-  let exitCode ← LeanFmt.Cli.runOptions { files := [root] }
+  let exitCode ← LeanFmt.Cli.runOptions { includeHidden := true, files := [root] }
   assertTrue "CLI directory format succeeds" (exitCode == 0)
   let topFormatted ← Formatter.formatSourceWithEnv env topSource topFile.toString
   assertEq "CLI formats direct Lean files in directory" topFormatted
@@ -3392,7 +3407,7 @@ def assertCliFormatsDirectoryRecursively (env : Lean.Environment) : IO Unit := d
   let nestedSource := "def  nested  : Nat := 0\n"
   IO.FS.writeFile topFile topSource
   IO.FS.writeFile nestedFile nestedSource
-  match LeanFmt.Cli.parseArgs ["-r", root.toString] with
+  match LeanFmt.Cli.parseArgs ["-r", "--include-hidden", root.toString] with
   | .run options =>
       let exitCode ← LeanFmt.Cli.runOptions options
       assertTrue "CLI recursive directory format succeeds" (exitCode == 0)
@@ -3407,13 +3422,66 @@ def assertCliFormatsDirectoryRecursively (env : Lean.Environment) : IO Unit := d
       throw
       <| IO.userError s!"CLI parser should accept recursive directory: {repr result}"
 
+def assertCliSkipsHiddenPathsByDefault : IO Unit :=
+  IO.FS.withTempDir
+    fun root =>
+      do
+        let visibleFile := root / "Visible.lean"
+        let hiddenFile := root / ".Hidden.lean"
+        let visibleDir := root / "visible"
+        let hiddenDir := root / ".hidden"
+        let visibleNestedFile := visibleDir / "Nested.lean"
+        let hiddenNestedFile := hiddenDir / "Nested.lean"
+        IO.FS.createDirAll visibleDir
+        IO.FS.createDirAll hiddenDir
+        for file in [visibleFile, hiddenFile, visibleNestedFile, hiddenNestedFile] do
+          IO.FS.writeFile file "def value : Nat := 0\n"
+
+        let defaultFiles ←
+          LeanFmt.Cli.expandInputPaths { recursive := true, files := [root] }
+        assertTrue "CLI discovers visible direct files"
+          (defaultFiles.contains visibleFile)
+        assertTrue "CLI discovers visible nested files"
+          (defaultFiles.contains visibleNestedFile)
+        assertTrue "CLI skips hidden files" (!defaultFiles.contains hiddenFile)
+        assertTrue "CLI skips hidden directories"
+          (!defaultFiles.contains hiddenNestedFile)
+
+        let explicitHiddenFile ←
+          LeanFmt.Cli.expandInputPaths { files := [hiddenNestedFile] }
+        assertTrue "CLI processes an explicitly supplied file under a hidden directory"
+          (explicitHiddenFile == [hiddenNestedFile])
+
+        let hiddenChildFile := hiddenDir / ".Child.lean"
+        IO.FS.writeFile hiddenChildFile "def child : Nat := 0\n"
+        let explicitHiddenDirectory ←
+          LeanFmt.Cli.expandInputPaths { recursive := true, files := [hiddenDir] }
+        assertTrue "CLI enters an explicitly supplied hidden directory"
+          (explicitHiddenDirectory.contains hiddenNestedFile)
+        assertTrue "CLI still skips hidden entries inside an explicit hidden directory"
+          (!explicitHiddenDirectory.contains hiddenChildFile)
+
+        let includedFiles ←
+          LeanFmt.Cli.expandInputPaths
+            { recursive := true, includeHidden := true, files := [root] }
+        for file
+            in [
+              visibleFile,
+              hiddenFile,
+              visibleNestedFile,
+              hiddenNestedFile,
+              hiddenChildFile
+            ] do
+          assertTrue s!"CLI --include-hidden discovers {file}"
+            (includedFiles.contains file)
+
 def assertCliLoadsImportedSyntax : IO Unit := do
   let root : FilePath := ".lake/leanfmt-cli-test/project-env"
   IO.FS.createDirAll root
   let file := root / "ImportedSyntax.lean"
   let source := "import LeanFmt.Tests.ProjectSyntax\n\n#check project_syntax\n"
   IO.FS.writeFile file source
-  let exitCode ← LeanFmt.Cli.runOptions { files := [file] }
+  let exitCode ← LeanFmt.Cli.runOptions { includeHidden := true, files := [file] }
   assertTrue "CLI loads syntax from imported modules" (exitCode == 0)
   assertEq "CLI preserves imported syntax source" source (← IO.FS.readFile file)
 
@@ -4034,6 +4102,7 @@ def runCliAndArchitectureTests (env : Lean.Environment) : IO Unit := do
   assertCliChecksStillFormatUnlessCheck env
   assertCliFormatsDirectory env
   assertCliFormatsDirectoryRecursively env
+  assertCliSkipsHiddenPathsByDefault
   assertCliLoadsImportedSyntax
   assertFmtExecutableConfigured
   assertRendererTraceIncludesPathAndState env
