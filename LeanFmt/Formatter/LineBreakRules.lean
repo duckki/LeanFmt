@@ -597,6 +597,14 @@ def leadingAnnotationBreaks (_context : RuleContext) (segment : Segment)
 def annotatedDeclarationBreaks : RuleContext → Segment → List BreakPoint :=
   leadingAnnotationBreaks
 
+def declarationModifierBreaks (_context : RuleContext) (segment : Segment)
+    : List BreakPoint :=
+  match defaultPresentChildIndexes segment with
+  | [] => []
+  | [_] => []
+  | _ :: rest =>
+      rest.filterMap fun index => boundaryBreak? segment index 0
+
 def derivingBreaks (_context : RuleContext) (segment : Segment) : List BreakPoint :=
   match segment.indexes.find?
           fun index => childStartsWithLexeme segment index "deriving" with
@@ -1341,8 +1349,15 @@ def annotatedDeclarationRule : LineBreakRule :=
     name := "annotatedDeclaration"
     useExistingBreaks := fun _ _ => true
     flow := fun context segment => !(annotatedDeclarationBreaks context segment).isEmpty
-    inheritBase := fun _ _ => true
+    inheritBase := fun _ _ => false
     breakPoints := annotatedDeclarationBreaks
+  }
+
+def declarationModifierRule : LineBreakRule :=
+  {
+    name := "declarationModifier"
+    useExistingBreaks := fun _ _ => true
+    breakPoints := declarationModifierBreaks
   }
 
 def structureRule : LineBreakRule :=
@@ -2070,7 +2085,8 @@ def ruleFor : SyntaxTree.Tree → Option LineBreakRule
   | .node (.raw `Lean.Parser.Command.openOnly) _ => some defaultRule
   | .node (.raw `Lean.Parser.Command.variable) _ => some variableCommandRule
   | .node (.raw `Lean.Parser.Command.set_option) _ => some setOptionRule
-  | .node (.raw `Lean.Parser.Command.declModifiers) _ => some defaultRule
+  | .node (.raw `Lean.Parser.Command.declModifiers) _ =>
+      some declarationModifierRule
   | .node (.raw `Lean.Parser.Command.declId) _ => some transparentRule
   | .node (.raw `Lean.Parser.Command.declValEqns) _ => some defaultRule
   | .node (.raw `Lean.Parser.Command.optDeriving) _ => some defaultRule

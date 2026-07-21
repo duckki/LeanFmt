@@ -563,15 +563,17 @@ def shouldEmitOriginalTree (tree : SyntaxTree.Tree) : Bool :=
   || isCustomSubalgebraAdjoinSyntaxTree tree
   || isSyntaxCommentTree tree
 
-def isTheoremValueChild (parent : SyntaxTree.Tree) (index : Nat) : Bool :=
+def isTheoremValueChild (parent : SyntaxTree.Tree) (index : Nat) (child : SyntaxTree.Tree)
+    : Bool :=
   match parent with
-  | .node (.raw `Lean.Parser.Command.theorem) _ => index == 3
+  | .node (.raw `Lean.Parser.Command.theorem) _ =>
+      index == 3 && containsProofTree child
   | _ => false
 
 def shouldEmitOriginalChild
     (parent : SyntaxTree.Tree) (index : Nat) (child : SyntaxTree.Tree)
     : Bool :=
-  isTheoremValueChild parent index || shouldEmitOriginalTree child
+  isTheoremValueChild parent index child || shouldEmitOriginalTree child
 
 partial def treeStartsWithOriginalEmission : SyntaxTree.Tree → Bool
   | .missing => false

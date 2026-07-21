@@ -214,6 +214,14 @@ def assertSetOptionInBreaksAfterIn (env : Lean.Environment) : IO Unit := do
   assertTextContains "set_option keeps in before command break" formatted "false in\n"
   assertTextLacks "set_option does not break before in" formatted "false\nin theorem"
 
+def assertDocumentedTopLevelDeclarationKeepsBaseIndent (env : Lean.Environment)
+    : IO Unit := do
+  let source := "variable {R : Type}\n" ++ "\n" ++ "/-- Documented definition. -/\n"
+    ++ "noncomputable def documentedTopLevelValue (r : R) : R := r\n"
+  let formatted ←
+    Formatter.formatSourceWithEnv env source "documented-top-level-declaration.lean"
+  assertEq "documented top-level declaration keeps base indent" source formatted
+
 def assertCommandInWrapperPreservesBreakAfterIn (env : Lean.Environment) : IO Unit := do
   let source :=
     "variable {p q r s t u v w : Prop} in\n"
@@ -993,6 +1001,17 @@ def assertDeclarationValueInfixBreaksAfterAssign (env : Lean.Environment) : IO U
   let formatted ←
     Formatter.formatSourceWithEnv env source "declaration-value-infix-break.lean"
   assertEq "declaration value infix breaks after assignment" expected formatted
+
+def assertLongDeclarationDirectValueBreaksAfterAssign (env : Lean.Environment)
+    : IO Unit := do
+  let source :=
+    "theorem declarationDirectValueBreaksAfterAssignWithLongEnoughName : True := veryLongDirectTheoremValueNameForLayoutTestingAndOverflow\n"
+  let expected :=
+    "theorem declarationDirectValueBreaksAfterAssignWithLongEnoughName : True :=\n"
+    ++ "  veryLongDirectTheoremValueNameForLayoutTestingAndOverflow\n"
+  let formatted ←
+    Formatter.formatSourceWithEnv env source "declaration-direct-value-break.lean"
+  assertEq "long declaration direct value breaks after assignment" expected formatted
 
 def assertDeclarationValueKeepsAttachedByBody (env : Lean.Environment) : IO Unit := do
   let source :=
@@ -4324,6 +4343,7 @@ def runBasicFormattingTests (env : Lean.Environment) : IO Unit := do
   assertCustomNotationBracketSpacing
   assertOperatorLikeModifierTokenPreservesParse env
   assertSetOptionInBreaksAfterIn env
+  assertDocumentedTopLevelDeclarationKeepsBaseIndent env
   assertCommandInWrapperPreservesBreakAfterIn env
   assertStackedCommandInWrappersBreakBeforeDeclaration env
   assertLeadingDotPatternConstructorsStayTight env
@@ -4370,6 +4390,7 @@ def runBasicFormattingTests (env : Lean.Environment) : IO Unit := do
   assertTerminationProofSuffixUntouched env
   assertBasicDeclarationBreak env
   assertDeclarationValueInfixBreaksAfterAssign env
+  assertLongDeclarationDirectValueBreaksAfterAssign env
   assertDeclarationValueKeepsAttachedByBody env
   assertDeclarationValueKeepsAttachedDoBody env
   assertProofValuesRemainLayoutIslands env
