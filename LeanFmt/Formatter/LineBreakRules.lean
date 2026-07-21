@@ -1562,9 +1562,14 @@ def infixBreaks (_context : RuleContext) (segment : Segment) : List BreakPoint :
                 none
 
 def commandInBreaks (_context : RuleContext) (segment : Segment) : List BreakPoint :=
-  match boundaryBreak? segment 2 0 with
-  | some breakPoint => [breakPoint]
-  | none => []
+  segment.indexes.filterMap
+    fun index =>
+      if index == segment.start then
+        none
+      else if childStartsWithLexeme segment (index - 1) "in" then
+        boundaryBreak? segment index 0
+      else
+        none
 
 def arrowInfixSegment (segment : Segment) : Bool :=
   match segment.parent with
@@ -1728,6 +1733,7 @@ def moduleRule : LineBreakRule :=
 def setOptionRule : LineBreakRule :=
   {
     name := "setOption"
+    mandatory := fun context segment => !(setOptionBreaks context segment).isEmpty
     useExistingBreaks := fun _ _ => true
     breakPoints := setOptionBreaks
   }
@@ -1777,6 +1783,7 @@ def infixChainRule : LineBreakRule :=
 def commandInChainRule : LineBreakRule :=
   {
     name := "commandInChain"
+    mandatory := fun context segment => !(commandInBreaks context segment).isEmpty
     useExistingBreaks := fun _ _ => true
     breakPoints := commandInBreaks
   }

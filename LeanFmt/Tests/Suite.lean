@@ -227,6 +227,20 @@ def assertCommandInWrapperPreservesBreakAfterIn (env : Lean.Environment) : IO Un
   assertTextContains "command in wrapper keeps command break after in"
     formatted "variable {p q r s t u v w : Prop} in\ntheorem"
 
+def assertStackedCommandInWrappersBreakBeforeDeclaration (env : Lean.Environment)
+    : IO Unit := do
+  let source :=
+    "set_option backward.defeqAttrib.useBackward true in\n"
+    ++ "set_option backward.isDefEq.respectTransparency false in\n"
+    ++ "noncomputable instance : True := trivial\n"
+  let expected :=
+    "set_option backward.defeqAttrib.useBackward true in\n"
+    ++ "set_option backward.isDefEq.respectTransparency false in\n"
+    ++ "noncomputable instance : True := trivial\n"
+  let formatted ←
+    Formatter.formatSourceWithEnv env source "stacked-command-in-wrapper.lean"
+  assertEq "stacked command in wrappers break before declaration" expected formatted
+
 def assertLeadingDotPatternConstructorsStayTight (env : Lean.Environment) : IO Unit := do
   let source :=
     "inductive Side where\n"
@@ -4265,6 +4279,7 @@ def runBasicFormattingTests (env : Lean.Environment) : IO Unit := do
   assertOperatorLikeModifierTokenPreservesParse env
   assertSetOptionInBreaksAfterIn env
   assertCommandInWrapperPreservesBreakAfterIn env
+  assertStackedCommandInWrappersBreakBeforeDeclaration env
   assertLeadingDotPatternConstructorsStayTight env
   assertFormatterConvergencePassLimit
   assertFormatterFallbackResultIsObservable env
