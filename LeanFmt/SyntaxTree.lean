@@ -67,6 +67,7 @@ inductive NodeKind where
   | matchPatterns
   | doForHeader
   | structureUpdate
+  | proofBody
 deriving BEq, Inhabited, Repr
 
 def nodeKindName : NodeKind → String
@@ -80,6 +81,7 @@ def nodeKindName : NodeKind → String
   | .matchPatterns => "LeanFmt.SyntaxTree.NodeKind.matchPatterns"
   | .doForHeader => "LeanFmt.SyntaxTree.NodeKind.doForHeader"
   | .structureUpdate => "LeanFmt.SyntaxTree.NodeKind.structureUpdate"
+  | .proofBody => "LeanFmt.SyntaxTree.NodeKind.proofBody"
 
 inductive Tree where
   | missing
@@ -422,6 +424,9 @@ def regroupDefinitionChildren (children : Array Tree) : Option (Array Tree) := d
           ++ childrenRange children 4 children.size
   | _ => none
 
+def declarationValueCommandKind (kind : SyntaxNodeKind) : Bool :=
+  kind == `Lean.Parser.Command.theorem || kind == `lemma || kind == `group
+
 def regroupDeclarationChildren (children : Array Tree) : Option (Array Tree) := do
   let modifiers ← children[0]?
   let declaration ← children[1]?
@@ -443,6 +448,12 @@ def regroupStructInstChildren (children : Array Tree) : Array Tree :=
         children.set! 1 (regroupStructureUpdateSource source)
       else
         children
+  | none => children
+
+def regroupByTacticChildren (children : Array Tree) : Array Tree :=
+  match children[0]? with
+  | some byKeyword =>
+      #[byKeyword, .node .proofBody <| childrenRange children 1 children.size]
   | none => children
 
 def isDelimitedCollectionKind (kind : SyntaxNodeKind) : Bool :=
@@ -510,6 +521,10 @@ def regroupRawNode (kind : SyntaxNodeKind) (children : Array Tree) : Tree :=
     match regroupDefinitionChildren children with
     | some definitionChildren => .node .definition definitionChildren
     | none => .node (.raw kind) children
+  else if declarationValueCommandKind kind then
+    match regroupDefinitionChildren children with
+    | some declarationChildren => .node (.raw kind) declarationChildren
+    | none => .node (.raw kind) children
   else if kind == `Lean.Parser.Command.declaration then
     match regroupDeclarationChildren children with
     | some declarationChildren => .node (.raw kind) declarationChildren
@@ -568,6 +583,8 @@ def regroupRawNode (kind : SyntaxNodeKind) (children : Array Tree) : Tree :=
     match regroupDoForChildren children with
     | some children => .node (.raw kind) children
     | none => .node (.raw kind) children
+  else if kind == `Lean.Parser.Term.byTactic || kind == `Lean.Parser.Term.byTactic' then
+    .node (.raw kind) (regroupByTacticChildren children)
   else
     .node (.raw kind) children
 

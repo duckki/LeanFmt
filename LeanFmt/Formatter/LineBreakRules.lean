@@ -353,6 +353,11 @@ def suffixTokenAction (context : RuleContext) (token : SyntaxTree.Token)
   else
     .stop
 
+def childStartsWithSuffixKeywordToken (segment : Segment) (index : Nat) : Bool :=
+  match segment.child? index >>= SyntaxTree.Tree.firstToken? with
+  | some token => suffixKeywordLexeme token.lexeme
+  | none => false
+
 -----------------------------------------------------------------------------------------
 -- Default Rule
 -----------------------------------------------------------------------------------------
@@ -548,6 +553,20 @@ partial def treeContainsAttachedBodyInfix : SyntaxTree.Tree → Bool
       segment.indexes.any (attachedBodyInfixOperator segment)
       || children.any treeContainsAttachedBodyInfix
 
+partial def treeContainsProofTree : SyntaxTree.Tree → Bool
+  | .missing => false
+  | .leaf _ => false
+  | .node .proofBody _ => true
+  | tree@(.node (.raw `Lean.Parser.Termination.suffix) children) =>
+      (SyntaxTree.Tree.firstToken? tree).isSome || children.any treeContainsProofTree
+  | .node _ children => children.any treeContainsProofTree
+
+def childHasNestedProofBody (segment : Segment) (index : Nat) : Bool :=
+  !attachedBodyStart segment index
+  && match segment.child? index with
+      | some child => treeContainsProofTree child
+      | none => false
+
 def declarationValueHasAttachedBodyInfix (segment : Segment) : Bool :=
   match contentIndexAfterLexeme? segment ":=" with
   | none => false
@@ -555,6 +574,11 @@ def declarationValueHasAttachedBodyInfix (segment : Segment) : Bool :=
       match segment.child? valueIndex with
       | some value => treeContainsAttachedBodyInfix value
       | none => false
+
+def declarationValueHasNestedProofBody (segment : Segment) : Bool :=
+  match contentIndexAfterLexeme? segment ":=" with
+  | some valueIndex => childHasNestedProofBody segment valueIndex
+  | none => false
 
 def commandAttributeBreaks (_context : RuleContext) (segment : Segment)
     : List BreakPoint :=
@@ -1065,6 +1089,9 @@ def doForHeaderBreaks (_context : RuleContext) (segment : Segment) : List BreakP
 def doUnlessBreaks (_context : RuleContext) (segment : Segment) : List BreakPoint :=
   [breakAfterLexeme? segment "do" 1].filterMap id
 
+def byTacticBreaks (_context : RuleContext) (segment : Segment) : List BreakPoint :=
+  [breakAfterLexeme? segment "by" 1].filterMap id
+
 def fromTermBreaks (_context : RuleContext) (segment : Segment) : List BreakPoint :=
   [delimiterValueBreak? segment "from"].filterMap id
 
@@ -1247,6 +1274,13 @@ def doLetRule : LineBreakRule :=
     inheritBase := fun _ _ => true
   }
 
+def byTacticRule : LineBreakRule :=
+  {
+    name := "byTactic"
+    inheritBase := fun _ _ => true
+    breakPoints := byTacticBreaks
+  }
+
 def doLetElseRule : LineBreakRule :=
   {
     name := "doLetElse"
@@ -1320,17 +1354,23 @@ def whereStructInstRule : LineBreakRule :=
   }
 
 def rawDefinitionBreaks (_context : RuleContext) (segment : Segment) : List BreakPoint :=
-  match boundaryBreak? segment 3 1 with
-  | some breakPoint => [breakPoint]
-  | none => []
-
-def theoremBreaks (_context : RuleContext) (segment : Segment) : List BreakPoint :=
-  if childIsRawKind segment 3 `Lean.Parser.Command.declValEqns then
+  if childStartsWithSuffixKeywordToken segment 3 then
+    []
+  else
     match boundaryBreak? segment 3 1 with
     | some breakPoint => [breakPoint]
     | none => []
-  else
-    []
+
+def theoremBreaks (_context : RuleContext) (segment : Segment) : List BreakPoint :=
+  let valueBreak := [declarationValueBreak? segment].filterMap id
+  let equationBreak :=
+    if childIsRawKind segment 3 `Lean.Parser.Command.declValEqns then
+      match boundaryBreak? segment 3 1 with
+      | some breakPoint => [breakPoint]
+      | none => []
+    else
+      []
+  valueBreak ++ equationBreak
 
 def inductiveBreaks (context : RuleContext) (segment : Segment) : List BreakPoint :=
   let alternativeBreaks :=
@@ -1682,6 +1722,8 @@ def segmentIsPropDefinitionBody (segment : Segment) (childIndex : Nat) : Bool :=
 def frameIsTheoremContext (frame : Frame) : Bool :=
   match frame.segment.parent with
   | .node (.raw `Lean.Parser.Command.theorem) _ => true
+  | .node (.raw `lemma) _ => true
+  | .node (.raw `group) _ => treeFirstLexeme? frame.segment.parent == some "lemma"
   | _ => false
 
 def frameIsQuantifierBody (frame : Frame) : Bool :=
@@ -1786,7 +1828,10 @@ def variableCommandRule : LineBreakRule :=
 def declarationValueRule : LineBreakRule :=
   {
     name := "declarationValue"
-    mandatory := fun _ segment => declarationValueHasAttachedBodyInfix segment
+    mandatory :=
+      fun _ segment =>
+        declarationValueHasAttachedBodyInfix segment
+        || declarationValueHasNestedProofBody segment
     inheritBase := fun _ _ => true
     breakPoints := declarationValueBreaks
   }
@@ -1943,6 +1988,7 @@ def subtypeRule : LineBreakRule :=
 def matchAltRule : LineBreakRule :=
   {
     name := "matchAlt"
+    mandatory := fun _ segment => childHasNestedProofBody segment 3
     useExistingBreaks := fun _ _ => true
     flow := fun _ _ => true
     breakPoints := matchAltBreaks
@@ -2148,7 +2194,7 @@ def ruleFor : SyntaxTree.Tree → Option LineBreakRule
   | .node (.raw `Lean.Parser.Command.simpsRule.erase) _ => some defaultRule
   | .node (.raw `Lean.Parser.Command.eraseAttr) _ => some defaultRule
   | .node (.raw `Lean.Parser.Command.classInductive) _ => some defaultRule
-  | .node (.raw `lemma) _ => some annotatedDeclarationRule
+  | .node (.raw `lemma) _ => some theoremRule
   -- Transparent expression wrappers and atomic syntax.
   | .node (.raw `Lean.Parser.Term.paren) _ => some parenRule
   | .node (.raw `Lean.Parser.Term.fun) _ => some transparentRule
@@ -2223,6 +2269,9 @@ def ruleFor : SyntaxTree.Tree → Option LineBreakRule
   | .node (.raw `Lean.Parser.Term.cdot) _ => some defaultRule
   | .node (.raw `Lean.Parser.Term.show) _ => some transparentRule
   | .node (.raw `Lean.Parser.Term.fromTerm) _ => some fromTermRule
+  | .node (.raw `Lean.Parser.Term.byTactic) _ => some byTacticRule
+  | .node (.raw `Lean.Parser.Term.byTactic') _ => some byTacticRule
+  | .node .proofBody _ => some defaultRule
   | .node (.raw `Lean.Parser.Tactic.tacticSeq) _ => some defaultRule
   | .node (.raw `Lean.Parser.Tactic.tacticSeq1Indented) _ => some defaultRule
   | .node (.raw `Lean.Parser.Tactic.exact) _ => some defaultRule
@@ -2490,7 +2539,8 @@ def ruleFor : SyntaxTree.Tree → Option LineBreakRule
   | .node (.raw `Lean.Parser.Term.doLetArrow) _ => some doLetRule
   | .node (.raw `Lean.Parser.Term.doIdDecl) _ => some doIdDeclRule
   | .node (.raw `Lean.Parser.Term.doPatDecl) _ => some doPatternDeclRule
-  | .node (.raw `group) _ => some groupRule
+  | tree@(.node (.raw `group) _) =>
+      if treeFirstLexeme? tree == some "lemma" then some theoremRule else some groupRule
   | .node (.raw `Lean.Parser.Term.matchAltsWhereDecls) _ => some matchAltsWhereDeclsRule
   | .node (.raw `Lean.Parser.Term.matchAlts) _ => some matchAltsRule
   | .node (.raw kind) _ =>

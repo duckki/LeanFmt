@@ -378,8 +378,7 @@ def RenderState.hasBlankBoundaryBefore (state : RenderState) (tree : SyntaxTree.
 
 def isProofTree (tree : SyntaxTree.Tree) : Bool :=
   match tree with
-  | .node (.raw `Lean.Parser.Term.byTactic) _ => true
-  | .node (.raw `Lean.Parser.Term.byTactic') _ => true
+  | .node .proofBody _ => true
   | .node (.raw `Lean.Parser.Termination.suffix) _ =>
       (SyntaxTree.Tree.firstToken? tree).isSome
   | _ => false
@@ -399,6 +398,15 @@ partial def containsQuotationTree : SyntaxTree.Tree → Bool
   | .leaf _ => false
   | tree@(.node _ children) =>
       isQuotationTree tree || children.any containsQuotationTree
+
+partial def containsQuotationOutsideProofTree : SyntaxTree.Tree → Bool
+  | .missing => false
+  | .leaf _ => false
+  | tree@(.node _ children) =>
+      if isProofTree tree then
+        false
+      else
+        isQuotationTree tree || children.any containsQuotationOutsideProofTree
 
 def isQqSyntaxTree : SyntaxTree.Tree → Bool
   | .node (.raw `Qq.«termQ(__)») _ => true
@@ -477,34 +485,15 @@ partial def containsProofTree : SyntaxTree.Tree → Bool
   | tree@(.node _ children) =>
       isProofTree tree || children.any containsProofTree
 
-def realTokenLexemes (tree : SyntaxTree.Tree) : List String :=
-  tree.tokens.toList.filterMap
-    fun token => if token.lexeme.isEmpty then none else some token.lexeme
-
-def tokenAfterLexeme? (lexemes : List String) (delimiter : String) : Option String :=
-  match lexemes.dropWhile (fun lexeme => lexeme != delimiter) with
-  | _ :: next :: _ => some next
-  | _ => none
-
-def declarationValueStartsWithAttachedBody (tree : SyntaxTree.Tree) : Bool :=
-  match tokenAfterLexeme? (realTokenLexemes tree) ":=" with
-  | some "by" => true
-  | some "do" => true
-  | _ => false
-
-def isDefinitionContainingProof (tree : SyntaxTree.Tree) : Bool :=
-  match tree with
-  | .node .definition _ => containsProofTree tree
-  | .node (.raw `Lean.Parser.Command.definition) _ => containsProofTree tree
-  | .node (.raw `Lean.Parser.Command.abbrev) _ => containsProofTree tree
-  | _ => false
-
 def isDefinitionContainingQuotation (tree : SyntaxTree.Tree) : Bool :=
   match tree with
-  | .node .definition _ => containsQuotationTree tree
-  | .node (.raw `Lean.Parser.Command.definition) _ => containsQuotationTree tree
-  | .node (.raw `Lean.Parser.Command.abbrev) _ => containsQuotationTree tree
-  | .node (.raw `Lean.Parser.Command.declaration) _ => containsQuotationTree tree
+  | .node .definition _ => containsQuotationOutsideProofTree tree
+  | .node (.raw `Lean.Parser.Command.definition) _ =>
+      containsQuotationOutsideProofTree tree
+  | .node (.raw `Lean.Parser.Command.abbrev) _ =>
+      containsQuotationOutsideProofTree tree
+  | .node (.raw `Lean.Parser.Command.declaration) _ =>
+      containsQuotationOutsideProofTree tree
   | _ => false
 
 def isQuotationLayoutIsland (tree : SyntaxTree.Tree) : Bool :=
@@ -514,8 +503,6 @@ def isQuotationLayoutIsland (tree : SyntaxTree.Tree) : Bool :=
 
 def isProofLayoutIsland (tree : SyntaxTree.Tree) : Bool :=
   match tree with
-  | .node (.raw `Lean.Parser.Command.declValSimple) _ =>
-      containsProofTree tree && declarationValueStartsWithAttachedBody tree
   | .node (.raw `Lean.Parser.Command.declValEqns) _ =>
       containsProofTree tree
   | .node (.raw `Lean.Parser.Term.structInst) _ =>
@@ -549,7 +536,6 @@ def shouldEmitOriginalTree (tree : SyntaxTree.Tree) : Bool :=
   || isProofLayoutIsland tree
   || isProofLemmaCommand tree
   || isAttributeModifierBlock tree
-  || isDefinitionContainingProof tree
   || isDefinitionContainingQuotation tree
   || isCalcTree tree
   || isCommentSensitiveMatchExpr tree
@@ -563,17 +549,10 @@ def shouldEmitOriginalTree (tree : SyntaxTree.Tree) : Bool :=
   || isCustomSubalgebraAdjoinSyntaxTree tree
   || isSyntaxCommentTree tree
 
-def isTheoremValueChild (parent : SyntaxTree.Tree) (index : Nat) (child : SyntaxTree.Tree)
-    : Bool :=
-  match parent with
-  | .node (.raw `Lean.Parser.Command.theorem) _ =>
-      index == 3 && containsProofTree child
-  | _ => false
-
 def shouldEmitOriginalChild
-    (parent : SyntaxTree.Tree) (index : Nat) (child : SyntaxTree.Tree)
+    (_parent : SyntaxTree.Tree) (_index : Nat) (child : SyntaxTree.Tree)
     : Bool :=
-  isTheoremValueChild parent index child || shouldEmitOriginalTree child
+  shouldEmitOriginalTree child
 
 partial def treeStartsWithOriginalEmission : SyntaxTree.Tree → Bool
   | .missing => false
@@ -663,6 +642,13 @@ def hasRuleBreakAt
   (rule.breakPoints context segment).any
     fun breakPoint =>
       breakPoint.index == index
+
+def suffixMayContinueAcrossRuleBreak (segment : LineBreakRules.Segment) (index : Nat)
+    : Bool :=
+  match segment.child? index >>= SyntaxTree.Tree.firstToken? with
+  | some token =>
+      LineBreakRules.suffixTokenAction { ancestors := [] } token == .emit
+  | none => false
 
 structure WidthState where
   source : String
@@ -774,6 +760,31 @@ def SuffixState.emitToken (state : SuffixState) (token : SyntaxTree.Token)
       stopped
     )
 
+def SuffixState.emitOriginalFirstLine (state : SuffixState) (tree : SyntaxTree.Tree)
+    : SuffixState × Bool :=
+  match SyntaxTree.Tree.firstToken? tree, SyntaxTree.Tree.lastToken? tree with
+  | some firstToken, some lastToken =>
+      let text :=
+        state.widthState.defaultWhitespace firstToken true
+        ++ SyntaxTree.sourceText state.widthState.source firstToken.span.start
+            lastToken.span.stop
+      let (state, stopped) := state.appendText text
+      let state :=
+        if stopped then
+          state
+        else
+          {
+            state with
+              widthState :=
+                {
+                  state.widthState with
+                    lastToken? := some lastToken
+                    pendingIndent? := none
+                }
+          }
+      (state, stopped)
+  | _, _ => (state, false)
+
 partial def measureSuffixOfTree
     (context : LineBreakRules.RuleContext) (state : SuffixState)
     (tree : SyntaxTree.Tree)
@@ -786,21 +797,26 @@ partial def measureSuffixOfTree
       | .emit => state.emitToken token false
       | .stop => (state, true)
   | .node _ _ =>
-      let segment := LineBreakRules.Segment.ofTree tree
-      segment.indexes.foldl
-        (fun (state, stopped) index =>
-          if stopped then
-            (state, true)
-          else
-            match segment.child? index with
-            | none => (state, false)
-            | some child =>
-                if segment.start < index && hasRuleBreakAt context segment index then
-                  (state, true)
-                else
-                  let childContext := context.push segment index
-                  measureSuffixOfTree childContext state child)
-        (state, false)
+      if shouldEmitOriginalTree tree then
+        state.emitOriginalFirstLine tree
+      else
+        let segment := LineBreakRules.Segment.ofTree tree
+        segment.indexes.foldl
+          (fun (state, stopped) index =>
+            if stopped then
+              (state, true)
+            else
+              match segment.child? index with
+              | none => (state, false)
+              | some child =>
+                  if segment.start < index
+                      && hasRuleBreakAt context segment index
+                      && !suffixMayContinueAcrossRuleBreak segment index then
+                    (state, true)
+                  else
+                    let childContext := context.push segment index
+                    measureSuffixOfTree childContext state child)
+          (state, false)
 
 def RenderState.firstLineOfOriginalTree (state : RenderState) (tree : SyntaxTree.Tree)
     : RenderState × Bool :=
@@ -893,7 +909,9 @@ def firstRuleBreakAfter
   let rule := LineBreakRules.formattingRuleFor segment.parent
   (rule.breakPoints context segment).foldl
     (fun stop breakPoint =>
-      if index < breakPoint.index && breakPoint.index < stop then
+      if index < breakPoint.index
+          && breakPoint.index < stop
+          && !suffixMayContinueAcrossRuleBreak segment breakPoint.index then
         breakPoint.index
       else
         stop)
@@ -1078,7 +1096,7 @@ partial def segmentAllowsFlat
   | .leaf _ => true
   | .node _ _ =>
       if shouldEmitOriginalTree segment.parent then
-        isAttributeModifierBlock segment.parent
+        isAttributeModifierBlock segment.parent || isProofTree segment.parent
       else
         let rule := LineBreakRules.formattingRuleFor segment.parent
         if rule.mandatory context segment then
@@ -1538,7 +1556,9 @@ partial def renderNestedSegment
   let rendered :=
     if emitOriginal then
       childState.emitOriginalTree child
-        (respectPendingIndent := isProofLemmaCommand child)
+        (respectPendingIndent :=
+          (isProofTree child && !treeHasLineBreakTrivia child)
+          || isProofLemmaCommand child)
     else
       renderSegment childState childSegment (some (childRule, childBreakPoints))
   scope.restore rendered

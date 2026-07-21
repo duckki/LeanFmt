@@ -477,7 +477,8 @@ def assertAttributesFlowBeforeDeclarations (env : Lean.Environment) : IO Unit :=
     "@[simp]\n"
     ++ "theorem theoremNameWithEnoughCharactersToRequireAnAttributeHeaderBreak\n"
     ++ "    (value : VeryLongInputTypeName)\n"
-    ++ "    : VeryLongOutputTypeName := proof\n"
+    ++ "    : VeryLongOutputTypeName :=\n"
+    ++ "  proof\n"
   let longFormatted ←
     Formatter.formatSourceWithEnv env longSource "long-attribute-declaration.lean"
   assertEq "long attribute breaks before declaration" longExpected longFormatted
@@ -1012,6 +1013,133 @@ def assertLongDeclarationDirectValueBreaksAfterAssign (env : Lean.Environment)
   let formatted ←
     Formatter.formatSourceWithEnv env source "declaration-direct-value-break.lean"
   assertEq "long declaration direct value breaks after assignment" expected formatted
+
+def assertDeclarationProofValueBreaksAfterAssignWhenSignatureCannotFit
+    (env : Lean.Environment)
+    : IO Unit := do
+  let theoremSource :=
+    "theorem theoremProofValueBreaksAfterAssign (x : Nat) (h : x = x) : x + x + x + x + x + x + x + x + x + x = x + x + x + x + x + x + x + x + x + x := by rw [h]\n"
+  let theoremExpected :=
+    "theorem theoremProofValueBreaksAfterAssign (x : Nat) (h : x = x)\n"
+    ++ "    : x + x + x + x + x + x + x + x + x + x = x + x + x + x + x + x + x + x + x + x := by\n"
+    ++ "  rw [h]\n"
+  let theoremFormatted ←
+    Formatter.formatSourceWithEnv env theoremSource
+      "theorem-proof-value-assignment-break.lean"
+  assertEq "theorem proof value breaks after assignment when signature cannot fit"
+    theoremExpected theoremFormatted
+  let defSource :=
+    "def definitionProofValueBreaksAfterAssign (x : Nat) : x + x + x + x + x + x + x + x + x + x = x + x + x + x + x + x + x + x + x + x := by rw [Nat.add_comm]\n"
+  let defExpected :=
+    "def definitionProofValueBreaksAfterAssign (x : Nat)\n"
+    ++ "    : x + x + x + x + x + x + x + x + x + x = x + x + x + x + x + x + x + x + x + x := by\n"
+    ++ "  rw [Nat.add_comm]\n"
+  let defFormatted ←
+    Formatter.formatSourceWithEnv env defSource
+      "definition-proof-value-assignment-break.lean"
+  assertEq "definition proof value breaks after assignment when signature cannot fit"
+    defExpected defFormatted
+
+def assertDeclarationProofIntroducerStaysWithAssignment (env : Lean.Environment)
+    : IO Unit := do
+  let source :=
+    "theorem proofIntroducerStaysWithAssignmentAfterLongSignature (schema : Schema) (left right : Operation) (hsem : operationsSemanticallyEquivalentForCompleteBoolVars schema (operationBoolVars left) left right) : completeNormalOperationsEqualUpToReordering left right := by\n"
+    ++ "  classical\n"
+    ++ "  exact proof\n"
+  let expected :=
+    "theorem proofIntroducerStaysWithAssignmentAfterLongSignature (schema : Schema)\n"
+    ++ "    (left right : Operation)\n"
+    ++ "    (hsem\n"
+    ++ "      : operationsSemanticallyEquivalentForCompleteBoolVars schema\n"
+    ++ "          (operationBoolVars left) left right)\n"
+    ++ "    : completeNormalOperationsEqualUpToReordering left right := by\n"
+    ++ "  classical\n"
+    ++ "  exact proof\n"
+  let formatted ←
+    Formatter.formatSourceWithEnv env source
+      "declaration-proof-introducer-assignment.lean"
+  assertEq "declaration proof introducer stays with assignment" expected formatted
+
+def assertDeclarationValueWithNestedProofBreaksAfterAssignment (env : Lean.Environment)
+    : IO Unit := do
+  let source :=
+    "theorem declarationValueNestedProofBreaksAfterAssignment {schema : Schema} {left : List Selection} (hleft : ExecutionStateEquivalent { window := { schema := schema, selectionSet := left }, initial := .object [] }) : ExecutionStateEquivalent { window := { schema := schema, selectionSet := left ++ [selection] }, initial := .object [] } := stateEquivalent_of_append_single_selection_noop hleft (by\n"
+    ++ "      intro fields\n"
+    ++ "      exact firstProof) (by\n"
+    ++ "      simp [secondProof])\n"
+  let expected :=
+    "theorem declarationValueNestedProofBreaksAfterAssignment {schema : Schema}\n"
+    ++ "    {left : List Selection}\n"
+    ++ "    (hleft\n"
+    ++ "      : ExecutionStateEquivalent\n"
+    ++ "          { window := { schema := schema, selectionSet := left }, initial := .object [] })\n"
+    ++ "    : ExecutionStateEquivalent\n"
+    ++ "        {\n"
+    ++ "          window := { schema := schema, selectionSet := left ++ [selection] },\n"
+    ++ "          initial := .object []\n"
+    ++ "        } :=\n"
+    ++ "  stateEquivalent_of_append_single_selection_noop hleft (by\n"
+    ++ "      intro fields\n"
+    ++ "      exact firstProof) (by\n"
+    ++ "      simp [secondProof])\n"
+  let formatted ←
+    Formatter.formatSourceWithEnv env source
+      "declaration-value-nested-proof-assignment-break.lean"
+  assertEq "declaration value with nested proof breaks after assignment"
+    expected formatted
+
+def assertTheoremDirectValueBreaksBeforeSignatureChildren (env : Lean.Environment)
+    : IO Unit := do
+  let equalitySource :=
+    "theorem directValueBreaksBeforeReturnEqualityChildren {schema : Schema} {resolvers : Resolvers ObjectIdentity} (state : RecursiveGroupedOperationState schema resolvers variableValues operation depth source) : executeQueryWithFuel schema resolvers variableValues operation (depth + 1) source = GraphQL.Execution.executeQueryWithFuel schema resolvers variableValues operation (depth + 1) source := state.executeQueryWithFuel_eq_spec\n"
+  let equalityExpected :=
+    "theorem directValueBreaksBeforeReturnEqualityChildren {schema : Schema}\n"
+    ++ "    {resolvers : Resolvers ObjectIdentity}\n"
+    ++ "    (state\n"
+    ++ "      : RecursiveGroupedOperationState schema resolvers variableValues operation depth\n"
+    ++ "          source)\n"
+    ++ "    : executeQueryWithFuel schema resolvers variableValues operation (depth + 1) source\n"
+    ++ "      = GraphQL.Execution.executeQueryWithFuel schema resolvers variableValues operation\n"
+    ++ "          (depth + 1) source :=\n"
+    ++ "  state.executeQueryWithFuel_eq_spec\n"
+  let equalityFormatted ←
+    Formatter.formatSourceWithEnv env equalitySource
+      "theorem-direct-value-return-equality-break.lean"
+  assertEq "theorem direct value breaks before return equality children"
+    equalityExpected equalityFormatted
+  let constructorSource :=
+    "theorem directValueBreaksBeforeReturnApplicationChildren {schema : Schema} {resolvers : Resolvers ObjectIdentity} (step : ExecutedFieldAppendStep schema resolvers variableValues depth parentType source responseName field resolved prefixTail later) (restPlan : ExecutedFieldAppendPlan schema resolvers variableValues depth parentType source responseName field resolved (prefixTail ++ [later]) rest) : ExecutedFieldAppendPlan schema resolvers variableValues depth parentType source responseName field resolved prefixTail (later :: rest) := ⟨step, restPlan⟩\n"
+  let constructorExpected :=
+    "theorem directValueBreaksBeforeReturnApplicationChildren {schema : Schema}\n"
+    ++ "    {resolvers : Resolvers ObjectIdentity}\n"
+    ++ "    (step\n"
+    ++ "      : ExecutedFieldAppendStep schema resolvers variableValues depth parentType source\n"
+    ++ "          responseName field resolved prefixTail later)\n"
+    ++ "    (restPlan\n"
+    ++ "      : ExecutedFieldAppendPlan schema resolvers variableValues depth parentType source\n"
+    ++ "          responseName field resolved (prefixTail ++ [later]) rest)\n"
+    ++ "    : ExecutedFieldAppendPlan schema resolvers variableValues depth parentType source\n"
+    ++ "        responseName field resolved prefixTail (later :: rest) :=\n"
+    ++ "  ⟨step, restPlan⟩\n"
+  let constructorFormatted ←
+    Formatter.formatSourceWithEnv env constructorSource
+      "theorem-direct-value-return-application-break.lean"
+  assertEq "theorem direct value breaks before return application children"
+    constructorExpected constructorFormatted
+
+def assertDeclarationWhereSuffixCountsForSignatureFit (env : Lean.Environment)
+    : IO Unit := do
+  let source :=
+    "def whereSuffixSignatureFitXXXXXXXXXXXXXXXXXXXXXX (h : Function.Surjective Nat.succ) : Inhabited Nat where\n"
+    ++ "  default := 0\n"
+  let expected :=
+    "def whereSuffixSignatureFitXXXXXXXXXXXXXXXXXXXXXX (h : Function.Surjective Nat.succ)\n"
+    ++ "    : Inhabited Nat where\n"
+    ++ "  default := 0\n"
+  let formatted ←
+    Formatter.formatSourceWithEnv env source
+      "declaration-where-suffix-signature-fit.lean" { lineWidth := 100 }
+  assertEq "declaration where suffix counts for signature fit" expected formatted
 
 def assertDeclarationValueKeepsAttachedByBody (env : Lean.Environment) : IO Unit := do
   let source :=
@@ -4391,6 +4519,11 @@ def runBasicFormattingTests (env : Lean.Environment) : IO Unit := do
   assertBasicDeclarationBreak env
   assertDeclarationValueInfixBreaksAfterAssign env
   assertLongDeclarationDirectValueBreaksAfterAssign env
+  assertDeclarationProofValueBreaksAfterAssignWhenSignatureCannotFit env
+  assertDeclarationProofIntroducerStaysWithAssignment env
+  assertDeclarationValueWithNestedProofBreaksAfterAssignment env
+  assertTheoremDirectValueBreaksBeforeSignatureChildren env
+  assertDeclarationWhereSuffixCountsForSignatureFit env
   assertDeclarationValueKeepsAttachedByBody env
   assertDeclarationValueKeepsAttachedDoBody env
   assertProofValuesRemainLayoutIslands env
