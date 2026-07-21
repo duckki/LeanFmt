@@ -2,6 +2,7 @@ name = "leanfmt"
 version = "0.1.0"
 description = "A structure-preserving code formatter for Lean"
 keywords = ["lean4", "formatter", "devtool", "development-tools"]
+license = "MIT"
 defaultTargets = ["LeanFmt", "fmt"]
 testDriver = "LeanFmt.Tests"
 lintDriver = "runLinter"

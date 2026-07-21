@@ -107,3 +107,7 @@ keeps token text and order and preserves proof regions.
   profiling, validation, and contributing new rules.
 - [Comparison](docs/comparison.md) compares LeanFmt's style, architecture, and workflow
   with Lean's standard-library guide and pretty-lean.
+
+## License
+
+LeanFmt is released under the [MIT License](LICENSE).
