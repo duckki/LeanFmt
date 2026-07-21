@@ -3358,6 +3358,20 @@ def assertEnvironmentCacheBound (env : Lean.Environment) : IO Unit := do
   disabledCache.rememberEnvironment "ignored" env
   assertTrue "disabled environment cache remains empty" (← disabledEntries.get).isEmpty
 
+def assertImportFirstFallsBackToDefaultEnvironment (env : Lean.Environment)
+    : IO Unit := do
+  let entries ← IO.mkRef []
+  let cache : LeanFmt.Cli.EnvironmentCache := { default := env, maxEntries := 1, entries }
+  let source :=
+    "import LeanFmt.Tests.ModuleThatHasNotBeenBuilt\n\n" ++ "def value : Nat := 0\n"
+  let selected ←
+    cache.environmentForSource source "unbuilt-import.lean"
+      (importEnvironmentFirst := true)
+  discard
+  <| SyntaxTree.parseModuleSyntaxWithoutParserStateUpdates selected source
+      "unbuilt-import.lean"
+  assertTrue "failed imported environment is not cached" (← entries.get).isEmpty
+
 def assertFormattingExceptionChecks (env : Lean.Environment) : IO Unit := do
   assertTrue "whitespace-only edits preserve code"
     (← codePreservedIgnoringWhitespace env "def x : Nat := 0\n" "def   x:Nat:=0\n")
@@ -4376,6 +4390,7 @@ def runCliAndArchitectureTests (env : Lean.Environment) : IO Unit := do
   let cache : LeanFmt.Cli.EnvironmentCache := { default := env, maxEntries := 1, entries }
   assertCliParsing
   assertEnvironmentCacheBound env
+  assertImportFirstFallsBackToDefaultEnvironment env
   assertFormattingExceptionChecks env
   assertCliChecksStillFormatUnlessCheck env cache
   assertCliFormatsDirectory env cache

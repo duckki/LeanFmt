@@ -131,7 +131,7 @@ def usage : String :=
       "  --env-cache-size N",
       "            Cache up to N imported environments per process; 0 disables the cache.",
       "  --import-env-first",
-      "            Load source imports before parsing instead of trying the default environment first.",
+      "            Try source imports before the default parser environment.",
       "  With either diagnostic option, --check is a dry run; formatting",
       "  differences alone do not affect the exit status."
     ]
@@ -239,14 +239,22 @@ def EnvironmentCache.environmentForSource
     (importEnvironmentFirst : Bool)
     : IO Lean.Environment := do
   let normalized := Formatter.Internal.normalizeSource source
+  let defaultEnvironmentIfSourceParses := do
+    discard
+    <| SyntaxTree.parseModuleSyntaxWithoutParserStateUpdates cache.default
+        normalized fileName
+    pure cache.default
   if importEnvironmentFirst then
-    cache.environmentForImports (← importsForSource normalized fileName)
+    try
+      cache.environmentForImports (← importsForSource normalized fileName)
+    catch importError =>
+      try
+        defaultEnvironmentIfSourceParses
+      catch _ =>
+        throw importError
   else
     try
-      discard
-      <| SyntaxTree.parseModuleSyntaxWithoutParserStateUpdates cache.default
-          normalized fileName
-      pure cache.default
+      defaultEnvironmentIfSourceParses
     catch _ =>
       cache.environmentForImports (← importsForSource normalized fileName)
 

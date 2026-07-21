@@ -72,9 +72,10 @@ Formatting a file follows this pipeline:
 1. Normalize line endings to `\n`.
 2. Parse the header and commands with Lean's module parser. The default public API
    uses an environment that imports `Lean` with parser extensions enabled. The CLI
-   first reads each file header and, when explicit imports are present, loads an
-   import-specific parser environment so project syntax is available while formatting
-   that file.
+   first tries that default environment, then loads an import-specific environment when
+   project syntax requires it. `--import-env-first` reverses those attempts for projects
+   where imported syntax is common. If imported modules have not been built but the
+   default environment can parse the file, import-first mode falls back to it.
 3. Convert Lean `Syntax` to a `SyntaxTree.Tree` of tokens and raw parser nodes.
 4. Regroup selected raw nodes into logical `SyntaxTree.NodeKind` nodes.
 5. Render the resulting tree using line-break rules and space rules.

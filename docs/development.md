@@ -409,7 +409,9 @@ external validation by default; set
 `LEANFMT_VALIDATION_FORMATTER_ENV_CACHE_SIZE=N` to allow each formatter process
 to retain up to `N` imported environments. External validation also passes
 `--import-env-first` to the formatter by default so mathlib files do not first
-attempt a whole-file parse with LeanFmt's default Lean environment; set
+attempt a whole-file parse with LeanFmt's default Lean environment. If an imported
+environment cannot be loaded, LeanFmt still uses the default environment when it can
+parse the file. Set
 `LEANFMT_VALIDATION_IMPORT_ENV_FIRST=0` to restore the ordinary CLI strategy of
 trying the default environment before loading source imports. Set
 `LEANFMT_VALIDATION_LINE_WIDTH=N` to pass a project-specific line width to every
