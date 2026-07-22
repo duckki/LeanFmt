@@ -393,30 +393,30 @@ def expandInputPaths (options : Options) : IO (List FilePath) := do
   pure files
 
 def Options.workerArgs (options : Options) (files : List FilePath) : Array String :=
-  Id.run do
-    let mut args := #["--worker"]
-    if options.check then
-      args := args.push "--check"
-    if options.checkException then
-      args := args.push "--check-exception"
-    if options.checkIdempotent then
-      args := args.push "--check-idempotent"
-    if options.includeHidden then
-      args := args.push "--include-hidden"
-    if options.importEnvironmentFirst then
-      args := args.push "--import-env-first"
-    args := args.push "--line-width"
-    args := args.push s!"{options.formatterOptions.lineWidth}"
-    args := args.push "--env-cache-size"
-    args := args.push s!"{options.environmentCacheSize}"
-    for file in files do
-      args := args.push file.toString
-    args
+  Id.run
+    do
+      let mut args := #["--worker"]
+      if options.check then
+        args := args.push "--check"
+      if options.checkException then
+        args := args.push "--check-exception"
+      if options.checkIdempotent then
+        args := args.push "--check-idempotent"
+      if options.includeHidden then
+        args := args.push "--include-hidden"
+      if options.importEnvironmentFirst then
+        args := args.push "--import-env-first"
+      args := args.push "--line-width"
+      args := args.push s!"{options.formatterOptions.lineWidth}"
+      args := args.push "--env-cache-size"
+      args := args.push s!"{options.environmentCacheSize}"
+      for file in files do
+        args := args.push file.toString
+      args
 
 def isLakePackageRoot (path : FilePath) : IO Bool := do
   pure
-  <| (← (path / "lakefile.lean").pathExists)
-    || (← (path / "lakefile.toml").pathExists)
+  <| (← (path / "lakefile.lean").pathExists) || (← (path / "lakefile.toml").pathExists)
 
 partial def findLakePackageRoot? (path : FilePath) : IO (Option FilePath) := do
   let candidate ←
@@ -520,8 +520,7 @@ def initialWorkerBatchSize (options : Options) (cwd? : Option FilePath)
   | some size => pure size
   | none => defaultWorkerBatchSize cwd? files
 
-def runWorkerBatch
-    (options : Options) (cwd? : Option FilePath) (files : List FilePath)
+def runWorkerBatch (options : Options) (cwd? : Option FilePath) (files : List FilePath)
     : IO UInt32 := do
   let executable ← workerExecutable
   let child ←

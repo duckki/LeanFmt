@@ -2278,6 +2278,9 @@ def ruleFor : SyntaxTree.Tree → Option LineBreakRule
   | .node (.raw `Lean.Parser.Command.simpsRule.erase) _ => some defaultRule
   | .node (.raw `Lean.Parser.Command.eraseAttr) _ => some defaultRule
   | .node (.raw `Lean.Parser.Command.classInductive) _ => some defaultRule
+  | .node (.raw `Lean.«command__Unif_hint____Where_|_-⊢__») _ =>
+      some defaultRule
+  | .node (.raw `Lean.unifConstraintElem) _ => some defaultRule
   | .node (.raw `lemma) _ => some theoremRule
   -- Transparent expression wrappers and atomic syntax.
   | .node (.raw `Lean.Parser.Term.paren) _ => some parenRule
@@ -2599,6 +2602,7 @@ def ruleFor : SyntaxTree.Tree → Option LineBreakRule
   | .node (.raw `Lean.Parser.Term.matchAlt) _ => some matchAltRule
   | .node (.raw `Lean.Parser.Term.do) _ => some doRule
   | .node (.raw `Lean.Parser.Term.doLet) _ => some doLetRule
+  | .node (.raw `Lean.Parser.Term.doLetRec) _ => some doLetRule
   | .node (.raw `Lean.Parser.Term.doLetElse) _ => some doLetElseRule
   | .node (.raw `Lean.Parser.Term.doMatch) _ => some matchExpressionRule
   | .node (.raw `Lean.Parser.Term.doTry) _ => some doTryRule

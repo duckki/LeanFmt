@@ -3612,7 +3612,8 @@ def assertLineWidthOptionAffectsFormatting (env : Lean.Environment) : IO Unit :=
   | .error "invalid --worker-batch-size value: 0" => pure ()
   | result =>
       throw
-      <| IO.userError s!"CLI parser should reject invalid --worker-batch-size: {repr result}"
+      <| IO.userError
+          s!"CLI parser should reject invalid --worker-batch-size: {repr result}"
   match LeanFmt.Cli.parseArgs ["--import-env-first", "GraphQL.lean"] with
   | .run options =>
       assertTrue "CLI import-first environment flag" options.importEnvironmentFirst
@@ -3742,14 +3743,12 @@ def assertRecursiveWorkerChecksTargetToolchain : IO Unit := do
       do
         let matching := root / "matching"
         IO.FS.createDirAll matching
-        IO.FS.writeFile (matching / "lean-toolchain")
-          LeanFmt.Cli.expectedLeanToolchain
+        IO.FS.writeFile (matching / "lean-toolchain") LeanFmt.Cli.expectedLeanToolchain
         assertTrue "recursive worker accepts matching Lean toolchain"
           (← LeanFmt.Cli.checkWorkerToolchain (some matching))
         let mismatching := root / "mismatching"
         IO.FS.createDirAll mismatching
-        IO.FS.writeFile (mismatching / "lean-toolchain")
-          "leanprover/lean4:v4.29.1\n"
+        IO.FS.writeFile (mismatching / "lean-toolchain") "leanprover/lean4:v4.29.1\n"
         assertTrue "recursive worker rejects mismatching Lean toolchain"
           (!(← LeanFmt.Cli.checkWorkerToolchain (some mismatching)))
 
@@ -4021,7 +4020,7 @@ def assertCliFormatsDirectoryRecursively
   IO.FS.writeFile topFile topSource
   IO.FS.writeFile nestedFile nestedSource
   match LeanFmt.Cli.parseArgs
-      ["-r", "--include-hidden", "--worker-batch-size", "1", root.toString] with
+          ["-r", "--include-hidden", "--worker-batch-size", "1", root.toString] with
   | .run options =>
       let exitCode ← LeanFmt.Cli.runOptionsWithCache cache options
       assertTrue "CLI recursive directory format succeeds" (exitCode == 0)
@@ -4247,6 +4246,8 @@ def assertMathlibLowRiskSyntaxKindsHaveRules : IO Unit := do
       `Lean.Parser.Command.eraseAttr,
       `Lean.Parser.Command.deriving,
       `Lean.Parser.Command.classInductive,
+      `Lean.«command__Unif_hint____Where_|_-⊢__»,
+      `Lean.unifConstraintElem,
       `lemma,
       `Lean.Parser.Term.explicit,
       `Lean.Parser.Term.explicitUniv,
@@ -4261,6 +4262,7 @@ def assertMathlibLowRiskSyntaxKindsHaveRules : IO Unit := do
       `Lean.Parser.Term.sort,
       `Lean.Parser.Term.letI,
       `Lean.Parser.Term.doLetExpr,
+      `Lean.Parser.Term.doLetRec,
       `Lean.Parser.Term.doIfLetBind,
       `Lean.Parser.Term.doHave,
       `Lean.Parser.Term.inferInstanceAs,
