@@ -11,7 +11,7 @@ readonly FORMATTER="$REPO_ROOT/.lake/build/bin/fmt"
 readonly WORK_DIR="${LEANFMT_VALIDATION_DIR:-$REPO_ROOT/.scratch/external-validation}"
 readonly VALIDATION_FILES_PER_BATCH="${LEANFMT_VALIDATION_BATCH_SIZE:-100}"
 readonly BUILD_FILES_PER_BATCH="${LEANFMT_VALIDATION_BUILD_BATCH_SIZE:-$VALIDATION_FILES_PER_BATCH}"
-readonly FORMATTER_FILES_PER_BATCH="${LEANFMT_VALIDATION_FORMATTER_BATCH_SIZE:-2}"
+readonly FORMATTER_WORKER_BATCH_SIZE="${LEANFMT_VALIDATION_FORMATTER_BATCH_SIZE:-}"
 readonly FORMATTER_ENV_CACHE_SIZE="${LEANFMT_VALIDATION_FORMATTER_ENV_CACHE_SIZE:-0}"
 readonly FORMATTER_IMPORT_ENV_FIRST="${LEANFMT_VALIDATION_IMPORT_ENV_FIRST:-1}"
 readonly FORMATTER_LINE_WIDTH="${LEANFMT_VALIDATION_LINE_WIDTH:-}"
@@ -132,6 +132,13 @@ path_to_module_target() {
   local project_dir="$1"
   local path="$2"
   local relative="${path#"$project_dir/"}"
+
+  case "$relative" in
+    lakefile.lean)
+      return 1
+      ;;
+  esac
+
   relative="${relative%.lean}"
   printf '%s\n' "${relative//\//.}"
 }
@@ -141,9 +148,12 @@ build_selected_modules() {
   local file_selector="$2"
   local -a targets=()
   local file
+  local target
 
   while IFS= read -r -d '' file; do
-    targets+=("$(path_to_module_target "$project_dir" "$file")")
+    if target="$(path_to_module_target "$project_dir" "$file")"; then
+      targets+=("$target")
+    fi
   done < <(tracked_lean_files "$project_dir" "$file_selector")
 
   if ((${#targets[@]} == 0)); then
@@ -163,9 +173,12 @@ build_module_file_list() {
   local list_file="$2"
   local -a targets=()
   local file
+  local target
 
   while IFS= read -r -d '' file; do
-    targets+=("$(path_to_module_target "$project_dir" "$file")")
+    if target="$(path_to_module_target "$project_dir" "$file")"; then
+      targets+=("$target")
+    fi
   done < "$list_file"
 
   if ((${#targets[@]} == 0)); then
@@ -251,11 +264,13 @@ run_formatter_file_list() {
   if [[ -n "$FORMATTER_LINE_WIDTH" ]]; then
     formatter_options+=(--line-width "$FORMATTER_LINE_WIDTH")
   fi
+  if [[ -n "$FORMATTER_WORKER_BATCH_SIZE" ]]; then
+    formatter_options+=(--worker-batch-size "$FORMATTER_WORKER_BATCH_SIZE")
+  fi
 
   (
     cd "$project_dir" || exit 1
-    xargs -0 -n "$FORMATTER_FILES_PER_BATCH" lake env "$FORMATTER" \
-      "${formatter_options[@]}" "$@" < "$list_file"
+    xargs -0 lake env "$FORMATTER" "${formatter_options[@]}" "$@" < "$list_file"
   )
 }
 
@@ -295,7 +310,12 @@ run_project_validation_batches() {
   printf 'Total Lean files: %d\n' "$total_files"
   printf 'Validation batch size: %d file(s); total batches: %d\n' \
     "$VALIDATION_FILES_PER_BATCH" "$total_batches"
-  printf 'Formatter invocation batch size: %d file(s)\n' "$FORMATTER_FILES_PER_BATCH"
+  if [[ -n "$FORMATTER_WORKER_BATCH_SIZE" ]]; then
+    printf 'Formatter worker batch override: %d file(s)\n' \
+      "$FORMATTER_WORKER_BATCH_SIZE"
+  else
+    printf 'Formatter worker batch override: auto\n'
+  fi
   if [[ -n "$selected_batch" ]]; then
     printf 'Running selected validation batch: %d\n' "$selected_batch"
   fi
@@ -416,8 +436,10 @@ main() {
     "$VALIDATION_FILES_PER_BATCH" || return $?
   validate_positive_integer LEANFMT_VALIDATION_BUILD_BATCH_SIZE \
     "$BUILD_FILES_PER_BATCH" || return $?
-  validate_positive_integer LEANFMT_VALIDATION_FORMATTER_BATCH_SIZE \
-    "$FORMATTER_FILES_PER_BATCH" || return $?
+  if [[ -n "$FORMATTER_WORKER_BATCH_SIZE" ]]; then
+    validate_positive_integer LEANFMT_VALIDATION_FORMATTER_BATCH_SIZE \
+      "$FORMATTER_WORKER_BATCH_SIZE" || return $?
+  fi
   validate_nonnegative_integer LEANFMT_VALIDATION_FORMATTER_ENV_CACHE_SIZE \
     "$FORMATTER_ENV_CACHE_SIZE" || return $?
   validate_boolean LEANFMT_VALIDATION_IMPORT_ENV_FIRST \

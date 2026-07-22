@@ -398,9 +398,11 @@ scripts/validate-external-projects.sh \
 Validation runs in batches of 100 files by default. Each validation batch builds
 the selected modules before formatting, checks formatter diagnostics, formats the
 files after clean diagnostics, and builds the same modules again. Within each
-validation batch, formatter processes receive two files at a time by default to
-bound memory growth. The validator prints the total file count, total batch
-count, selected batch, batch index range, and first/last file for each batch.
+validation batch, LeanFmt manages formatter worker processes and batch sizing.
+Batch builds skip package configuration files such as `lakefile.lean`, while the
+formatter still checks and formats them. The validator prints the total file
+count, total batch count, selected batch, batch index range, first/last file for
+each batch, and whether a formatter worker batch override was supplied.
 Without `--batch`, it runs batches in order and stops at the first batch whose
 build, formatter diagnostics, or formatting pass fails. Pass `--batch N` to run
 only a specific 1-based validation batch:
@@ -418,8 +420,9 @@ Clones are recreated under `.scratch/external-validation`. Set
 `LEANFMT_VALIDATION_FILE_PATTERN` to change the default file selector, or
 `LEANFMT_VALIDATION_BUILD_BATCH_SIZE` to change the selected-module build batch
 size. `LEANFMT_VALIDATION_BATCH_SIZE` changes the validation batch size, and
-`LEANFMT_VALIDATION_FORMATTER_BATCH_SIZE` changes the smaller per-process
-formatter invocation batch size. The formatter imported-environment cache is
+`LEANFMT_VALIDATION_FORMATTER_BATCH_SIZE` passes `--worker-batch-size` to
+LeanFmt to override its automatic worker batch choice. The formatter
+imported-environment cache is
 disabled during external validation by default; set
 `LEANFMT_VALIDATION_FORMATTER_ENV_CACHE_SIZE=N` to allow each formatter process
 to retain up to `N` imported environments. External validation also passes
