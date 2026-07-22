@@ -105,27 +105,38 @@ until the reviewer explicitly asks for a commit.
 ## Short-term external-validation goal
 
 The current short-term goal is for both CSLib and mathlib to pass the complete
-external formatter validation. Run the default pair with:
+external formatter validation. The validation script requires at least one
+explicit Git repository argument and has no preset targets:
 
 ```sh
-scripts/validate-external-projects.sh
+scripts/validate-external-projects.sh \
+  mathlib=https://github.com/leanprover-community/mathlib4.git
 ```
 
-For an iterative single-project run, pass `NAME=GIT_URL_OR_PATH`; a local source
-is still cloned into a fresh scratch checkout. Pass `--files FILE_SELECTOR` or
+For an iterative single-project run, pass `GIT_REPO` or `NAME=GIT_REPO`; the
+source can be a local path or any clone source accepted by `git clone`, and it is
+still cloned into a fresh scratch checkout. Pass `--files FILE_SELECTOR` or
 append `::FILE_SELECTOR` to one project spec to validate a tracked-file subset.
 When the selector names a tracked directory, every tracked `.lean` file under
 that directory is included:
 
 ```sh
 scripts/validate-external-projects.sh \
-  cslib=$HOME/work/lean-libs/cslib
-scripts/validate-external-projects.sh \
   --files Mathlib/Combinatorics \
   mathlib=https://github.com/leanprover-community/mathlib4.git
 ```
 
-For each project the script builds LeanFmt, creates a fresh shallow clone under
+Set `LEANFMT_VALIDATION_LINE_WIDTH=100` when validating mathlib or CSLib against
+their 100-column convention:
+
+```sh
+LEANFMT_VALIDATION_LINE_WIDTH=100 scripts/validate-external-projects.sh \
+  --files Mathlib mathlib=$HOME/work/lean-libs/mathlib4
+LEANFMT_VALIDATION_LINE_WIDTH=100 scripts/validate-external-projects.sh \
+  cslib=$HOME/work/lean-libs/cslib
+```
+
+For each project the script builds LeanFmt, creates a fresh clone under
 `.scratch/external-validation/`, optionally downloads the project's Lake cache,
 builds before formatting, checks matching tracked `.lean` files with `--check
 --check-exception --check-idempotent` under the target project's `lake env`,
@@ -141,5 +152,5 @@ Review external changes and diagnostics in the scratch clone. Treat code changes
 non-idempotence, missing rules, actionable overflow, and either build failure as
 formatter issues to investigate. Convert each issue into a focused internal test
 or fixture and a formatter fix; do not make the scratch clone the source of the
-fix. Rerun the affected project until clean, then rerun the default CSLib/mathlib
+fix. Rerun the affected project until clean, then rerun the explicit CSLib/mathlib
 pair to close the short-term goal.

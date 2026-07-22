@@ -16,15 +16,25 @@ readonly FORMATTER_ENV_CACHE_SIZE="${LEANFMT_VALIDATION_FORMATTER_ENV_CACHE_SIZE
 readonly FORMATTER_IMPORT_ENV_FIRST="${LEANFMT_VALIDATION_IMPORT_ENV_FIRST:-1}"
 readonly FORMATTER_LINE_WIDTH="${LEANFMT_VALIDATION_LINE_WIDTH:-}"
 readonly DEFAULT_FILE_SELECTOR="${LEANFMT_VALIDATION_FILE_PATTERN:-*.lean}"
-readonly CSLIB_URL="https://github.com/leanprover/cslib.git"
-readonly MATHLIB_URL="https://github.com/leanprover-community/mathlib4.git"
-
-declare -a DEFAULT_PROJECTS=(
-  "cslib|$CSLIB_URL|$DEFAULT_FILE_SELECTOR"
-  "mathlib|$MATHLIB_URL|$DEFAULT_FILE_SELECTOR"
-)
 
 failures=0
+
+usage() {
+  cat >&2 <<'EOF'
+Usage:
+  scripts/validate-external-projects.sh [--files FILE_SELECTOR] [--batch N] GIT_REPO[::FILE_SELECTOR]...
+  scripts/validate-external-projects.sh [--files FILE_SELECTOR] [--batch N] NAME=GIT_REPO[::FILE_SELECTOR]...
+
+Each project argument must name an explicit git clone source. The validator
+creates a fresh clone under .scratch/external-validation/ before formatting.
+
+Set LEANFMT_VALIDATION_LINE_WIDTH=N to pass --line-width N to every formatter
+invocation. For example, validate mathlib at width 100 with:
+
+  LEANFMT_VALIDATION_LINE_WIDTH=100 scripts/validate-external-projects.sh \
+    --files Mathlib mathlib=$HOME/work/lean-libs/mathlib4
+EOF
+}
 
 section() {
   printf '\n==> %s\n' "$1"
@@ -105,11 +115,72 @@ validate_boolean() {
 }
 
 clone_project() {
-  local url="$1"
+  local source="$1"
   local destination="$2"
 
   rm -rf "$destination"
-  git clone --depth 1 "$url" "$destination"
+  git clone "$source" "$destination"
+}
+
+absolute_path() {
+  local path="$1"
+
+  if [[ "$path" == /* ]]; then
+    printf '%s\n' "$path"
+  else
+    printf '%s/%s\n' "$PWD" "$path"
+  fi
+}
+
+project_name_from_path() {
+  local path="$1"
+  local name
+
+  name="$(basename "$path")"
+  name="${name%.git}"
+  printf '%s\n' "$name"
+}
+
+validate_local_git_repo() {
+  local path="$1"
+
+  if [[ ! -d "$path" ]]; then
+    printf 'Project path does not exist or is not a directory: %s\n' "$path" >&2
+    return 2
+  fi
+  if ! git -C "$path" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    printf 'Project path is not a git repository: %s\n' "$path" >&2
+    return 2
+  fi
+}
+
+normalize_project_source() {
+  local source="$1"
+
+  if [[ -d "$source" ]]; then
+    absolute_path "$source"
+  else
+    printf '%s\n' "$source"
+  fi
+}
+
+validate_project_source() {
+  local source="$1"
+
+  if [[ -d "$source" ]]; then
+    validate_local_git_repo "$source"
+  fi
+}
+
+seed_local_lake_packages() {
+  local source="$1"
+  local destination="$2"
+
+  if [[ -d "$source/.lake/packages" ]]; then
+    mkdir -p "$destination/.lake"
+    rm -rf "$destination/.lake/packages"
+    cp -R "$source/.lake/packages" "$destination/.lake/"
+  fi
 }
 
 get_build_cache() {
@@ -428,7 +499,7 @@ selected_batch_file_list() {
 
 main() {
   local started_at=$SECONDS
-  local -a projects=("${DEFAULT_PROJECTS[@]}")
+  local -a projects=()
   local default_file_selector="$DEFAULT_FILE_SELECTOR"
   local selected_batch=""
 
@@ -449,49 +520,65 @@ main() {
       "$FORMATTER_LINE_WIDTH" || return $?
   fi
 
-  if (($# > 0)); then
-    projects=()
-    local specification
-    while (($# > 0)); do
-      specification="$1"
-      shift
-      if [[ "$specification" == "--files" ]]; then
-        if (($# == 0)); then
-          printf 'Missing value for --files.\n' >&2
-          return 2
-        fi
-        default_file_selector="$1"
-        shift
-        continue
-      fi
-      if [[ "$specification" == "--batch" ]]; then
-        if (($# == 0)); then
-          printf 'Missing value for --batch.\n' >&2
-          return 2
-        fi
-        validate_positive_integer "--batch" "$1" || return $?
-        selected_batch="$1"
-        shift
-        continue
-      fi
-      if [[ "$specification" != *=* ]]; then
-        printf 'Invalid project %q; expected NAME=GIT_URL_OR_PATH[::FILE_SELECTOR].\n' \
-          "$specification" >&2
+  local specification project_spec file_selector project_name project_source
+  while (($# > 0)); do
+    specification="$1"
+    shift
+    if [[ "$specification" == "--help" || "$specification" == "-h" ]]; then
+      usage
+      return 0
+    fi
+    if [[ "$specification" == "--files" ]]; then
+      if (($# == 0)); then
+        printf 'Missing value for --files.\n' >&2
+        usage
         return 2
       fi
-      local project_spec="${specification%%::*}"
-      local file_selector="$default_file_selector"
-      if [[ "$specification" == *"::"* ]]; then
-        file_selector="${specification#*::}"
-      fi
-      projects+=("${project_spec%%=*}|${project_spec#*=}|$file_selector")
-    done
-    if ((${#projects[@]} == 0)); then
-      projects=(
-        "cslib|$CSLIB_URL|$default_file_selector"
-        "mathlib|$MATHLIB_URL|$default_file_selector"
-      )
+      default_file_selector="$1"
+      shift
+      continue
     fi
+    if [[ "$specification" == "--batch" ]]; then
+      if (($# == 0)); then
+        printf 'Missing value for --batch.\n' >&2
+        usage
+        return 2
+      fi
+      validate_positive_integer "--batch" "$1" || return $?
+      selected_batch="$1"
+      shift
+      continue
+    fi
+
+    project_spec="${specification%%::*}"
+    file_selector="$default_file_selector"
+    if [[ "$specification" == *"::"* ]]; then
+      file_selector="${specification#*::}"
+    fi
+
+    if [[ "$project_spec" == *=* ]]; then
+      project_name="${project_spec%%=*}"
+      project_source="${project_spec#*=}"
+      if [[ -z "$project_name" || -z "$project_source" ]]; then
+        printf 'Invalid project %q; expected NAME=GIT_REPO.\n' \
+          "$project_spec" >&2
+        usage
+        return 2
+      fi
+    else
+      project_source="$project_spec"
+      project_name="$(project_name_from_path "$project_source")"
+    fi
+
+    project_source="$(normalize_project_source "$project_source")"
+    validate_project_source "$project_source" || return $?
+    projects+=("$project_name|$project_source|$file_selector")
+  done
+
+  if ((${#projects[@]} == 0)); then
+    printf 'Missing required git repository argument.\n' >&2
+    usage
+    return 2
   fi
 
   mkdir -p "$WORK_DIR"
@@ -502,16 +589,18 @@ main() {
     exit 1
   fi
 
-  local project name url file_selector project_dir
+  local project name source file_selector project_dir
   for project in "${projects[@]}"; do
-    IFS='|' read -r name url file_selector <<< "$project"
+    IFS='|' read -r name source file_selector <<< "$project"
     project_dir="$WORK_DIR/$name"
 
-    run_phase "Clone $name" clone_project "$url" "$project_dir"
+    run_phase "Clone $name" clone_project "$source" "$project_dir"
     if [[ ! -d "$project_dir/.git" ]]; then
       printf 'Skipping %s because its clone is unavailable.\n' "$name" >&2
       continue
     fi
+
+    seed_local_lake_packages "$source" "$project_dir"
 
     run_optional_phase "Download $name build cache" get_build_cache "$project_dir"
     run_project_validation_batches "$name" "$project_dir" "$file_selector" \

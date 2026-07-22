@@ -366,25 +366,29 @@ Do not commit before review unless the reviewer explicitly asks for a commit.
 
 ## External validation
 
-The external validator clones CSLib and mathlib, downloads their Lake build caches,
-builds each project, checks every tracked Lean file for preservation, unknown
-rules, and idempotence in dry-run mode from that project's `lake env`, formats only
-after those diagnostics pass, and then builds each project again:
+The external validator clones one or more explicitly provided Git repositories,
+downloads their Lake build caches, builds each project, checks every tracked Lean
+file for preservation, unknown rules, and idempotence in dry-run mode from that
+project's `lake env`, formats only after those diagnostics pass, and then builds
+each project again:
 
 ```sh
-scripts/validate-external-projects.sh
+scripts/validate-external-projects.sh $HOME/lean-libs/mathlib4
 ```
 
-To validate one or more other Git repositories instead of the defaults, pass each
-one as `NAME=GIT_URL_OR_PATH`. The validator always makes a fresh scratch clone,
-including when the source is a local repository:
+At least one Git repository argument is required; there are no preset targets.
+Pass either `GIT_REPO` or `NAME=GIT_REPO`. The source can be a local path or any
+clone source accepted by `git clone`. The validator always makes a fresh scratch
+clone:
 
 ```sh
+scripts/validate-external-projects.sh $HOME/target-repo
 scripts/validate-external-projects.sh my-project=$HOME/target-repo
 ```
 
 Pass `--files FILE_SELECTOR` to validate a subset of tracked Lean files. A project
-can also override the current selector with `NAME=GIT_URL_OR_PATH::FILE_SELECTOR`.
+can also override the current selector with `GIT_REPO::FILE_SELECTOR` or
+`NAME=GIT_REPO::FILE_SELECTOR`.
 When the selector names a tracked directory, every tracked `.lean` file under that
 directory is included. Other selectors are passed to `git ls-files`, so quote
 patterns containing `*` to keep the shell from expanding them first:
@@ -411,7 +415,7 @@ only a specific 1-based validation batch:
 scripts/validate-external-projects.sh \
   --files Mathlib/Combinatorics \
   --batch 2 \
-  mathlib=$HOME/work/lean-libs/mathlib4
+  mathlib=https://github.com/leanprover-community/mathlib4.git
 ```
 
 Clones are recreated under `.scratch/external-validation`. Set
@@ -434,6 +438,17 @@ parse the file. Set
 trying the default environment before loading source imports. Set
 `LEANFMT_VALIDATION_LINE_WIDTH=N` to pass a project-specific line width to every
 formatter invocation.
+
+For example, mathlib and CSLib can be validated at their 100-column convention
+while continuing to use fresh scratch clones:
+
+```sh
+LEANFMT_VALIDATION_LINE_WIDTH=100 scripts/validate-external-projects.sh \
+  --files Mathlib \
+  mathlib=$HOME/work/lean-libs/mathlib4
+LEANFMT_VALIDATION_LINE_WIDTH=100 scripts/validate-external-projects.sh \
+  cslib=$HOME/work/lean-libs/cslib
+```
 
 The script converts selected `.lean` paths to module targets and builds those
 modules in batches. It stops at the first failing validation batch and exits with
