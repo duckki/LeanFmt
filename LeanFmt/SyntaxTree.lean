@@ -427,15 +427,71 @@ def regroupDefinitionChildren (children : Array Tree) : Option (Array Tree) := d
 def declarationValueCommandKind (kind : SyntaxNodeKind) : Bool :=
   kind == `Lean.Parser.Command.theorem || kind == `lemma || kind == `group
 
+def splitLeadingAnnotations? : Tree → Option (Tree × Tree)
+  | .node (.raw `Lean.Parser.Command.declModifiers) children => do
+      let annotationIndex ←
+        children.findIdx?
+          fun child =>
+            child.firstToken?.map (fun token => token.lexeme) == some "@["
+      let annotation ← children[annotationIndex]?
+      let annotationChildren :=
+        children.mapIdx
+          fun index child =>
+            if index < annotationIndex then
+              child
+            else if index == annotationIndex then
+              annotation
+            else
+              .missing
+      let remainingChildren :=
+        children.mapIdx
+          fun index child =>
+            if annotationIndex < index then child else .missing
+      some
+        (
+          .node (.raw `Lean.Parser.Command.declModifiers) annotationChildren,
+          .node (.raw `Lean.Parser.Command.declModifiers) remainingChildren
+        )
+  | _ => none
+
+def splitDeclarationAnnotations? : Tree → Option (Tree × Tree)
+  | .node kind children => do
+      let modifierIndex ←
+        children.findIdx?
+          fun child =>
+            rawKind? child == some `Lean.Parser.Command.declModifiers
+      let modifiers ← children[modifierIndex]?
+      let (annotations, remainingModifiers) ← splitLeadingAnnotations? modifiers
+      some (annotations, .node kind (children.set! modifierIndex remainingModifiers))
+  | _ => none
+
+def annotatedDeclarationTree (annotations modifiers declaration : Tree) : Tree :=
+  let children :=
+    if modifiers.firstToken?.isSome then
+      #[annotations, modifiers, declaration]
+    else
+      #[annotations, declaration]
+  .node .annotatedDeclaration children
+
 def regroupDeclarationChildren (children : Array Tree) : Option (Array Tree) := do
   let modifiers ← children[0]?
   let declaration ← children[1]?
-  if (Tree.firstToken? modifiers).isSome then
-    some
-    <| #[.node .annotatedDeclaration #[modifiers, declaration]]
-        ++ childrenRange children 2 children.size
-  else
-    none
+  let annotatedDeclaration? : Option Tree :=
+    match splitLeadingAnnotations? modifiers with
+    | some (annotations, remainingModifiers) =>
+        some <| annotatedDeclarationTree annotations remainingModifiers declaration
+    | none =>
+        match splitDeclarationAnnotations? declaration with
+        | some (annotations, declaration) =>
+            some <| annotatedDeclarationTree annotations modifiers declaration
+        | none =>
+            if (Tree.firstToken? modifiers).isSome then
+              some <| Tree.node .annotatedDeclaration #[modifiers, declaration]
+            else
+              none
+  annotatedDeclaration?.map
+    fun annotatedDeclaration =>
+      #[annotatedDeclaration] ++ childrenRange children 2 children.size
 
 def regroupStructureUpdateSource : Tree → Tree
   | .node (.raw `null) children => .node .structureUpdate children
@@ -599,8 +655,27 @@ partial def regroupTree : Tree → Tree
         regroupRawNode kind (children.map regroupTree)
   | .node kind children => .node kind (children.map regroupTree)
 
+def regroupTopLevelCommandAnnotations (tree : Tree) : Tree :=
+  match splitDeclarationAnnotations? tree with
+  | some (annotations, command) =>
+      annotatedDeclarationTree annotations .missing command
+  | none => tree
+
+def regroupTopLevelAnnotations : Tree → Tree
+  | .node (.raw `Lean.Parser.Module.module) children =>
+      match children[1]? with
+      | some (Tree.node (.raw `null) commands) =>
+          Tree.node (.raw `Lean.Parser.Module.module)
+          <| children.set! 1
+          <| Tree.node (.raw `null) (commands.map regroupTopLevelCommandAnnotations)
+      | _ => Tree.node (.raw `Lean.Parser.Module.module) children
+  | tree => tree
+
 def extractTree (source : String) (stx : Syntax) : Tree :=
-  regroupTree <| removeOverlappingSourceTokens source <| extractRawTree source stx
+  regroupTopLevelAnnotations
+  <| regroupTree
+  <| removeOverlappingSourceTokens source
+  <| extractRawTree source stx
 
 /-! ## Lean module parsing -/
 

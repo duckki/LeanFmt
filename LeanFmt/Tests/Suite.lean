@@ -1055,6 +1055,38 @@ def assertBasicDeclarationBreak (env : Lean.Environment) : IO Unit := do
   let formatted ← Formatter.formatSourceWithEnv env source "declaration-break.lean"
   assertEq "declaration body break" expected formatted
 
+def assertTopLevelAnnotationsBreakConsistently (env : Lean.Environment) : IO Unit := do
+  let annotation :=
+    "@[foo /- first line\nannotation continuation occupies most of the formatting width -/]"
+  let commands :=
+    [
+      ("definition", "def", "def annotatedDefinition := 1\n"),
+      (
+        "modified definition",
+        "private def",
+        "private def annotatedPrivateDefinition := 1\n"
+      ),
+      ("theorem", "theorem", "theorem annotatedTheorem : True := by trivial\n"),
+      ("opaque", "opaque", "opaque annotatedOpaque : Nat\n"),
+      ("abbreviation", "abbrev", "abbrev AnnotatedAbbreviation := Nat\n"),
+      ("structure", "structure", "structure AnnotatedStructure where\n  field : Nat\n"),
+      ("inductive", "inductive", "inductive AnnotatedInductive where\n  | constructor\n"),
+      ("class", "class", "class AnnotatedClass where\n  field : Nat\n"),
+      (
+        "instance",
+        "instance",
+        "instance : Inhabited AnnotatedStructure where\n  default := { field := 0 }\n"
+      )
+    ]
+  for (name, commandPrefix, command) in commands do
+    let source := annotation ++ " " ++ command
+    let formatted ← Formatter.formatSourceWithEnv env source s!"annotated-{name}.lean"
+    assertTextContains s!"{name} starts after its overflowing annotation"
+      formatted (annotation ++ "\n" ++ commandPrefix)
+    let second ←
+      Formatter.formatSourceWithEnv env formatted s!"annotated-{name}-second.lean"
+    assertEq s!"{name} annotation break is idempotent" formatted second
+
 def assertDeclarationValueInfixBreaksAfterAssign (env : Lean.Environment) : IO Unit := do
   let source :=
     "def declarationValueInfixBreakWithLongEnoughHeaderExtra : Nat := inferInstanceAs <| OfNat Nat 0\n"
@@ -4133,6 +4165,18 @@ def assertFormatterArchitecture : IO Unit := do
   assertTrue "trace state starts disabled" (!trace.enabled)
   assertEq "internal normalization is shared" "a\nb\n"
     (Formatter.Internal.normalizeSource "a\r\nb\r")
+  let annotation :=
+    SyntaxTree.Tree.node (.raw `Lean.Parser.Command.declModifiers)
+      #[.leaf (syntheticAtomToken "@[")]
+  let theoremBody :=
+    SyntaxTree.Tree.node (.raw `group) #[.leaf (syntheticAtomToken "lemma")]
+  let extendedTheorem := SyntaxTree.Tree.node (.raw `lemma) #[annotation, theoremBody]
+  let annotatedTheorem := SyntaxTree.regroupTopLevelCommandAnnotations extendedTheorem
+  let annotatedSegment := Formatter.LineBreakRules.Segment.ofTree annotatedTheorem
+  let annotatedRule := Formatter.LineBreakRules.formattingRuleFor annotatedTheorem
+  assertTrue "extended top-level commands break after leading annotations"
+    (annotatedRule.breakPoints context annotatedSegment
+      |>.any fun breakPoint => breakPoint.index == 1)
 
 def assertDeclarationRuleTransparent : IO Unit := do
   let tree :=
@@ -4664,6 +4708,7 @@ def runBasicFormattingTests (env : Lean.Environment) : IO Unit := do
   assertInstanceContainingProofUntouched env
   assertTerminationProofSuffixUntouched env
   assertBasicDeclarationBreak env
+  assertTopLevelAnnotationsBreakConsistently env
   assertDeclarationValueInfixBreaksAfterAssign env
   assertLongDeclarationDirectValueBreaksAfterAssign env
   assertDeclarationProofValueBreaksAfterAssignWhenSignatureCannotFit env
