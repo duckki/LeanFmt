@@ -284,13 +284,14 @@ module keywords, public or ordinary imports, module docstrings, declarations, or
 commands. This exposes syntax facts without encoding vertical spacing in every
 `BreakPoint`.
 
-When the renderer processes one of those sequences, it probes each command with the
-ordinary rule machinery and observes whether the result is multiline. It then chooses
-the boundary between adjacent commands: import groups use fixed grouping, module
-docstrings are separated from following commands, and adjacent declarations receive a
-blank line when either renders multiline. Leading comments and docstrings remain attached
-to their command. Other syntax sequences retain the ordinary source-preserving boundary
-behavior.
+When the renderer processes one of those sequences, it renders each command once and
+records whether the result is multiline. Boundaries known from syntax or the previous
+command are applied before rendering. If the current command newly requires a blank
+boundary, the renderer upgrades only its already-emitted leading whitespace. Import
+groups use fixed grouping, module docstrings are separated from following commands, and
+adjacent declarations receive a blank line when either renders multiline. Leading
+comments and docstrings remain attached to their command. Other syntax sequences retain
+the ordinary source-preserving boundary behavior.
 
 `ruleFor : SyntaxTree.Tree -> Option LineBreakRule` is the dispatch table. It has no
 ordered candidate list. A known node maps to exactly one rule. Unknown raw nodes return

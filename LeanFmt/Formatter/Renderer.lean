@@ -311,6 +311,35 @@ def RenderState.defaultWhitespace (state : RenderState) (token : SyntaxTree.Toke
   | some left, none =>
       SpaceRules.interTokenWhitespace state.source left token preserveLines
 
+def RenderState.ensureBlankCommandBoundaryBeforeRenderedTree
+    (before rendered : RenderState) (tree : SyntaxTree.Tree)
+    : RenderState :=
+  match SyntaxTree.Tree.firstToken? tree with
+  | none => rendered
+  | some token =>
+      let originalWhitespace := before.defaultWhitespace token
+      let blankWhitespace :=
+        ({ before with pendingCommandBoundary? := some .blankLine }).defaultWhitespace
+          token
+      if originalWhitespace == blankWhitespace then
+        rendered
+      else
+        let renderedSuffix := (rendered.output.drop before.output.length).toString
+        if !renderedSuffix.startsWith originalWhitespace then
+          rendered
+        else
+          let body := (renderedSuffix.drop originalWhitespace.length).toString
+          let addedLineBreaks :=
+            Trace.newlineCount blankWhitespace - Trace.newlineCount originalWhitespace
+          {
+            rendered with
+              output := before.output ++ blankWhitespace ++ body
+              outputLineBreakCount := rendered.outputLineBreakCount + addedLineBreaks
+              trace :=
+                rendered.trace.shiftEntriesAfter before.trace.entries.length
+                  addedLineBreaks
+          }
+
 def RenderState.segmentStartColumn (state : RenderState)
     (segment : LineBreakRules.Segment)
     : Nat :=
@@ -1406,36 +1435,39 @@ def FlowRenderContext.stateForForcedNestedChild?
 
 def segmentRangeFirstTree? (segment : LineBreakRules.Segment) (start stop : Nat)
     : Option SyntaxTree.Tree :=
-  (List.range (stop - start)).foldl
-    (fun found offset =>
-      match found with
-      | some tree => some tree
-      | none =>
-          match segment.child? (start + offset) with
-          | some tree => if tree.firstToken?.isSome then some tree else none
-          | none => none)
-    none
+  let rec loop (index : Nat)
+      : Option SyntaxTree.Tree :=
+    if index < stop then
+      match segment.child? index with
+      | some tree => if tree.firstToken?.isSome then some tree else loop (index + 1)
+      | none => loop (index + 1)
+    else
+      none
+  loop start
 
-def commandBoundarySpacing?
+inductive CommandBoundaryPlan where
+  | preserve
+  | fixed (spacing : CommandBoundarySpacing)
+  | blankLineIfMultiline
+
+def commandBoundaryPlan
     (sequenceKind : LineBreakRules.TopLevelCommandSequenceKind)
-    (previous current : SyntaxTree.Tree)
-    (previousMultiline currentMultiline : Bool)
-    : Option CommandBoundarySpacing :=
+    (previous current : LineBreakRules.TopLevelCommandKind)
+    (previousMultiline : Bool)
+    : CommandBoundaryPlan :=
   match sequenceKind with
-  | .module | .header => some .blankLine
+  | .module | .header => .fixed .blankLine
   | .imports =>
-      match LineBreakRules.topLevelCommandKind previous,
-            LineBreakRules.topLevelCommandKind current with
+      match previous, current with
       | .publicImport, .publicImport | .ordinaryImport, .ordinaryImport =>
-          some .lineBreak
-      | _, _ => some .blankLine
+          .fixed .lineBreak
+      | _, _ => .fixed .blankLine
   | .commands =>
-      match LineBreakRules.topLevelCommandKind previous,
-            LineBreakRules.topLevelCommandKind current with
-      | .moduleDoc, _ => some .blankLine
+      match previous, current with
+      | .moduleDoc, _ => .fixed .blankLine
       | .declaration, .declaration =>
-          if previousMultiline || currentMultiline then some .blankLine else none
-      | _, _ => none
+          if previousMultiline then .fixed .blankLine else .blankLineIfMultiline
+      | _, _ => .preserve
 
 /-! ## Recursive rendering -/
 
@@ -1798,9 +1830,7 @@ partial def renderBalancedSegment
     let entryIndentation := state.segmentIndentation
     let entryBaseColumn := state.segmentBaseColumn
     let entryTailIndentation? := state.tailIndentation?
-    let commandSequenceKind? :=
-      LineBreakRules.topLevelCommandSequenceKind? state.context segment
-    let stateForPiece (state : RenderState) (_start _stop : Nat) (firstPiece : Bool)
+    let stateForPiece (state : RenderState) (firstPiece : Bool)
         : RenderState :=
       if firstPiece then
         { state with tailIndentation? := entryTailIndentation? }
@@ -1809,7 +1839,7 @@ partial def renderBalancedSegment
     let renderPiece (state : RenderState) (start stop : Nat) (firstPiece : Bool)
         (preserveSuffix : Bool := false)
         : RenderState :=
-      let state := stateForPiece state start stop firstPiece
+      let state := stateForPiece state firstPiece
       let rendered :=
         if preserveSuffix then
           renderSegmentRange state segment start stop
@@ -1820,42 +1850,60 @@ partial def renderBalancedSegment
           tailIndentation? := entryTailIndentation?
           lineFitSuffixWidth := state.lineFitSuffixWidth
       }
-    let rec loop
+    let stateAfterBreak (rendered : RenderState) (breakPoint : LineBreakRules.BreakPoint)
+        : RenderState :=
+      let base :=
+        ruleBreakBase rendered segment rule entryBaseColumn entryIndentation breakPoint
+      rendered.withRuleBreakIndent base.column base.indentation breakPoint
+    let rec renderOrdinaryPieces (state : RenderState) (start : Nat) (firstPiece : Bool)
+        : List LineBreakRules.BreakPoint → RenderState
+      | [] => renderPiece state start segment.stop firstPiece true
+      | breakPoint :: rest =>
+          let rendered := renderPiece state start breakPoint.index firstPiece
+          let rest := rest.dropWhile fun next => next.index == breakPoint.index
+          renderOrdinaryPieces (stateAfterBreak rendered breakPoint)
+            breakPoint.index false rest
+    let rec renderCommandPieces
         (state : RenderState) (start : Nat) (firstPiece : Bool)
-        (previousTree? : Option SyntaxTree.Tree) (previousMultiline : Bool)
+        (sequenceKind : LineBreakRules.TopLevelCommandSequenceKind)
+        (previousKind? : Option LineBreakRules.TopLevelCommandKind)
+        (previousMultiline : Bool)
         : List LineBreakRules.BreakPoint → RenderState
       | breaks =>
           let stop := breaks.head?.map (·.index) |>.getD segment.stop
           let finalPiece := breaks.isEmpty
           let currentTree? := segmentRangeFirstTree? segment start stop
-          let probe := renderPiece state start stop firstPiece finalPiece
+          let currentKind? := currentTree?.map LineBreakRules.topLevelCommandKind
+          let boundaryPlan :=
+            match previousKind?, currentKind? with
+            | some previousKind, some currentKind =>
+                commandBoundaryPlan sequenceKind previousKind currentKind
+                  previousMultiline
+            | _, _ => .preserve
+          let pieceState :=
+            match boundaryPlan with
+            | .fixed spacing => { state with pendingCommandBoundary? := some spacing }
+            | .preserve | .blankLineIfMultiline => state
+          let rendered := renderPiece pieceState start stop firstPiece finalPiece
           let currentMultiline :=
             match currentTree? with
-            | some tree => renderedTreeIsMultiline state probe tree
+            | some tree => renderedTreeIsMultiline pieceState rendered tree
             | none => false
-          let commandBoundary? := do
-            let sequenceKind ← commandSequenceKind?
-            let previousTree ← previousTree?
-            let currentTree ← currentTree?
-            commandBoundarySpacing? sequenceKind previousTree currentTree
-              previousMultiline currentMultiline
           let rendered :=
-            match commandBoundary? with
-            | none => probe
-            | some spacing =>
-                renderPiece { state with pendingCommandBoundary? := some spacing }
-                  start stop firstPiece finalPiece
+            match boundaryPlan, currentMultiline, currentTree? with
+            | .blankLineIfMultiline, true, some tree =>
+                state.ensureBlankCommandBoundaryBeforeRenderedTree rendered tree
+            | _, _, _ => rendered
           match breaks with
           | [] => rendered
           | breakPoint :: rest =>
-              let base :=
-                ruleBreakBase rendered segment rule
-                  entryBaseColumn entryIndentation breakPoint
-              let state :=
-                rendered.withRuleBreakIndent base.column base.indentation breakPoint
               let rest := rest.dropWhile fun next => next.index == breakPoint.index
-              loop state breakPoint.index false currentTree? currentMultiline rest
-    loop state segment.start true none false breakPoints
+              renderCommandPieces (stateAfterBreak rendered breakPoint)
+                breakPoint.index false sequenceKind currentKind? currentMultiline rest
+    match LineBreakRules.topLevelCommandSequenceKind? state.context segment with
+    | some sequenceKind =>
+        renderCommandPieces state segment.start true sequenceKind none false breakPoints
+    | none => renderOrdinaryPieces state segment.start true breakPoints
 
 end
 

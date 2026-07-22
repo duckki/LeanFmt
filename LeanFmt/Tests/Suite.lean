@@ -4018,6 +4018,16 @@ def assertRendererTraceIncludesPathAndState (env : Lean.Environment) : IO Unit :
   assertTextContains "renderer trace includes segment indentation" trace
     "segmentIndentation="
   assertTextContains "renderer trace includes tail indentation" trace "tailIndentation="
+  let commandSource :=
+    "def first := 0\n" ++ "structure Second where\n" ++ "  value : Nat\n"
+  let commandModule ←
+    SyntaxTree.parseModuleStringWithEnv env commandSource "trace-command-boundary.lean"
+  let (commandFormatted, commandTrace) :=
+    Formatter.Debug.formatModuleWithTrace commandModule
+  assertTextContains "renderer trace command output has computed blank boundary"
+    commandFormatted "def first := 0\n\nstructure Second where"
+  assertTextContains "renderer trace follows computed command boundary"
+    commandTrace "line 3 | structure Second where\n  path="
 
 def assertCliFixtureUpdate (env : Lean.Environment) : IO Unit := do
   let separator :=

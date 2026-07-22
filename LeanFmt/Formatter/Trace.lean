@@ -104,6 +104,18 @@ def State.pushPath (state : State) (index : Nat) : State :=
 def State.restorePathFrom (state parent : State) : State :=
   { state with segmentPath := parent.segmentPath }
 
+def State.shiftEntriesAfter (state : State) (entryCount lineOffset : Nat) : State :=
+  if !state.enabled || lineOffset == 0 then
+    state
+  else
+    {
+      state with
+        entries :=
+          state.entries.take entryCount
+          ++ (state.entries.drop entryCount).map
+              fun entry => { entry with lineNumber := entry.lineNumber + lineOffset }
+    }
+
 def outputLines (formatted : String) : List String :=
   let text :=
     (SpaceRules.normalizeLineEndings formatted).dropEndWhile fun char => char == '\n'
