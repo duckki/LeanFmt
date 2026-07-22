@@ -2472,6 +2472,7 @@ def ruleFor : SyntaxTree.Tree → Option LineBreakRule
   | .node (.raw `BigOperators.bigexpect) _ => some defaultRule
   | .node (.raw `BigOperators.bigOpBinders) _ => some defaultRule
   | .node (.raw `BigOperators.bigOpBinder) _ => some defaultRule
+  | .node (.raw `Algebra.subalgebra_adjoin) _ => some defaultRule
   | .node (.raw `«DistribMulActionHomLocal≺») _ => some defaultRule
   | .node (.raw `«DistribMulActionHomIdLocal≺») _ => some defaultRule
   | .node (.raw `Std.termF!_) _ => some defaultRule

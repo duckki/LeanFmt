@@ -4410,6 +4410,7 @@ def assertMathlibLowRiskSyntaxKindsHaveRules : IO Unit := do
       `BigOperators.bigprod,
       `BigOperators.bigOpBinders,
       `BigOperators.bigOpBinder,
+      `Algebra.subalgebra_adjoin,
       `Batteries.ExtendedBinder.extBinders,
       `Batteries.ExtendedBinder.extBinder,
       `Batteries.ExtendedBinder.extBinderCollection,
