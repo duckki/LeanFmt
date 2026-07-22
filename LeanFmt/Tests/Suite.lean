@@ -3921,27 +3921,39 @@ def assertRecursiveWorkerUsesInputLakeRoot : IO Unit := do
           (toString (some project)) (toString cwd?)
         assertTrue "recursive external package uses worker even for one large batch"
           (LeanFmt.Cli.shouldUseWorker
-            { recursive := true, workerBatchSize? := some 100, files := [project / "QuantumComputing"] }
+            {
+              recursive := true,
+              workerBatchSize? := some 100,
+              files := [project / "QuantumComputing"]
+            }
             cwd? 2)
-        assertTrue "recursive same-package run without explicit batch does not force worker"
+        assertTrue
+          "recursive same-package run without explicit batch does not force worker"
           (!LeanFmt.Cli.shouldUseWorker { recursive := true } none 100)
         assertTrue "recursive same-package run uses explicit exceeded batch size"
           (LeanFmt.Cli.shouldUseWorker
             { recursive := true, workerBatchSize? := some 16 } none 100)
         assertTrue "small Mathlib-heavy external package starts with one-file batches"
           ((← LeanFmt.Cli.initialWorkerBatchSize
-            { recursive := true, files := [project / "QuantumComputing"] }
-            cwd? [file, otherFile]) == 1)
+                { recursive := true, files := [project / "QuantumComputing"] }
+                cwd? [file, otherFile])
+            == 1)
         assertTrue "explicit recursive external worker batch size overrides default"
           ((← LeanFmt.Cli.initialWorkerBatchSize
-            { recursive := true, workerBatchSize? := some 4, files := [project / "QuantumComputing"] }
-            cwd? [file, otherFile]) == 4)
+                {
+                  recursive := true,
+                  workerBatchSize? := some 4,
+                  files := [project / "QuantumComputing"]
+                }
+                cwd? [file, otherFile])
+            == 4)
         IO.FS.writeFile (project / "lake-manifest.json")
           "{\"packages\":[{\"name\":\"other\"}],\"name\":\"external_project\"}\n"
         assertTrue "external package without Mathlib starts with all remaining files"
           ((← LeanFmt.Cli.initialWorkerBatchSize
-            { recursive := true, files := [project / "QuantumComputing"] }
-            cwd? [file, otherFile]) == 2)
+                { recursive := true, files := [project / "QuantumComputing"] }
+                cwd? [file, otherFile])
+            == 2)
 
 def assertRecursiveWorkerChecksTargetToolchain : IO Unit := do
   IO.FS.withTempDir

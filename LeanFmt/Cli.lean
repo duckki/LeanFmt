@@ -503,19 +503,19 @@ def packageDependsOn (cwd : FilePath) (packageName : String) : IO Bool := do
 
 def smallMathlibHeavyExternalBatchLimit : Nat := 64
 
-def defaultWorkerBatchSize
-    (cwd? : Option FilePath) (files : List FilePath) : IO Nat := do
+def defaultWorkerBatchSize (cwd? : Option FilePath) (files : List FilePath) : IO Nat := do
   match cwd? with
   | some cwd =>
       if files.length <= smallMathlibHeavyExternalBatchLimit
-        && (← packageDependsOn cwd "mathlib") then
+          && (← packageDependsOn cwd "mathlib") then
         pure 1
       else
         pure files.length
   | none => pure files.length
 
 def initialWorkerBatchSize (options : Options) (cwd? : Option FilePath)
-    (files : List FilePath) : IO Nat := do
+    (files : List FilePath)
+    : IO Nat := do
   match options.workerBatchSize? with
   | some size => pure size
   | none => defaultWorkerBatchSize cwd? files
