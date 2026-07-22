@@ -1189,6 +1189,12 @@ def byTacticBreaks (_context : RuleContext) (segment : Segment) : List BreakPoin
 def fromTermBreaks (_context : RuleContext) (segment : Segment) : List BreakPoint :=
   [delimiterValueBreak? segment "from"].filterMap id
 
+def sufficesBreaks (_context : RuleContext) (segment : Segment) : List BreakPoint :=
+  [boundaryBreak? segment 3 0].filterMap id
+
+def haveBreaks (_context : RuleContext) (segment : Segment) : List BreakPoint :=
+  [boundaryBreak? segment 4 0].filterMap id
+
 def doIfBreaks (_context : RuleContext) (segment : Segment) : List BreakPoint :=
   let thenBreak := boundaryBreak? segment 3 1
   let elseBreaks :=
@@ -1260,11 +1266,21 @@ def doElseIfChainBreaks (context : RuleContext) (segment : Segment) : List Break
   else
     []
 
-def letIdDeclBreaks (_context : RuleContext) (segment : Segment) : List BreakPoint :=
+def letIdDeclBreaks (context : RuleContext) (segment : Segment) : List BreakPoint :=
+  let hasIdentifier :=
+    match segment.child? 0 with
+    | some identifier => (treeFirstLexeme? identifier).isSome
+    | none => false
   let returnBreak :=
     match segment.child? 1 with
     | some parameters =>
-        if treeHasContent parameters then breakBeforeLexeme? segment ":" 2 else none
+        if treeHasContent parameters
+            || (hasIdentifier
+                && (grandparentIsRawKind context `Lean.Parser.Term.have
+                    || grandparentIsRawKind context `Lean.Parser.Term.haveI)) then
+          breakBeforeLexeme? segment ":" 2
+        else
+          none
     | none => none
   [returnBreak, declarationValueBreak? segment].filterMap id
 
@@ -2170,6 +2186,22 @@ def fromTermRule : LineBreakRule :=
     breakPoints := fromTermBreaks
   }
 
+def sufficesRule : LineBreakRule :=
+  {
+    name := "suffices"
+    mandatory := fun _ _ => true
+    inheritBase := fun _ _ => true
+    breakPoints := sufficesBreaks
+  }
+
+def haveRule : LineBreakRule :=
+  {
+    name := "have"
+    mandatory := fun _ _ => true
+    inheritBase := fun _ _ => true
+    breakPoints := haveBreaks
+  }
+
 def doIfRule : LineBreakRule :=
   {
     name := "doIf"
@@ -2337,11 +2369,11 @@ def ruleFor : SyntaxTree.Tree → Option LineBreakRule
   | .node (.raw `Lean.Parser.Term.optEllipsis) _ => some defaultRule
   | .node (.raw `Lean.Parser.Term.explicit) _ => some defaultRule
   | .node (.raw `Lean.Parser.Term.explicitUniv) _ => some defaultRule
-  | .node (.raw `Lean.Parser.Term.have) _ => some defaultRule
-  | .node (.raw `Lean.Parser.Term.haveI) _ => some defaultRule
+  | .node (.raw `Lean.Parser.Term.have) _ => some haveRule
+  | .node (.raw `Lean.Parser.Term.haveI) _ => some haveRule
   | .node (.raw `Lean.Parser.Term.hole) _ => some defaultRule
   | .node (.raw `Lean.Parser.Term.syntheticHole) _ => some defaultRule
-  | .node (.raw `Lean.Parser.Term.suffices) _ => some defaultRule
+  | .node (.raw `Lean.Parser.Term.suffices) _ => some sufficesRule
   | .node (.raw `Lean.Parser.Term.sufficesDecl) _ => some defaultRule
   | .node (.raw `Lean.Parser.Term.open) _ => some defaultRule
   | .node (.raw `Lean.Parser.Term.termReturn) _ =>

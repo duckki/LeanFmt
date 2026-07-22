@@ -549,11 +549,6 @@ def isCommentSensitiveMatchExpr : SyntaxTree.Tree → Bool
       treeHasCommentTrivia tree
   | _ => false
 
-def isHaveTree : SyntaxTree.Tree → Bool
-  | .node (.raw `Lean.Parser.Term.have) _ => true
-  | .node (.raw `Lean.Parser.Term.haveI) _ => true
-  | _ => false
-
 def isSyntaxCommentTree : SyntaxTree.Tree → Bool
   | .node (.raw `Lean.Parser.Command.moduleDoc) _ => true
   | .node (.raw `Lean.Parser.Command.docComment) _ => true
@@ -619,7 +614,6 @@ def shouldEmitOriginalTree (tree : SyntaxTree.Tree) : Bool :=
   || isDefinitionContainingQuotation tree
   || isCalcTree tree
   || isCommentSensitiveMatchExpr tree
-  || isHaveTree tree
   || isQuotationLayoutIsland tree
   || isQuotationTree tree
   || isQqSyntaxTree tree

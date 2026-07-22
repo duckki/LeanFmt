@@ -842,6 +842,14 @@ let (normalizedSource, normalizeMs) ←
   timeIO <| pure <| normalize source
 ```
 
+A `suffices` body likewise begins on a separate line after the proposition and
+its `from` proof. The body remains offside from the proof expression so Lean's
+layout parser cannot absorb it into that expression.
+
+A `have` body also begins on a separate line. When its declaration does not fit,
+the assigned value breaks after `:=` while the following body remains aligned
+with the `have` expression rather than the assigned value.
+
 ## Conditionals
 
 A fitting conditional stays on one line. A multiline conditional breaks as a

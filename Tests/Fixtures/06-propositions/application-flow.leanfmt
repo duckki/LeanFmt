@@ -123,7 +123,8 @@ def applicationFlowLastArgument : Prop :=
   selectionTypeConditionFeasible schema parentType typeConditions .existsField selection
 
 def longEqualityWithAssignment : Prop :=
-  have hresolveLater :
-      resolvers.resolve later.parentType later.fieldName later.arguments source = resolvers.resolve first.parentType first.fieldName first.arguments source := by
+  have hresolveLater
+      : resolvers.resolve later.parentType later.fieldName later.arguments source
+        = resolvers.resolve first.parentType first.fieldName first.arguments source := by
     exact proof
   body

@@ -1380,7 +1380,7 @@ def assertCalcLayoutIslandAfterNestedInfix (env : Lean.Environment) : IO Unit :=
       "calc-layout-island-after-nested-infix-formatted.lean"
   assertEq "calc after nested infix is idempotent" result.formatted formattedAgain
 
-def assertHaveTermLayoutIsland (env : Lean.Environment) : IO Unit := do
+def assertHaveTermFormatting (env : Lean.Environment) : IO Unit := do
   let source :=
     "theorem haveTermLayoutWithLongHeaderName (h : VeryLongHypothesisNameForLayoutTesting) : VeryLongTargetNameForLayoutTesting :=\n"
     ++ "  have := firstTerm\n"
@@ -1391,16 +1391,34 @@ def assertHaveTermLayoutIsland (env : Lean.Environment) : IO Unit := do
     ++ "  have := firstTerm\n"
     ++ "  secondTerm\n"
   let result ←
-    Formatter.formatSourceWithEnvDetailed env source "have-term-layout-island.lean"
+    Formatter.formatSourceWithEnvDetailed env source "have-term-formatting.lean"
   assertTrue "have term layout does not fall back" (!result.fellBack)
-  assertEq "have term layout remains an island" expected result.formatted
+  assertEq "short have term layout remains compact" expected result.formatted
   let _ ←
     SyntaxTree.parseModuleStringWithEnv env result.formatted
-      "have-term-layout-island-formatted.lean"
+      "have-term-formatting-formatted.lean"
   let formattedAgain ←
     Formatter.formatSourceWithEnv env result.formatted
-      "have-term-layout-island-formatted.lean"
+      "have-term-formatting-formatted.lean"
   assertEq "have term layout is idempotent" result.formatted formattedAgain
+  let longSource :=
+    "def sample : Result :=\n"
+    ++ "  (have : VeryLongTypeName firstArgument secondArgument thirdArgument := veryLongValueName firstArgument secondArgument thirdArgument\n"
+    ++ "   useProof this)\n"
+  let longExpected :=
+    "def sample : Result :=\n"
+    ++ "  (have : VeryLongTypeName firstArgument secondArgument thirdArgument :=\n"
+    ++ "    veryLongValueName firstArgument secondArgument thirdArgument\n"
+    ++ "  useProof this)\n"
+  let longResult ←
+    Formatter.formatSourceWithEnvDetailed env longSource "long-have-term-formatting.lean"
+  assertTrue "long have term formatting does not fall back" (!longResult.fellBack)
+  assertEq "long have binding breaks after assignment" longExpected longResult.formatted
+  let longFormattedAgain ←
+    Formatter.formatSourceWithEnv env longResult.formatted
+      "long-have-term-formatting-formatted.lean"
+  assertEq "long have term formatting is idempotent"
+    longResult.formatted longFormattedAgain
 
 def assertAbsoluteValueDelimitersStayAttached (env : Lean.Environment) : IO Unit := do
   let source :=
@@ -3103,6 +3121,31 @@ def assertInstanceValueInheritsDeclarationBase (env : Lean.Environment) : IO Uni
   let formatted ← Formatter.formatSourceWithEnv env source "nested-let-proof-body.lean"
   assertEq "instance values use the declaration base" source formatted
 
+def assertSufficesBodyBreaksAfterFromProof (env : Lean.Environment) : IO Unit := do
+  let directSource :=
+    "def sample : Result :=\n"
+    ++ "  suffices left = right from useProof this\n"
+    ++ "  nextTerm argument\n"
+  let directFormatted ←
+    Formatter.formatSourceWithEnv env directSource "suffices-body.lean"
+  assertEq "suffices body stays separate from its from proof" directSource directFormatted
+  let nestedSource :=
+    "theorem nestedSuffices : Result :=\n"
+    ++ "  outer <|\n"
+    ++ "    suffices left = right from\n"
+    ++ "      useProof this\n"
+    ++ "    nextTerm argument fun i => by\n"
+    ++ "      exact proof\n"
+  let nestedFormatted ←
+    Formatter.formatSourceWithEnv env nestedSource "nested-suffices-body.lean"
+  assertTrue "nested suffices formatting preserves code"
+    (← codePreservedIgnoringWhitespace env nestedSource nestedFormatted)
+  assertTextContains "nested suffices body remains offside"
+    nestedFormatted "\n  nextTerm argument"
+  let nestedFormattedAgain ←
+    Formatter.formatSourceWithEnv env nestedFormatted "nested-suffices-body.lean"
+  assertEq "nested suffices formatting is idempotent" nestedFormatted nestedFormattedAgain
+
 def assertArrowQuantifierKeepsQuantifierOnArrowLine (env : Lean.Environment)
     : IO Unit := do
   let source :=
@@ -4770,7 +4813,7 @@ def runBasicFormattingTests (env : Lean.Environment) : IO Unit := do
   assertDeclarationValueKeepsAttachedDoBody env
   assertProofValuesRemainLayoutIslands env
   assertCalcLayoutIslandAfterNestedInfix env
-  assertHaveTermLayoutIsland env
+  assertHaveTermFormatting env
   assertAbsoluteValueDelimitersStayAttached env
   assertSignatureParametersUseLeadingSourceBreakAfterFlatFails env
   assertDefinitionSourceBreakAfterAssignOverridesFlat env
@@ -4897,6 +4940,7 @@ def runCliAndArchitectureTests (env : Lean.Environment) : IO Unit := do
   assertCheckCommandHasRule env
   assertBinderTacticProofBodyHasNoMissingRules env
   assertInstanceValueInheritsDeclarationBase env
+  assertSufficesBodyBreaksAfterFromProof env
   assertSyntaxDeclarationsHaveRules env
   assertParserStateUpdatesAfterSyntaxCommands env
   assertSyntaxAuthoringDefinitionPreservesCode env
