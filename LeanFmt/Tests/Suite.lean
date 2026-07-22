@@ -3533,6 +3533,13 @@ def assertCliParsing : IO Unit := do
       throw
       <| IO.userError
           s!"CLI parser should accept --env-cache-size and files: {repr result}"
+  match LeanFmt.Cli.parseArgs ["--worker-batch-size", "8", "GraphQL.lean"] with
+  | .run options =>
+      assertTrue "CLI worker batch size flag" (options.workerBatchSize? == some 8)
+  | result =>
+      throw
+      <| IO.userError
+          s!"CLI parser should accept --worker-batch-size and files: {repr result}"
   match LeanFmt.Cli.parseArgs ["--line-width", "100", "GraphQL.lean"] with
   | .run options =>
       assertTrue "CLI line-width flag" (options.formatterOptions.lineWidth == 100)
@@ -3560,6 +3567,11 @@ def assertLineWidthOptionAffectsFormatting (env : Lean.Environment) : IO Unit :=
   | result =>
       throw
       <| IO.userError s!"CLI parser should require --env-cache-size value: {repr result}"
+  match LeanFmt.Cli.parseArgs ["--worker-batch-size", "0", "GraphQL.lean"] with
+  | .error "invalid --worker-batch-size value: 0" => pure ()
+  | result =>
+      throw
+      <| IO.userError s!"CLI parser should reject invalid --worker-batch-size: {repr result}"
   match LeanFmt.Cli.parseArgs ["--import-env-first", "GraphQL.lean"] with
   | .run options =>
       assertTrue "CLI import-first environment flag" options.importEnvironmentFirst
@@ -3639,6 +3651,66 @@ def assertEnvironmentCacheBound (env : Lean.Environment) : IO Unit := do
     { default := env, maxEntries := 0, entries := disabledEntries }
   disabledCache.rememberEnvironment "ignored" env
   assertTrue "disabled environment cache remains empty" (← disabledEntries.get).isEmpty
+
+def assertRecursiveWorkerUsesInputLakeRoot : IO Unit := do
+  IO.FS.withTempDir
+    fun root =>
+      do
+        let project := root / "external-project"
+        let nested := project / "QuantumComputing" / "Gates"
+        IO.FS.createDirAll nested
+        IO.FS.writeFile (project / "lakefile.toml") "name = \"external_project\"\n"
+        IO.FS.writeFile (project / "lake-manifest.json")
+          "{\"packages\":[{\"name\":\"mathlib\"}],\"name\":\"external_project\"}\n"
+        let file := nested / "Projectors.lean"
+        IO.FS.writeFile file "def projector : Nat := 0\n"
+        let otherFile := nested / "Actions.lean"
+        IO.FS.writeFile otherFile "def action : Nat := 0\n"
+        let cwd? ←
+          LeanFmt.Cli.workerCwd?
+            { recursive := true, files := [project / "QuantumComputing"] }
+        assertEq "recursive worker uses containing Lake package root"
+          (toString (some project)) (toString cwd?)
+        assertTrue "recursive external package uses worker even for one large batch"
+          (LeanFmt.Cli.shouldUseWorker
+            { recursive := true, workerBatchSize? := some 100, files := [project / "QuantumComputing"] }
+            cwd? 2)
+        assertTrue "recursive same-package run without explicit batch does not force worker"
+          (!LeanFmt.Cli.shouldUseWorker { recursive := true } none 100)
+        assertTrue "recursive same-package run uses explicit exceeded batch size"
+          (LeanFmt.Cli.shouldUseWorker
+            { recursive := true, workerBatchSize? := some 16 } none 100)
+        assertTrue "small Mathlib-heavy external package starts with one-file batches"
+          ((← LeanFmt.Cli.initialWorkerBatchSize
+            { recursive := true, files := [project / "QuantumComputing"] }
+            cwd? [file, otherFile]) == 1)
+        assertTrue "explicit recursive external worker batch size overrides default"
+          ((← LeanFmt.Cli.initialWorkerBatchSize
+            { recursive := true, workerBatchSize? := some 4, files := [project / "QuantumComputing"] }
+            cwd? [file, otherFile]) == 4)
+        IO.FS.writeFile (project / "lake-manifest.json")
+          "{\"packages\":[{\"name\":\"other\"}],\"name\":\"external_project\"}\n"
+        assertTrue "external package without Mathlib starts with all remaining files"
+          ((← LeanFmt.Cli.initialWorkerBatchSize
+            { recursive := true, files := [project / "QuantumComputing"] }
+            cwd? [file, otherFile]) == 2)
+
+def assertRecursiveWorkerChecksTargetToolchain : IO Unit := do
+  IO.FS.withTempDir
+    fun root =>
+      do
+        let matching := root / "matching"
+        IO.FS.createDirAll matching
+        IO.FS.writeFile (matching / "lean-toolchain")
+          LeanFmt.Cli.expectedLeanToolchain
+        assertTrue "recursive worker accepts matching Lean toolchain"
+          (← LeanFmt.Cli.checkWorkerToolchain (some matching))
+        let mismatching := root / "mismatching"
+        IO.FS.createDirAll mismatching
+        IO.FS.writeFile (mismatching / "lean-toolchain")
+          "leanprover/lean4:v4.29.1\n"
+        assertTrue "recursive worker rejects mismatching Lean toolchain"
+          (!(← LeanFmt.Cli.checkWorkerToolchain (some mismatching)))
 
 def assertImportFirstFallsBackToDefaultEnvironment (env : Lean.Environment)
     : IO Unit := do
@@ -3907,7 +3979,8 @@ def assertCliFormatsDirectoryRecursively
   let nestedSource := "def  nested  : Nat := 0\n"
   IO.FS.writeFile topFile topSource
   IO.FS.writeFile nestedFile nestedSource
-  match LeanFmt.Cli.parseArgs ["-r", "--include-hidden", root.toString] with
+  match LeanFmt.Cli.parseArgs
+      ["-r", "--include-hidden", "--worker-batch-size", "1", root.toString] with
   | .run options =>
       let exitCode ← LeanFmt.Cli.runOptionsWithCache cache options
       assertTrue "CLI recursive directory format succeeds" (exitCode == 0)
@@ -4710,6 +4783,8 @@ def runCliAndArchitectureTests (env : Lean.Environment) : IO Unit := do
   let cache : LeanFmt.Cli.EnvironmentCache := { default := env, maxEntries := 1, entries }
   assertCliParsing
   assertEnvironmentCacheBound env
+  assertRecursiveWorkerUsesInputLakeRoot
+  assertRecursiveWorkerChecksTargetToolchain
   assertImportFirstFallsBackToDefaultEnvironment env
   assertFormattingExceptionChecks env
   assertCliChecksStillFormatUnlessCheck env cache
