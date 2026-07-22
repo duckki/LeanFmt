@@ -493,9 +493,14 @@ def regroupDeclarationChildren (children : Array Tree) : Option (Array Tree) := 
     fun annotatedDeclaration =>
       #[annotatedDeclaration] ++ childrenRange children 2 children.size
 
-def regroupStructureUpdateSource : Tree → Tree
-  | .node (.raw `null) children => .node .structureUpdate children
-  | tree => .node .structureUpdate #[tree]
+partial def structureUpdateSourceChildren : Tree → Array Tree
+  | .node (.raw `null) children =>
+      children.foldl
+        (fun flattened child => flattened ++ structureUpdateSourceChildren child) #[]
+  | tree => #[tree]
+
+def regroupStructureUpdateSource (tree : Tree) : Tree :=
+  .node .structureUpdate (structureUpdateSourceChildren tree)
 
 def regroupStructInstChildren (children : Array Tree) : Array Tree :=
   match children[1]? with

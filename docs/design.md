@@ -1071,6 +1071,16 @@ before `}`. Comma-separated fields remain flat when they fit. Newline-separated
 fields without commas are structurally multiline because Lean's layout syntax
 requires those boundaries.
 
+Multiple sources in a structure update align as peers before the `with` suffix:
+
+```lean
+{
+  firstParent,
+  secondParent with
+    field := value
+}
+```
+
 The opening and closing brace breaks are balanced. A type ascription following a
 multiline structure keeps `:` with its type:
 

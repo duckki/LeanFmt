@@ -3390,6 +3390,29 @@ def assertStructUpdateWithFieldsBreaks (env : Lean.Environment) : IO Unit := do
   assertEq "overflowing structure-update source is idempotent" applicationFormatted
     applicationFormattedAgain
 
+  let multipleSources :=
+    "def combined : Target :=\n"
+    ++ "  { (firstParent argument),\n"
+    ++ "    (secondParent firstArgument secondArgument thirdArgument fourthArgument) with\n"
+    ++ "    field := value }\n"
+  let multipleSourcesExpected :=
+    "def combined : Target :=\n"
+    ++ "  {\n"
+    ++ "    (firstParent argument),\n"
+    ++ "    (secondParent firstArgument secondArgument thirdArgument fourthArgument) with\n"
+    ++ "      field := value\n"
+    ++ "  }\n"
+  let multipleSourcesTree ←
+    SyntaxTree.parseModuleStringWithEnv env multipleSources
+      "struct-update-multiple-sources.lean"
+  assertTrue "structure update parents are direct children"
+    (multipleSourcesTree.tree.firstNodeChildCount? .structureUpdate == some 4)
+  let multipleSourcesFormatted ←
+    Formatter.formatSourceWithEnv env multipleSources
+      "struct-update-multiple-sources.lean"
+  assertEq "multiple structure update sources align"
+    multipleSourcesExpected multipleSourcesFormatted
+
   let infixSource :=
     "def updateEquality : Prop :=\n"
     ++ "  { state with veryLongFieldNameForStructureUpdate := veryLongFunctionNameForStructureUpdate firstArgumentForStructureUpdate secondArgumentForStructureUpdate thirdArgumentForStructureUpdate } = expectedState\n"

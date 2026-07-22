@@ -878,6 +878,25 @@ def structInstBreaks (_context : RuleContext) (segment : Segment) : List BreakPo
   else
     []
 
+def structureUpdateSourceIndexes (segment : Segment) : List Nat :=
+  (nonemptyChildIndexes segment).takeWhile
+    (fun index => !childStartsWithLexeme segment index "with")
+  |>.filter (fun index => !childStartsWithLexeme segment index ",")
+
+def structInstHasMultipleUpdateSources (segment : Segment) : Bool :=
+  segment.indexes.any
+    fun index =>
+      match segment.child? index with
+      | some tree@(.node .structureUpdate _) =>
+          1 < (structureUpdateSourceIndexes (Segment.ofTree tree)).length
+      | _ => false
+
+def structureUpdateBreaks (_context : RuleContext) (segment : Segment)
+    : List BreakPoint :=
+  match structureUpdateSourceIndexes segment with
+  | [] | [_] => []
+  | _ :: rest => rest.filterMap fun index => boundaryBreak? segment index 0
+
 def typeAscriptionBreaks (_context : RuleContext) (segment : Segment) : List BreakPoint :=
   match segment.indexes.find? fun index => childStartsWithLexeme segment index ":" with
   | some index =>
@@ -1515,7 +1534,9 @@ def theoremRule : LineBreakRule :=
 def structInstRule : LineBreakRule :=
   {
     name := "structInst"
-    liftsTailIndentation := fun _ segment => structInstHasWith segment
+    liftsTailIndentation :=
+      fun _ segment =>
+        structInstHasWith segment && !structInstHasMultipleUpdateSources segment
     roundUpBaseIndentation := true
     breakPoints := structInstBreaks
   }
@@ -1523,8 +1544,10 @@ def structInstRule : LineBreakRule :=
 def structureUpdateRule : LineBreakRule :=
   {
     name := "structureUpdate"
-    flow := fun _ _ => true
-    liftsTailIndentation := fun _ _ => true
+    useExistingBreaks := fun _ _ => true
+    liftsTailIndentation :=
+      fun _ segment => (structureUpdateSourceIndexes segment).length <= 1
+    breakPoints := structureUpdateBreaks
   }
 
 def typeAscriptionRule : LineBreakRule :=
