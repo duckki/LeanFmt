@@ -646,7 +646,16 @@ def commandAttributeBreaks (_context : RuleContext) (segment : Segment)
 
 /-! ### Declarations, structures, and collections -/
 
-def definitionBreaks (_context : RuleContext) (segment : Segment) : List BreakPoint :=
+def derivingBreaks (_context : RuleContext) (segment : Segment) : List BreakPoint :=
+  match segment.indexes.find?
+          fun index => childStartsWithLexeme segment index "deriving" with
+  | some index =>
+      match boundaryBreak? segment index 0 with
+      | some breakPoint => [breakPoint]
+      | none => []
+  | none => []
+
+def definitionBreaks (context : RuleContext) (segment : Segment) : List BreakPoint :=
   let valueBreak := [declarationValueBreak? segment].filterMap id
   let whereBreak :=
     match segment.indexes.find?
@@ -656,7 +665,7 @@ def definitionBreaks (_context : RuleContext) (segment : Segment) : List BreakPo
         | some breakPoint => [breakPoint]
         | none => []
     | none => []
-  valueBreak ++ whereBreak
+  valueBreak ++ whereBreak ++ derivingBreaks context segment
 
 def leadingAnnotationBreak? (segment : Segment) : Option BreakPoint := do
   let firstIndex ← (nonemptyChildIndexes segment).head?
@@ -683,15 +692,6 @@ def declarationModifierBreaks (_context : RuleContext) (segment : Segment)
   | [_] => []
   | _ :: rest =>
       rest.filterMap fun index => boundaryBreak? segment index 0
-
-def derivingBreaks (_context : RuleContext) (segment : Segment) : List BreakPoint :=
-  match segment.indexes.find?
-          fun index => childStartsWithLexeme segment index "deriving" with
-  | some index =>
-      match boundaryBreak? segment index 0 with
-      | some breakPoint => [breakPoint]
-      | none => []
-  | none => []
 
 def structureBreaks (context : RuleContext) (segment : Segment) : List BreakPoint :=
   let annotationBreaks := leadingAnnotationBreaks context segment

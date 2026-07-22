@@ -930,6 +930,13 @@ def assertDerivingStaysOnOwnLine (env : Lean.Environment) : IO Unit := do
   let formatted ← Formatter.formatSourceWithEnv env source "deriving-own-line.lean"
   assertEq "deriving stays on own line" source formatted
 
+def assertDefinitionDerivingStaysOnOwnLine (env : Lean.Environment) : IO Unit := do
+  let source :=
+    "def DerivedAlias : Type :=\n" ++ "  Nat\n" ++ "deriving Repr, Inhabited\n"
+  let formatted ←
+    Formatter.formatSourceWithEnv env source "definition-deriving-own-line.lean"
+  assertEq "definition deriving stays on own line" source formatted
+
 def assertStructureBreaksTopLevelFields (env : Lean.Environment) : IO Unit := do
   let source :=
     "structure CustomScalarType where name : Name deriving Repr, DecidableEq\n"
@@ -4706,6 +4713,7 @@ def runBasicFormattingTests (env : Lean.Environment) : IO Unit := do
   assertMatchAltProofRhsKeepsByOnArrowLine env
   assertRecordBraceSpacing env
   assertDerivingStaysOnOwnLine env
+  assertDefinitionDerivingStaysOnOwnLine env
   assertStructureBreaksTopLevelFields env
   assertStructureFieldProofBreaksAfterAssignment env
   assertAbbrevSourceBreakAfterAssign env
