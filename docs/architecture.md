@@ -592,7 +592,10 @@ Proof subtrees are not reformatted. When the renderer reaches a recognized proof
 emits the original source slice, adjusted only for indentation when needed. Module and
 declaration documentation comments are also emitted from their original source slices so
 their internal whitespace cannot be changed. This protects tactic scripts, term proof
-layout, and comment text while declarations around them can still be formatted.
+layout, and comment text while declarations around them can still be formatted. When an
+original-source child followed its previous token on the same source line, it honors a
+pending boundary selected by its parent rule; an existing source-line boundary and the
+child's internal layout remain unchanged.
 
 The escape hatch is intentionally narrow. If a non-proof syntax form is unsafe, prefer a
 specific transparent/default rule or a grouping change before adding another original

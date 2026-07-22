@@ -1350,6 +1350,26 @@ def assertProofValuesRemainLayoutIslands (env : Lean.Environment) : IO Unit := d
   assertEq "term struct instance proof layout is idempotent"
     termStructResult.formatted termStructFormattedAgain
 
+def assertOriginalLayoutValueHonorsDeclarationBreak (env : Lean.Environment)
+    : IO Unit := do
+  let source :=
+    "theorem Semigroup.mem_center_iff {z : M} : z ∈ Set.center M ↔ ∀ g, g * z = z * g := ⟨fun a g ↦ by rw [IsMulCentral.comm a g],\n"
+    ++ "  fun h ↦ ⟨fun _ ↦ (h _).symm, fun _ _ ↦ (mul_assoc z _ _).symm, fun _ _ ↦ mul_assoc _ _ z⟩ ⟩\n"
+  let formatted ←
+    Formatter.formatSourceWithEnv env source "original-layout-value-break.lean"
+      { lineWidth := 100 }
+  assertTrue "original-layout declaration value preserves code"
+    (← codePreservedIgnoringWhitespace env source formatted)
+  assertTextContains "original-layout declaration value honors assignment break"
+    formatted ":=\n  ⟨fun"
+  assertTextLacks "original-layout declaration value does not erase assignment break"
+    formatted ":= ⟨fun"
+  let formattedAgain ←
+    Formatter.formatSourceWithEnv env formatted
+      "original-layout-value-break-formatted.lean" { lineWidth := 100 }
+  assertEq "original-layout declaration value formatting is idempotent"
+    formatted formattedAgain
+
 def assertCalcLayoutIslandAfterNestedInfix (env : Lean.Environment) : IO Unit := do
   let source :=
     "def embeddingCalcAfterNestedInfix : Nat :=\n"
@@ -4864,6 +4884,7 @@ def runBasicFormattingTests (env : Lean.Environment) : IO Unit := do
   assertDeclarationValueKeepsAttachedByBody env
   assertDeclarationValueKeepsAttachedDoBody env
   assertProofValuesRemainLayoutIslands env
+  assertOriginalLayoutValueHonorsDeclarationBreak env
   assertCalcLayoutIslandAfterNestedInfix env
   assertHaveTermFormatting env
   assertAbsoluteValueDelimitersStayAttached env

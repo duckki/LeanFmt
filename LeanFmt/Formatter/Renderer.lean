@@ -670,6 +670,15 @@ def RenderState.emitOriginalTree
       }
   | _, _ => state
 
+def RenderState.originalTreeStartsOnNewSourceLine
+    (state : RenderState) (tree : SyntaxTree.Tree)
+    : Bool :=
+  match state.lastToken?, SyntaxTree.Tree.firstToken? tree with
+  | some leftToken, some firstToken =>
+      SpaceRules.hasLineStructure
+        (SyntaxTree.sourceText state.source leftToken.span.stop firstToken.span.start)
+  | _, _ => false
+
 /-! ## Flat rendering and fit measurement -/
 
 partial def renderFlatSegment (state : RenderState) (segment : LineBreakRules.Segment)
@@ -1694,7 +1703,8 @@ partial def renderNestedSegment
     if emitOriginal then
       childState.emitOriginalTree child
         (respectPendingIndent :=
-          (isProofTree child && !treeHasLineBreakTrivia child)
+          !state.originalTreeStartsOnNewSourceLine child
+          || (isProofTree child && !treeHasLineBreakTrivia child)
           || isProofLemmaCommand child
           || state.pendingCommandBoundary?.isSome)
     else
