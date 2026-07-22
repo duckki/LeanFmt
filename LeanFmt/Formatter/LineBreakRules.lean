@@ -163,11 +163,21 @@ def RuleContext.parentIsStructureFieldDefaultValue (context : RuleContext) : Boo
       && parent.childIndex == 3
   | _ => false
 
+def RuleContext.parentWrapsStructureFieldDefaultValue (context : RuleContext) : Bool :=
+  match context.ancestors with
+  | parent :: grandparent :: _ =>
+      parent.rawKind? == some `null
+      && grandparent.rawKind? == some `Lean.Parser.Command.structSimpleBinder
+      && grandparent.childIndex == 3
+  | _ => false
+
 def defaultInheritBase (context : RuleContext) (segment : Segment) : Bool :=
   context.parentIsSingletonArrayItemWrapper
   || segment.rawKind? == some `Lean.Parser.Term.letDecl
   || (segment.rawKind? == some `null && context.parentIsVariableBinderList)
   || (segment.rawKind? == some `null && context.parentIsStructureFieldDefaultValue)
+  || (segment.rawKind? == some `Lean.Parser.Term.binderDefault
+      && context.parentWrapsStructureFieldDefaultValue)
   || (segment.rawKind? == some `null
       && context.parentIsStructureWhereWrapper
       && !context.parentStructureHasExtends)

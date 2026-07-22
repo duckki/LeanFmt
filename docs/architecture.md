@@ -569,6 +569,10 @@ the first anchor after it, merges that floor with an inherited outer tail, and r
 the result in `tailIndentation?`. Nested child rendering is scoped, so this state does not
 leak into later siblings.
 
+Transparent parser wrappers inherit the structural base of structure-field default
+values. In particular, `binderDefault` does not derive proof indentation from the
+physical column after `:=`.
+
 The renderer computes each child's rule and breakpoints once before recursive rendering
 and passes that prepared pair into the child call. Layout decisions therefore reuse rule
 facts without inferring semantic behavior from the presence or shape of breakpoints.

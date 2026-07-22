@@ -962,6 +962,27 @@ def assertStructureFieldProofBreaksAfterAssignment (env : Lean.Environment)
     Formatter.formatSourceWithEnv env source "structure-field-proof-break.lean"
   assertEq "structure field proof breaks after assignment" expected formatted
 
+def assertParenthesizedStructureDefaultUsesFieldBase (env : Lean.Environment)
+    : IO Unit := do
+  let source :=
+    "structure Child extends Parent where\n"
+    ++ "  inheritedField {a} u ha :=\n"
+    ++ "    (by exact veryLongProofTermNameWithEnoughCharactersForBreakingAndMoreCharactersToExceedLineWidth)\n"
+  let expected :=
+    "structure Child\n"
+    ++ "    extends Parent where\n"
+    ++ "  inheritedField {a} u ha :=\n"
+    ++ "    (by\n"
+    ++ "      exact veryLongProofTermNameWithEnoughCharactersForBreakingAndMoreCharactersToExceedLineWidth)\n"
+  let formatted ←
+    Formatter.formatSourceWithEnv env source "parenthesized-structure-default.lean"
+  assertEq "parenthesized structure default uses field base" expected formatted
+  let formattedAgain ←
+    Formatter.formatSourceWithEnv env formatted
+      "parenthesized-structure-default-formatted.lean"
+  assertEq "parenthesized structure default formatting is idempotent"
+    formatted formattedAgain
+
 def assertAbbrevSourceBreakAfterAssign (env : Lean.Environment) : IO Unit := do
   let source := "abbrev Result (α : Type) : Type :=\n" ++ "  Except Nat (α × Nat)\n"
   let formatted ← Formatter.formatSourceWithEnv env source "abbrev-source-assign.lean"
@@ -4862,6 +4883,7 @@ def runBasicFormattingTests (env : Lean.Environment) : IO Unit := do
   assertDefinitionDerivingStaysOnOwnLine env
   assertStructureBreaksTopLevelFields env
   assertStructureFieldProofBreaksAfterAssignment env
+  assertParenthesizedStructureDefaultUsesFieldBase env
   assertAbbrevSourceBreakAfterAssign env
   assertMatchArmKeepsDoOnArrowLine env
   assertWhereFormattingKeepsSuffix env
