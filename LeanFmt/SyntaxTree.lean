@@ -414,6 +414,35 @@ def regroupLetEquationSignature (children : Array Tree) : Option (Array Tree) :=
       ]
       ++ childrenRange children 3 children.size
 
+def regroupLetRecDeclAnnotations (children : Array Tree) : Option (Array Tree) := do
+  let annotationsIndex ←
+    children.findIdx?
+      fun child =>
+        child.firstToken?.map (fun token => token.lexeme) == some "@["
+  let declarationIndex ←
+    children.findIdx?
+      fun child =>
+        rawKind? child == some `Lean.Parser.Term.letDecl
+  if declarationIndex <= annotationsIndex then
+    none
+  else
+    let annotationsContainer ← children[annotationsIndex]?
+    let annotations :=
+      match annotationsContainer with
+      | .node (.raw `null) wrappedChildren =>
+          if wrappedChildren.size == 1 then
+            match wrappedChildren[0]? with
+            | some annotations => annotations
+            | none => annotationsContainer
+          else
+            annotationsContainer
+      | _ => annotationsContainer
+    let declaration ← children[declarationIndex]?
+    some
+    <| (children.set! annotationsIndex
+          (.node .annotatedDeclaration #[annotations, declaration])).set!
+        declarationIndex .missing
+
 def regroupDefinitionChildren (children : Array Tree) : Option (Array Tree) := do
   let declVal ← children[3]?
   match declVal with
@@ -629,6 +658,10 @@ def regroupRawNode (kind : SyntaxNodeKind) (children : Array Tree) : Tree :=
     match children[1]? with
     | some parameters =>
         .node (.raw kind) <| children.set! 1 (regroupSignatureParameters parameters)
+    | none => .node (.raw kind) children
+  else if kind == `Lean.Parser.Term.letRecDecl then
+    match regroupLetRecDeclAnnotations children with
+    | some children => .node (.raw kind) children
     | none => .node (.raw kind) children
   else if kind == `Lean.Parser.Term.matchAlt then
     match children[1]? with

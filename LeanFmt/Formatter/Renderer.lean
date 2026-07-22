@@ -604,6 +604,7 @@ def isAttributeModifierBlock (tree : SyntaxTree.Tree) : Bool :=
   match tree with
   | .node (.raw `Lean.Parser.Command.declModifiers) _ =>
       LineBreakRules.treeContainsLexeme "@[" tree
+  | .node (.raw `Lean.Parser.Term.attributes) _ => true
   | _ => false
 
 def shouldEmitOriginalTree (tree : SyntaxTree.Tree) : Bool :=
@@ -677,6 +678,13 @@ def RenderState.originalTreeStartsOnNewSourceLine
   | some leftToken, some firstToken =>
       SpaceRules.hasLineStructure
         (SyntaxTree.sourceText state.source leftToken.span.stop firstToken.span.start)
+  | _, _ => false
+
+def originalTreeHasLineStructure (source : String) (tree : SyntaxTree.Tree) : Bool :=
+  match SyntaxTree.Tree.firstToken? tree, SyntaxTree.Tree.lastToken? tree with
+  | some firstToken, some lastToken =>
+      SpaceRules.hasLineStructure
+        (SyntaxTree.sourceText source firstToken.span.start lastToken.span.stop)
   | _, _ => false
 
 /-! ## Flat rendering and fit measurement -/
@@ -1206,7 +1214,9 @@ partial def segmentAllowsFlat
   | .leaf _ => true
   | .node _ _ =>
       if shouldEmitOriginalTree segment.parent then
-        isAttributeModifierBlock segment.parent || isProofTree segment.parent
+        isAttributeModifierBlock segment.parent
+        || isProofTree segment.parent
+        || !originalTreeHasLineStructure source segment.parent
       else
         let rule := LineBreakRules.formattingRuleFor segment.parent
         if rule.mandatory context segment then

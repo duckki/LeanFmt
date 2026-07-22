@@ -177,7 +177,7 @@ Current logical regroupings are:
 | `.application` | Lean parser applications are nested per argument, but formatting wants one function-application segment. | Child `0` is the head, children `1...` are arguments in source order. Raw `null` argument containers are spliced. |
 | `.infixChain kind` | Same-kind infix peers should break as one balanced chain, and renderer indentation should not infer peer structure from nested raw nodes. | Odd-length array alternating operand, operator, operand. Operands are even indexes; operators are odd indexes. |
 | `.definition` | Definitions and abbreviations need one node containing header, assignment marker, body, and suffixes. | The raw `declValSimple` wrapper is spliced so child `4` is the value/body when the recognized shape is present. |
-| `.annotatedDeclaration` | Every declaration annotation and command form one flow, including commands introduced by syntax extensions and declarations nested under command wrappers. Source breaks are preserved; otherwise the command remains after its annotations only when the complete command fits. | Child `0` contains only the leading annotations. Any remaining modifiers and the command follow as separate children in source order. An annotation embedded in an extensible command node is extracted without changing that command's remaining child indexes. |
+| `.annotatedDeclaration` | Every declaration annotation and command form one flow, including commands introduced by syntax extensions, declarations nested under command wrappers, and recursive declarations under `where`. Source breaks are preserved; otherwise the command remains after its annotations only when the complete command fits. | Child `0` contains only the leading annotations. Any remaining modifiers and the command follow as separate children in source order. An annotation embedded in an extensible command node is extracted without changing that command's remaining child indexes. Optional wrappers around a recursive declaration's attributes are removed. |
 | `.signatureParameters` | Parameter sequences need flow behavior at binder boundaries without forcing rules to inspect raw `null` wrappers. | Direct binder/parameter children from `optDeclSig` or `declSig`. |
 | `.matchDiscriminants` | Multiple match scrutinees need peer flow boundaries after commas, aligned under the first scrutinee, rather than generic nested parser wrapping. | Children of the discriminant sequence immediately before `with`, preserving alternating discriminants and commas. |
 | `.matchPatterns` | Multiple patterns in one alternative need peer/balanced wrapping rather than raw nested `null` behavior. | Pattern children from the `matchAlt` pattern wrapper, with a redundant single `null` wrapper removed. |
@@ -592,7 +592,7 @@ boundary, same-line comment trivia preceding that boundary still contributes to 
 
 ### Proof and original-source escape hatches
 
-Proof subtrees are not reformatted. When the renderer reaches a recognized proof node, it
+Proof subtrees and extensible attribute payloads are not reformatted. When the renderer reaches a recognized proof or attribute node, it
 emits the original source slice, adjusted only for indentation when needed. Module and
 declaration documentation comments are also emitted from their original source slices so
 their internal whitespace cannot be changed. This protects tactic scripts, term proof
@@ -608,6 +608,8 @@ are currently original-source islands because their syntax is extension-owned an
 already encodes tactic-specific layout requirements. Multiline custom braced term
 syntax is also emitted from original source so LeanFmt does not invent a layout for an
 extension-owned DSL whose braces may carry domain-specific structure.
+An original-source island whose own source slice is single-line still participates in
+ordinary flat-fit checks, so inline extension syntax does not force its parent to break.
 
 ## Diagnostics and formatter exceptions
 

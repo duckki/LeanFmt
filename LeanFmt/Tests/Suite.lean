@@ -557,6 +557,44 @@ def assertAttributesFlowBeforeDeclarations (env : Lean.Environment) : IO Unit :=
   assertEq "documentation and attribute flow before a multiline structure"
     documentedStructureExpected documentedStructureFormatted
 
+def assertWhereDeclarationAttributeBreaksBeforeDeclaration (env : Lean.Environment)
+    : IO Unit := do
+  let source :=
+    "syntax (name := helperAttr) \"helper_attr\" ident docComment : attr\n"
+    ++ "\n"
+    ++ "def repeated (k : Nat) : Nat :=\n"
+    ++ "  repeated.go k\n"
+    ++ "where\n"
+    ++ "  /-- Auxiliary implementation for `repeated`. -/\n"
+    ++ "  @[helper_attr helper.go /-- Auxiliary implementation for `helper`. -/]\n"
+    ++ "  go (k : Nat) : Nat :=\n"
+    ++ "    k\n"
+  let expected :=
+    "syntax (name := helperAttr) \"helper_attr\" ident docComment : attr\n"
+    ++ "\n"
+    ++ "def repeated (k : Nat) : Nat :=\n"
+    ++ "  repeated.go k\n"
+    ++ "where\n"
+    ++ "  /-- Auxiliary implementation for `repeated`. -/\n"
+    ++ "  @[helper_attr helper.go /-- Auxiliary implementation for `helper`. -/]\n"
+    ++ "  go (k : Nat) : Nat := k\n"
+  let formatted ←
+    Formatter.formatSourceWithEnv env source "where-declaration-attribute.lean"
+      { lineWidth := 100 }
+  assertEq "where declaration attribute breaks before declaration" expected formatted
+
+def assertSingleLineOriginalAttributeSyntaxFitsInline (env : Lean.Environment)
+    : IO Unit := do
+  let source :=
+    "syntax (name := Mathlib.Tactic.inlineAttribute) \"inline_attribute\" ident : attr\n"
+    ++ "\n"
+    ++ "def Foo : Nat := 0\n"
+    ++ "\n"
+    ++ "attribute [inline_attribute Foo] Foo\n"
+  let formatted ←
+    Formatter.formatSourceWithEnv env source "single-line-original-attribute.lean"
+  assertEq "single-line original attribute syntax fits inline" source formatted
+
 def assertCommandAttributeBracketPayloadStaysAttached (env : Lean.Environment)
     : IO Unit := do
   let source :=
@@ -4866,6 +4904,8 @@ def runBasicFormattingTests (env : Lean.Environment) : IO Unit := do
   assertAnonymousConstructorAfterListKeepsSpace env
   assertAttributeDeclarationPreservesSourceBreak env
   assertAttributesFlowBeforeDeclarations env
+  assertWhereDeclarationAttributeBreaksBeforeDeclaration env
+  assertSingleLineOriginalAttributeSyntaxFitsInline env
   assertCommandAttributeBracketPayloadStaysAttached env
   assertPrivateTheoremModifierStaysOnHeader env
   assertDoBlockPreservesBodyBreak env
