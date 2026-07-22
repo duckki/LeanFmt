@@ -1,4 +1,4 @@
-import LeanFmt.SyntaxTree
+import LeanFmt.Formatter.SpaceRules
 
 namespace LeanFmt
 namespace Formatter
@@ -94,6 +94,24 @@ def RuleContext.parentRawKind? (context : RuleContext) : Option Lean.SyntaxNodeK
       | .node (.raw kind) _ => some kind
       | _ => none
   | none => none
+
+def RuleContext.previousToken? (context : RuleContext) : Option SyntaxTree.Token :=
+  let rec loop : List Frame → Option SyntaxTree.Token
+    | [] => none
+    | frame :: rest =>
+        match (List.range frame.childIndex).reverse.find?
+                fun index =>
+                  (frame.segment.parentChild? index
+                    >>= SyntaxTree.Tree.lastToken?).isSome with
+        | some previousIndex =>
+            frame.segment.parentChild? previousIndex >>= SyntaxTree.Tree.lastToken?
+        | none => loop rest
+  loop context.ancestors
+
+def RuleContext.startsAfterFixedSpacingToken (context : RuleContext) : Bool :=
+  context.previousToken?.any
+    fun token =>
+      !SpaceRules.allowsHorizontalAlignmentAfterToken token.lexeme
 
 def Frame.rawKind? (frame : Frame) : Option Lean.SyntaxNodeKind :=
   match frame.segment.parent with
@@ -1352,7 +1370,7 @@ def letRule : LineBreakRule :=
     mandatory := fun _ _ => true
     -- Put `let` on an indentation column so the RHS and body can both use the
     -- ordinary indentation formulas while still satisfying Lean's layout parser.
-    alignStartToIndentation := fun _ _ => true
+    alignStartToIndentation := fun context _ => !context.startsAfterFixedSpacingToken
     breakPoints := letBreaks
   }
 
@@ -1360,7 +1378,7 @@ def letRecRule : LineBreakRule :=
   {
     name := "letRec"
     mandatory := fun _ _ => true
-    alignStartToIndentation := fun _ _ => true
+    alignStartToIndentation := fun context _ => !context.startsAfterFixedSpacingToken
     breakPoints := letRecBreaks
   }
 

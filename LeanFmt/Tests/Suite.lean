@@ -329,7 +329,7 @@ def assertLayoutSensitiveTermsRemainParseableAndIdempotent (env : Lean.Environme
   assertTextContains "shifted local recursive continuation uses aligned local base"
     formatted "\n      loop values)"
   assertTextContains "multiline let argument breaks before the argument"
-    formatted "  abc\n    ( let rec loop : List Nat -> Nat"
+    formatted "  abc\n    (let rec loop : List Nat -> Nat"
   assertTextContains "try catch keeps its layout" formatted "  catch _ =>"
   assertTextContains "do for keeps its layout" formatted "  for value in values do"
   assertTextContains "do if keeps its layout" formatted "    if value == 0 then"
@@ -1995,6 +1995,34 @@ def assertLetExpressionBlocksFlatRendering (env : Lean.Environment) : IO Unit :=
     "def letBodyBlocksFlat : Prop :=\n" ++ "  let first := value\n" ++ "  Result first\n"
   let formatted ← Formatter.formatSourceWithEnv env source "let-flat-rendering.lean"
   assertEq "let expression blocks flat rendering" expected formatted
+
+def assertParenthesizedLetIKeepsTightOpeningDelimiter (env : Lean.Environment)
+    : IO Unit := do
+  let source :=
+    "def parenthesizedLetI (m₁ m₂ : Nat) : Prop := (letI := m₁; HMul.hMul : M → M → M) = (letI := m₂; HMul.hMul : M → M → M)\n"
+  let formatted ←
+    Formatter.formatSourceWithEnv env source "parenthesized-letI-tight-opening.lean"
+  assertTrue "parenthesized letI preserves code"
+    (← codePreservedIgnoringWhitespace env source formatted)
+  assertTextContains "parenthesized letI stays attached to opening delimiter"
+    formatted "(letI"
+  assertTextLacks "parenthesized letI does not gain alignment padding" formatted "( letI"
+  let formattedAgain ←
+    Formatter.formatSourceWithEnv env formatted
+      "parenthesized-letI-tight-opening-formatted.lean"
+  assertEq "parenthesized letI formatting is idempotent" formatted formattedAgain
+
+def assertBinderLetIKeepsSingleSpaceAfterColon (env : Lean.Environment) : IO Unit := do
+  let source :=
+    "def binderLetI [h : letI := veryLongInstanceProviderName alphaArgument functionArgument; VeryLongTypeclassName alphaArgument] : Nat := default\n"
+  let formatted ← Formatter.formatSourceWithEnv env source "binder-letI-spacing.lean"
+  assertTrue "binder letI preserves code"
+    (← codePreservedIgnoringWhitespace env source formatted)
+  assertTextContains "binder letI keeps one space after colon" formatted ": letI"
+  assertTextLacks "binder letI does not gain alignment padding" formatted ":  letI"
+  let formattedAgain ←
+    Formatter.formatSourceWithEnv env formatted "binder-letI-spacing-formatted.lean"
+  assertEq "binder letI formatting is idempotent" formatted formattedAgain
 
 def assertParenthesizedLetRhsIndentUnderImplication (env : Lean.Environment)
     : IO Unit := do
@@ -4848,6 +4876,8 @@ def runExpressionAndRendererTests (env : Lean.Environment) : IO Unit := do
   assertLetExpressionKeepsBodyBreak env
   assertLetIExpressionKeepsBodyBreak env
   assertLetExpressionBlocksFlatRendering env
+  assertParenthesizedLetIKeepsTightOpeningDelimiter env
+  assertBinderLetIKeepsSingleSpaceAfterColon env
   assertParenthesizedLetRhsIndentUnderImplication env
   assertLetBodyAfterInfixClosesLetLayout env
   assertDeclarationTypeBreak env

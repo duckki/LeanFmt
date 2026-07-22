@@ -134,6 +134,9 @@ def stringStartsWithAny (value : String) (prefixes : List String) : Bool :=
 def noSpaceAfterToken (lexeme : String) : Bool :=
   lexeme == "@" || stringEndsWithAny lexeme ["(", "[", "⟨", "⟪", "⦃"]
 
+def allowsHorizontalAlignmentAfterToken (lexeme : String) : Bool :=
+  !noSpaceAfterToken lexeme && lexeme != ":"
+
 def charCodeIn (char : Char) (lower upper : Nat) : Bool :=
   lower <= char.toNat && char.toNat <= upper
 
