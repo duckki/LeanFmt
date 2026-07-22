@@ -835,6 +835,26 @@ def SuffixState.emitToken (state : SuffixState) (token : SyntaxTree.Token)
       stopped
     )
 
+def SuffixState.appendCommentTriviaBeforeToken
+    (state : SuffixState) (token : SyntaxTree.Token)
+    : SuffixState :=
+  let trivia :=
+    match state.widthState.lastToken? with
+    | some left =>
+        SyntaxTree.sourceText state.widthState.source left.span.stop token.span.start
+    | none => token.leading.text
+  if SpaceRules.hasCommentStart trivia then
+    (state.appendText (state.widthState.defaultWhitespace token false)).1
+  else
+    state
+
+def SuffixState.appendCommentTriviaBeforeTree
+    (state : SuffixState) (tree : SyntaxTree.Tree)
+    : SuffixState :=
+  match SyntaxTree.Tree.firstToken? tree with
+  | some token => state.appendCommentTriviaBeforeToken token
+  | none => state
+
 def SuffixState.emitOriginalFirstLine (state : SuffixState) (tree : SyntaxTree.Tree)
     : SuffixState × Bool :=
   match SyntaxTree.Tree.firstToken? tree, SyntaxTree.Tree.lastToken? tree with
@@ -870,7 +890,7 @@ partial def measureSuffixOfTree
       match LineBreakRules.suffixTokenAction context token with
       | .skip => (state, false)
       | .emit => state.emitToken token false
-      | .stop => (state, true)
+      | .stop => (state.appendCommentTriviaBeforeToken token, true)
   | .node _ _ =>
       if shouldEmitOriginalTree tree then
         state.emitOriginalFirstLine tree
@@ -887,7 +907,7 @@ partial def measureSuffixOfTree
                   if segment.start < index
                       && hasRuleBreakAt context segment index
                       && !suffixMayContinueAcrossRuleBreak segment index then
-                    (state, true)
+                    (state.appendCommentTriviaBeforeTree child, true)
                   else
                     let childContext := context.push segment index
                     measureSuffixOfTree childContext state child)
@@ -966,7 +986,7 @@ partial def lineFitSuffixAfterChild
       match segment.child? nextIndex with
       | some nextChild =>
           if suffixState.widthState.hasBlankBoundaryBefore nextChild then
-            (suffixState, false)
+            (suffixState.appendCommentTriviaBeforeTree nextChild, false)
           else
             let childContext := context.push segment nextIndex
             let (rendered, stopped) :=
@@ -974,6 +994,10 @@ partial def lineFitSuffixAfterChild
             if stopped then (rendered, false) else loop rendered (nextIndex + 1)
       | none => loop suffixState (nextIndex + 1)
     else
+      let suffixState :=
+        match segment.parentChild? segment.stop with
+        | some nextChild => suffixState.appendCommentTriviaBeforeTree nextChild
+        | none => suffixState
       (suffixState, true)
   let (suffixState, reachedEnd) :=
     loop { widthState := afterChild, suffixWidth := 0 } (index + 1)

@@ -582,7 +582,8 @@ whether its final line fits.
 `lineFitSuffixWidth` stores that extra width. The renderer estimates suffix width by
 walking following siblings until the next active break boundary and stops at tokens that
 are not suffix-eligible. The suffix classifiers live with line-break rules; the renderer
-only measures with those classifications.
+only measures with those classifications. When measurement stops before a token or rule
+boundary, same-line comment trivia preceding that boundary still contributes to the fit.
 
 ### Proof and original-source escape hatches
 

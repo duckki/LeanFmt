@@ -2275,6 +2275,24 @@ def assertChildFitCountsParentSuffix (env : Lean.Environment) : IO Unit := do
   let formatted ← Formatter.formatSourceWithEnv env source "child-fit-parent-suffix.lean"
   assertEq "child fit counts parent suffix" expected formatted
 
+def assertLineFitCountsTrailingComment (env : Lean.Environment) : IO Unit := do
+  let source :=
+    "inductive Relation : Nat → Nat → Prop\n"
+    ++ "  | trans : ∀ (x y z) (_ : Relation x y) (_ : Relation y z), Relation x z -- The following constructor starts a new case\n"
+    ++ "  | refl : ∀ x, Relation x x\n"
+  let expected :=
+    "inductive Relation : Nat → Nat → Prop\n"
+    ++ "  | trans\n"
+    ++ "    : ∀ (x y z) (_ : Relation x y) (_ : Relation y z),\n"
+    ++ "        Relation x z -- The following constructor starts a new case\n"
+    ++ "  | refl : ∀ x, Relation x x\n"
+  let formatted ←
+    Formatter.formatSourceWithEnv env source "line-fit-trailing-comment.lean"
+  assertEq "line fit counts a comment before the next rule boundary" expected formatted
+  let formattedAgain ←
+    Formatter.formatSourceWithEnv env formatted "line-fit-trailing-comment.lean"
+  assertEq "trailing-comment fit is idempotent" formatted formattedAgain
+
 def assertColumnIndentationIsConservative : IO Unit := do
   assertTrue "column 3 needs only one indentation level"
     (Formatter.indentationLevelForColumn 3 == 1)
@@ -4846,6 +4864,7 @@ def runExpressionAndRendererTests (env : Lean.Environment) : IO Unit := do
   assertReturnTypeArrowFlows env
   assertLogicalArrowBreaksBalanced env
   assertChildFitCountsParentSuffix env
+  assertLineFitCountsTrailingComment env
   assertColumnIndentationIsConservative
   assertCurrentLineFitChecksCompletedLines
   assertSegmentBaseUsesRenderedStartColumn
