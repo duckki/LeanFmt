@@ -1900,6 +1900,12 @@ def commandAttributeRule : LineBreakRule :=
 def variableCommandRule : LineBreakRule :=
   { name := "variableCommand" }
 
+def instanceRule : LineBreakRule :=
+  {
+    name := "instance"
+    inheritBase := fun _ _ => true
+  }
+
 def declarationValueRule : LineBreakRule :=
   {
     name := "declarationValue"
@@ -2290,7 +2296,7 @@ def ruleFor : SyntaxTree.Tree → Option LineBreakRule
   | .node (.raw `Lean.Parser.Term.typeSpec) _ => some transparentRule
   | .node (.raw `Lean.Parser.Command.declValSimple) _ =>
       some declarationValueRule
-  | .node (.raw `Lean.Parser.Command.instance) _ => some transparentRule
+  | .node (.raw `Lean.Parser.Command.instance) _ => some instanceRule
   | .node (.raw `Lean.Parser.Command.ctor) _ => some transparentRule
   | .node (.raw `Lean.Parser.Command.structSimpleBinder) _ => some transparentRule
   | .node (.raw `Lean.Parser.Term.structInstField) _ => some structInstFieldRule

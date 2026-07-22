@@ -1326,8 +1326,7 @@ def assertProofValuesRemainLayoutIslands (env : Lean.Environment) : IO Unit := d
     ++ "      exact cross v w }\n"
   let termStructExpected :=
     "noncomputable instance [DecidableEq K]\n"
-    ++ "                  : ProjectivePlane (ProjectivePoint K (Fin 3 → K))\n"
-    ++ "                      (ProjectiveLine K (Fin 3 → K)) :=\n"
+    ++ "    : ProjectivePlane (ProjectivePoint K (Fin 3 → K)) (ProjectiveLine K (Fin 3 → K)) :=\n"
     ++ "  { mkPoint := by\n"
     ++ "      intro v w _\n"
     ++ "      exact cross v w\n"
@@ -3094,6 +3093,15 @@ def assertBinderTacticProofBodyHasNoMissingRules (env : Lean.Environment) : IO U
     (Formatter.Diagnostics.missingRuleOccurrencesForModule moduleTree).isEmpty
   let formatted ← Formatter.formatSourceWithEnv env source "binder-tactic-default.lean"
   assertEq "binder tactic default remains compact" source formatted
+
+def assertInstanceValueInheritsDeclarationBase (env : Lean.Environment) : IO Unit := do
+  let source :=
+    "noncomputable instance : Module A B :=\n"
+    ++ "  letI (i : I) : Module C D := by\n"
+    ++ "    dsimp; infer_instance\n"
+    ++ "  finalValue x\n"
+  let formatted ← Formatter.formatSourceWithEnv env source "nested-let-proof-body.lean"
+  assertEq "instance values use the declaration base" source formatted
 
 def assertArrowQuantifierKeepsQuantifierOnArrowLine (env : Lean.Environment)
     : IO Unit := do
@@ -4865,6 +4873,7 @@ def runCliAndArchitectureTests (env : Lean.Environment) : IO Unit := do
   assertMissingRuleCheckUsesDispatch env cache
   assertCheckCommandHasRule env
   assertBinderTacticProofBodyHasNoMissingRules env
+  assertInstanceValueInheritsDeclarationBase env
   assertSyntaxDeclarationsHaveRules env
   assertParserStateUpdatesAfterSyntaxCommands env
   assertSyntaxAuthoringDefinitionPreservesCode env
