@@ -4306,6 +4306,11 @@ def assertFormatterArchitecture : IO Unit := do
   let theoremBody :=
     SyntaxTree.Tree.node (.raw `group) #[.leaf (syntheticAtomToken "lemma")]
   let extendedTheorem := SyntaxTree.Tree.node (.raw `lemma) #[annotation, theoremBody]
+  let wrappedExtendedTheorem :=
+    SyntaxTree.Tree.node (.raw `Lean.Parser.Command.in) #[extendedTheorem]
+  let regroupedWrappedTheorem := SyntaxTree.regroupTree wrappedExtendedTheorem
+  assertTrue "extended declarations nested under command wrappers regroup annotations"
+    (regroupedWrappedTheorem.containsNodeKind .annotatedDeclaration)
   let annotatedTheorem := SyntaxTree.regroupTopLevelCommandAnnotations extendedTheorem
   let annotatedSegment := Formatter.LineBreakRules.Segment.ofTree annotatedTheorem
   let annotatedRule := Formatter.LineBreakRules.formattingRuleFor annotatedTheorem

@@ -473,6 +473,17 @@ def annotatedDeclarationTree (annotations modifiers declaration : Tree) : Tree :
       #[annotations, declaration]
   .node .annotatedDeclaration children
 
+def regroupDeclarationValueCommand (kind : SyntaxNodeKind) (children : Array Tree)
+    : Tree :=
+  let command :=
+    match regroupDefinitionChildren children with
+    | some declarationChildren => .node (.raw kind) declarationChildren
+    | none => .node (.raw kind) children
+  match splitDeclarationAnnotations? command with
+  | some (annotations, command) =>
+      annotatedDeclarationTree annotations .missing command
+  | none => command
+
 def regroupDeclarationChildren (children : Array Tree) : Option (Array Tree) := do
   let modifiers ← children[0]?
   let declaration ← children[1]?
@@ -591,9 +602,7 @@ def regroupRawNode (kind : SyntaxNodeKind) (children : Array Tree) : Tree :=
     | some definitionChildren => .node .definition definitionChildren
     | none => .node (.raw kind) children
   else if declarationValueCommandKind kind then
-    match regroupDefinitionChildren children with
-    | some declarationChildren => .node (.raw kind) declarationChildren
-    | none => .node (.raw kind) children
+    regroupDeclarationValueCommand kind children
   else if kind == `Lean.Parser.Command.declaration then
     match regroupDeclarationChildren children with
     | some declarationChildren => .node (.raw kind) declarationChildren
