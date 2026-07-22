@@ -183,6 +183,7 @@ Current logical regroupings are:
 | `.matchPatterns` | Multiple patterns in one alternative need peer/balanced wrapping rather than raw nested `null` behavior. | Pattern children from the `matchAlt` pattern wrapper, with a redundant single `null` wrapper removed. |
 | `.doForHeader` | A `for` binder and its collection need separate LHS and `in` layout without teaching the renderer about `do` syntax. | The `for` keyword and declaration children before the loop body. |
 | `.structureUpdate` | The source before `with` behaves as an LHS expression, while the surrounding braces remain an ordinary balanced structure. | The original lossless source wrapper, including the final `with` token. |
+| `.proofBody` | Tactic syntax after `by` is one protected proof-layout region, including both ordinary term proofs and binder default tactics. | The tactic-sequence children after the separate `by` token. For `binderTactic`, the preceding `:=` also remains a separate sibling. |
 | Multi-item delimited collections | Arrays, lists, tuples, anonymous constructors, and matrix vectors need one balanced rule to own opening, item, and closing breaks. | Parser sequence wrappers are spliced so delimiters, items, and commas are direct children of the original raw collection node. Singleton wrappers remain intact to preserve the established base for a multiline item. |
 
 Regrouping deliberately avoids semantic interpretation. For example, it flattens only
@@ -198,7 +199,8 @@ shape is stable enough. Examples include:
 - binders and declaration signatures,
 - `let`, `if`, `match`, `do`, lambdas, quantifiers, and subtypes,
 - structure instances, arrays, tuples, and parser `null` wrappers under known parents,
-- proof escape hatches such as `Lean.Parser.Term.byTactic`.
+- proof escape hatches such as `Lean.Parser.Term.byTactic` and
+  `Lean.Parser.Term.binderTactic`.
 
 Binder-name lists are exposed as flow opportunities by rules on their lossless
 wrapper segments. Explicit and implicit binders can therefore wrap names before

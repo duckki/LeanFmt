@@ -3079,6 +3079,15 @@ def assertCheckCommandHasRule (env : Lean.Environment) : IO Unit := do
     ++ "completeNormalizeOperation_uniqueUpToReorderingWithAdditionalLayoutText\n"
   assertEq "overflowing check command breaks after check" expected overflowingFormatted
 
+def assertBinderTacticProofBodyHasNoMissingRules (env : Lean.Environment) : IO Unit := do
+  let source := "def binderTacticDefault (h : True := by simp) : Nat := 0\n"
+  let moduleTree ←
+    SyntaxTree.parseModuleStringWithEnv env source "binder-tactic-default.lean"
+  assertTrue "binder tactic proof body has complete rule coverage"
+    (Formatter.Diagnostics.missingRuleOccurrencesForModule moduleTree).isEmpty
+  let formatted ← Formatter.formatSourceWithEnv env source "binder-tactic-default.lean"
+  assertEq "binder tactic default remains compact" source formatted
+
 def assertArrowQuantifierKeepsQuantifierOnArrowLine (env : Lean.Environment)
     : IO Unit := do
   let source :=
@@ -4845,6 +4854,7 @@ def runCliAndArchitectureTests (env : Lean.Environment) : IO Unit := do
   assertMathlibLowRiskSyntaxKindsHaveRules
   assertMissingRuleCheckUsesDispatch env cache
   assertCheckCommandHasRule env
+  assertBinderTacticProofBodyHasNoMissingRules env
   assertSyntaxDeclarationsHaveRules env
   assertParserStateUpdatesAfterSyntaxCommands env
   assertSyntaxAuthoringDefinitionPreservesCode env

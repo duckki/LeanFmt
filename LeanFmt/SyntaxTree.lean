@@ -512,6 +512,12 @@ def regroupByTacticChildren (children : Array Tree) : Array Tree :=
       #[byKeyword, .node .proofBody <| childrenRange children 1 children.size]
   | none => children
 
+def regroupBinderTacticChildren (children : Array Tree) : Array Tree :=
+  match children[0]?, children[1]? with
+  | some assignment, some byKeyword =>
+      #[assignment, byKeyword, .node .proofBody <| childrenRange children 2 children.size]
+  | _, _ => children
+
 def isDelimitedCollectionKind (kind : SyntaxNodeKind) : Bool :=
   kind == `Lean.Parser.Term.tuple
   || kind == `Lean.Parser.Term.anonymousCtor
@@ -563,6 +569,8 @@ def regroupRawNode (kind : SyntaxNodeKind) (children : Array Tree) : Tree :=
             .node .application (#[head] ++ appendApplicationArgumentContainers children 3)
           ]
     | _, _, _ => .node (.raw kind) children
+  else if kind == `Lean.Parser.Term.binderTactic then
+    .node (.infixChain kind) (regroupBinderTacticChildren children)
   else if isBinaryInfixRawNode kind children then
     match children[0]?, children[1]?, children[2]? with
     | some left, some operator, some right =>
