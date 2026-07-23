@@ -228,6 +228,31 @@ def assertDocumentedTopLevelDeclarationKeepsBaseIndent (env : Lean.Environment)
     Formatter.formatSourceWithEnv env source "documented-top-level-declaration.lean"
   assertEq "documented top-level declaration keeps base indent" source formatted
 
+def assertModifiedTopLevelCommandsUseLineBase (env : Lean.Environment) : IO Unit := do
+  let source :=
+    "private inductive listAligned (relation : α -> β -> Prop) : List α -> List β -> Prop where\n"
+    ++ "          | nil : listAligned relation [] []\n"
+    ++ "          | cons\n"
+    ++ "            : relation left right -> listAligned relation leftRest rightRest\n"
+    ++ "              -> listAligned relation (left :: leftRest) (right :: rightRest)\n"
+    ++ "\n"
+    ++ "private structure privatePair (α β : Type) where\n"
+    ++ "          left : α\n"
+    ++ "          right : β\n"
+  let expected :=
+    "private inductive listAligned (relation : α -> β -> Prop) : List α -> List β -> Prop where\n"
+    ++ "  | nil : listAligned relation [] []\n"
+    ++ "  | cons\n"
+    ++ "    : relation left right -> listAligned relation leftRest rightRest\n"
+    ++ "      -> listAligned relation (left :: leftRest) (right :: rightRest)\n"
+    ++ "\n"
+    ++ "private structure privatePair (α β : Type) where\n"
+    ++ "  left : α\n"
+    ++ "  right : β\n"
+  let formatted ←
+    Formatter.formatSourceWithEnv env source "modified-top-level-command-base.lean"
+  assertEq "modified top-level commands use command line base" expected formatted
+
 def assertCommandInWrapperPreservesBreakAfterIn (env : Lean.Environment) : IO Unit := do
   let source :=
     "variable {p q r s t u v w : Prop} in\n"
@@ -5195,6 +5220,7 @@ def runBasicFormattingTests (env : Lean.Environment) : IO Unit := do
   assertOperatorLikeModifierTokenPreservesParse env
   assertSetOptionInBreaksAfterIn env
   assertDocumentedTopLevelDeclarationKeepsBaseIndent env
+  assertModifiedTopLevelCommandsUseLineBase env
   assertCommandInWrapperPreservesBreakAfterIn env
   assertStackedCommandInWrappersBreakBeforeDeclaration env
   assertLeadingDotPatternConstructorsStayTight env

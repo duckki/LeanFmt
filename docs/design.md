@@ -389,6 +389,15 @@ private theorem helper : True := by
   trivial
 ```
 
+Continuation indentation is measured from the beginning of the command line,
+not from the declaration keyword after its modifiers:
+
+```lean
+private inductive Aligned : List α -> Prop where
+  | nil : Aligned []
+  | cons : Aligned values -> Aligned (value :: values)
+```
+
 ## Declaration headers
 
 ### Parameters

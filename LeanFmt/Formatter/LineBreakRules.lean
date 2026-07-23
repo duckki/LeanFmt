@@ -153,8 +153,14 @@ def RuleContext.parentWrapsStructureFieldDefaultValue (context : RuleContext) : 
       && grandparent.childIndex == 3
   | _ => false
 
+def RuleContext.parentIsAnnotatedDeclaration (context : RuleContext) : Bool :=
+  match context.ancestors with
+  | parent :: _ => parent.nodeKind? == some .annotatedDeclaration
+  | _ => false
+
 def defaultInheritBase (context : RuleContext) (segment : Segment) : Bool :=
-  context.parentIsSingletonArrayItemWrapper
+  context.parentIsAnnotatedDeclaration
+  || context.parentIsSingletonArrayItemWrapper
   || segment.rawKind? == some `Lean.Parser.Term.letDecl
   || (segment.rawKind? == some `null && context.parentIsVariableBinderList)
   || (segment.rawKind? == some `null && context.parentIsStructureFieldDefaultValue)
