@@ -71,6 +71,7 @@ inductive NodeKind where
   | ifThenElseClause
   | ifThenElseChain
   | proofBody
+  | derivingClause
 deriving BEq, Inhabited, Repr
 
 def nodeKindName : NodeKind → String
@@ -89,6 +90,7 @@ def nodeKindName : NodeKind → String
   | .ifThenElseClause => "LeanFmt.SyntaxTree.NodeKind.ifThenElseClause"
   | .ifThenElseChain => "LeanFmt.SyntaxTree.NodeKind.ifThenElseChain"
   | .proofBody => "LeanFmt.SyntaxTree.NodeKind.proofBody"
+  | .derivingClause => "LeanFmt.SyntaxTree.NodeKind.derivingClause"
 
 inductive Tree where
   | missing
@@ -652,6 +654,16 @@ def regroupBinderTacticChildren (children : Array Tree) : Array Tree :=
       #[assignment, byKeyword, .node .proofBody <| childrenRange children 2 children.size]
   | _, _ => children
 
+def regroupDerivingClause? (children : Array Tree) : Option Tree := do
+  let keyword ← children[0]?
+  if keyword.firstToken?.map (·.lexeme) != some "deriving" then
+    none
+  let classes ← children[1]?
+  match classes with
+  | .node (.raw `null) classChildren =>
+      some <| .node .derivingClause (#[keyword] ++ classChildren)
+  | _ => none
+
 def isDelimitedCollectionKind (kind : SyntaxNodeKind) : Bool :=
   kind == `Lean.Parser.Term.tuple
   || kind == `Lean.Parser.Term.anonymousCtor
@@ -682,7 +694,9 @@ partial def flattenDelimitedCollectionChildren (children : Array Tree) : Array T
   | none => children
 
 def regroupRawNode (kind : SyntaxNodeKind) (children : Array Tree) : Tree :=
-  if isIfThenElseKind kind then
+  if kind == `null then
+    (regroupDerivingClause? children).getD <| .node (.raw kind) children
+  else if isIfThenElseKind kind then
     regroupIfThenElseChain kind children
   else if kind == `Lean.Parser.Term.app && children.size == 2 then
     match children[0]?, children[1]? with

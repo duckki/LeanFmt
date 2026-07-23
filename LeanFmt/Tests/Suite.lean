@@ -1080,6 +1080,18 @@ def assertDefinitionDerivingStaysOnOwnLine (env : Lean.Environment) : IO Unit :=
     Formatter.formatSourceWithEnv env source "definition-deriving-own-line.lean"
   assertEq "definition deriving stays on own line" source formatted
 
+def assertLongDerivingClauseFlowsClasses (env : Lean.Environment) : IO Unit := do
+  let source :=
+    "def anodyneExtensions : MorphismProperty SSet := fibrations.llp\n"
+    ++ "deriving IsMultiplicative, RespectsIso, IsStableUnderCobaseChange, IsStableUnderRetracts, IsStableUnderTransfiniteComposition, IsStableUnderCoproducts\n"
+  let expected :=
+    "def anodyneExtensions : MorphismProperty SSet :=\n"
+    ++ "  fibrations.llp\n"
+    ++ "deriving IsMultiplicative, RespectsIso, IsStableUnderCobaseChange, IsStableUnderRetracts,\n"
+    ++ "  IsStableUnderTransfiniteComposition, IsStableUnderCoproducts\n"
+  let formatted ← Formatter.formatSourceWithEnv env source "long-deriving-clause.lean"
+  assertEq "long deriving clause flows classes" expected formatted
+
 def assertStructureBreaksTopLevelFields (env : Lean.Environment) : IO Unit := do
   let source :=
     "structure CustomScalarType where name : Name deriving Repr, DecidableEq\n"
@@ -5592,6 +5604,7 @@ def runBasicFormattingTests (env : Lean.Environment) : IO Unit := do
   assertRecordBraceSpacing env
   assertDerivingStaysOnOwnLine env
   assertDefinitionDerivingStaysOnOwnLine env
+  assertLongDerivingClauseFlowsClasses env
   assertStructureBreaksTopLevelFields env
   assertStructureFieldProofBreaksAfterAssignment env
   assertParenthesizedStructureDefaultUsesFieldBase env

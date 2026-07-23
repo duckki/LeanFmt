@@ -697,6 +697,17 @@ def derivingBreaks (_context : RuleContext) (segment : Segment) : List BreakPoin
       | none => []
   | none => []
 
+def derivingClauseBreaks (_context : RuleContext) (segment : Segment) : List BreakPoint :=
+  segment.indexes.filterMap
+    fun index =>
+      match previousContentIndex? segment index with
+      | some previousIndex =>
+          if childStartsWithLexeme segment previousIndex "," then
+            boundaryBreak? segment index 1
+          else
+            none
+      | none => none
+
 def definitionBreaks (context : RuleContext) (segment : Segment) : List BreakPoint :=
   let valueBreak := [declarationValueBreak? segment].filterMap id
   let whereBreak :=
@@ -1571,6 +1582,14 @@ def declarationModifierRule : LineBreakRule :=
     breakPoints := declarationModifierBreaks
   }
 
+def derivingClauseRule : LineBreakRule :=
+  {
+    name := "derivingClause"
+    flow := fun _ _ => true
+    inheritBase := fun _ _ => true
+    breakPoints := derivingClauseBreaks
+  }
+
 def structureRule : LineBreakRule :=
   {
     name := "structure"
@@ -2383,6 +2402,7 @@ def ruleFor : SyntaxTree.Tree → Option LineBreakRule
       some declarationModifierRule
   | .node (.raw `Lean.Parser.Command.declId) _ => some transparentRule
   | .node (.raw `Lean.Parser.Command.declValEqns) _ => some defaultRule
+  | .node .derivingClause _ => some derivingClauseRule
   | .node (.raw `Lean.Parser.Command.optDeriving) _ => some defaultRule
   | .node (.raw `Lean.Parser.Command.deriving) _ => some defaultRule
   | .node (.raw `Lean.Parser.Command.derivingClass) _ => some defaultRule

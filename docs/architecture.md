@@ -152,6 +152,7 @@ inductive NodeKind where
   | ifThenElseClause
   | ifThenElseChain
   | proofBody
+  | derivingClause
 
 inductive Tree where
   | missing
@@ -195,6 +196,7 @@ Current logical regroupings are:
 | `.structureUpdate` | The source before `with` behaves as an LHS expression, while the surrounding braces remain an ordinary balanced structure. | The comma-separated source expressions as direct children, including their separators and the final `with` token. Redundant anonymous sequence wrappers are removed. |
 | `.ifThenElseClause` and `.ifThenElseChain` | Nested raw `else if` nodes must share one balanced branch decision without making the renderer inspect conditional syntax or ancestor paths. | The chain alternates clause headers and result branches, followed by the final `else` and fallback branch. A clause header contains `if ... then` or `else if ... then` as one transparent segment, so the condition can still wrap by its own rules. |
 | `.proofBody` | Tactic syntax after `by` is one protected proof-layout region, including both ordinary term proofs and binder default tactics. | The tactic-sequence children after the separate `by` token. For `binderTactic`, the preceding `:=` also remains a separate sibling. |
+| `.derivingClause` | Long deriving-class lists need peer flow boundaries rather than an opaque optional wrapper. | The `deriving` keyword followed by deriving classes and commas as direct children. |
 | Lake DSL commands | Lake package and library commands need their `where` configuration body to share the command base, while Git dependency clauses need one rule to own the complete `from git` header and revision suffix. | Optional configuration wrappers are replaced by their `where` and field children. Dependency-name, source, and Git wrappers are spliced into the raw `requireDecl` node in source order. |
 | Multi-item delimited collections | Arrays, lists, tuples, anonymous constructors, and matrix vectors need one balanced rule to own opening, item, and closing breaks. | Parser sequence wrappers are spliced so delimiters, items, and commas are direct children of the original raw collection node. Singleton wrappers remain intact to preserve the established base for a multiline item. |
 
