@@ -2601,6 +2601,7 @@ def ruleFor : SyntaxTree.Tree → Option LineBreakRule
   | .node (.raw `«AddActionHomLocal≺») _ => some defaultRule
   | .node (.raw `«DistribMulActionHomLocal≺») _ => some defaultRule
   | .node (.raw `«DistribMulActionHomIdLocal≺») _ => some defaultRule
+  | .node (.raw `«MulSemiringActionHomIdLocal≺») _ => some defaultRule
   | .node (.raw `Std.termF!_) _ => some defaultRule
   | .node (.raw `Batteries.ExtendedBinder.extBinders) _ => some defaultRule
   | .node (.raw `Batteries.ExtendedBinder.extBinder) _ => some defaultRule
@@ -2699,6 +2700,8 @@ def ruleFor : SyntaxTree.Tree → Option LineBreakRule
       some defaultRule
   | .node (.raw `Finsupp.Internal.stxSingle₀) _ => some defaultRule
   | .node (.raw `Finsupp.Internal.stxUpdate₀) _ => some defaultRule
+  | .node (.raw `Finsupp.fun₀) _ => some defaultRule
+  | .node (.raw `Finsupp.fun₀.matchAlts) _ => some defaultRule
   | .node (.raw `Mathlib.Util.TermReduce.deltaStx) _ => some defaultRule
   | .node (.raw `Aesop.Frontend.Parser.aesop) _ => some defaultRule
   | .node (.raw `Aesop.Frontend.Parser.aesopTactic) _ => some defaultRule
