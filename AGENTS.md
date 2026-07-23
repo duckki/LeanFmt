@@ -140,10 +140,13 @@ For each project the script builds LeanFmt, creates a fresh clone under
 `.scratch/external-validation/`, optionally downloads the project's Lake cache,
 and runs one complete build before formatting. It then formats each file batch
 directly with `--check-exception --check-idempotent` under the target project's
-`lake env` and runs another complete build. The post-format build runs even when
-formatter diagnostics fail; after both results are reported, validation stops at
-that batch. It times every phase and returns failure when any required phase fails.
-A missing build-cache executable is only an optional-phase skip.
+`lake env` until all batches pass or the first diagnostic failure occurs. It then
+runs one complete build over every candidate written through that point. This
+post-format build also runs after a formatter failure; after both results are
+reported, validation stops. It times every phase and returns failure when any
+required phase fails. A missing build-cache executable is only an optional-phase
+skip. Pass `--skip-final-build` during formatter-only iteration to omit the
+post-format build while retaining the initial clean build.
 
 Review external changes and diagnostics in the scratch clone. Treat code changes,
 non-idempotence, missing rules, actionable overflow, and either build failure as

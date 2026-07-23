@@ -19,11 +19,13 @@ failures=0
 usage() {
   cat >&2 <<'EOF'
 Usage:
-  scripts/validate-external-projects.sh [--files FILE_SELECTOR] [--batch N] GIT_REPO[::FILE_SELECTOR]...
-  scripts/validate-external-projects.sh [--files FILE_SELECTOR] [--batch N] NAME=GIT_REPO[::FILE_SELECTOR]...
+  scripts/validate-external-projects.sh [--files FILE_SELECTOR] [--batch N] [--skip-final-build] GIT_REPO[::FILE_SELECTOR]...
+  scripts/validate-external-projects.sh [--files FILE_SELECTOR] [--batch N] [--skip-final-build] NAME=GIT_REPO[::FILE_SELECTOR]...
 
 Each project argument must name an explicit git clone source. The validator
 creates a fresh clone under .scratch/external-validation/ before formatting.
+Pass --skip-final-build to omit the complete build after formatter batches.
+The complete build before formatting still runs.
 
 Set LEANFMT_VALIDATION_LINE_WIDTH=N to pass --line-width N to every formatter
 invocation. For example, validate mathlib at width 100 with:
@@ -250,6 +252,7 @@ run_project_validation_batches() {
   local project_dir="$2"
   local file_selector="$3"
   local selected_batch="$4"
+  local skip_final_build="$5"
   local -a files=()
   local file
 
@@ -292,6 +295,7 @@ run_project_validation_batches() {
   fi
 
   local batch first_index count last_index list_file formatter_status build_status status
+  local formatted_through_batch=0
 
   if run_phase_result \
       "Build all of $project_name before formatting ($file_selector)" \
@@ -330,32 +334,42 @@ run_project_validation_batches() {
       formatter_status=$?
     fi
 
+    formatted_through_batch="$batch"
+    rm -f "$list_file"
     if ((formatter_status == 130 || formatter_status == 143)); then
-      rm -f "$list_file"
       printf 'Stopping at validation batch %d/%d after formatter interruption.\n' \
         "$batch" "$total_batches" >&2
       return "$formatter_status"
     fi
 
+    if ((formatter_status != 0)); then
+      break
+    fi
+  done
+
+  if ((skip_final_build == 1)); then
+    section "Skip final build of $project_name after formatting through batch $formatted_through_batch/$total_batches ($file_selector)"
+    printf 'SKIPPED: final build disabled by --skip-final-build.\n'
+    build_status=0
+  else
     build_status=0
     if run_phase_result \
-        "Build all of $project_name after formatting batch $batch/$total_batches ($file_selector)" \
+        "Build all of $project_name after formatting through batch $formatted_through_batch/$total_batches ($file_selector)" \
         build_project "$project_dir"; then
       :
     else
       build_status=$?
     fi
+  fi
 
-    rm -f "$list_file"
-    if ((formatter_status != 0 || build_status != 0)); then
-      printf 'Stopping at validation batch %d/%d after reporting formatter and build results.\n' \
-        "$batch" "$total_batches" >&2
-      if ((formatter_status != 0)); then
-        return "$formatter_status"
-      fi
-      return "$build_status"
+  if ((formatter_status != 0 || build_status != 0)); then
+    printf 'Stopping after formatting through batch %d/%d.\n' \
+      "$formatted_through_batch" "$total_batches" >&2
+    if ((formatter_status != 0)); then
+      return "$formatter_status"
     fi
-  done
+    return "$build_status"
+  fi
 
   return 0
 }
@@ -365,6 +379,7 @@ main() {
   local -a projects=()
   local default_file_selector="$DEFAULT_FILE_SELECTOR"
   local selected_batch=""
+  local skip_final_build=0
 
   validate_positive_integer LEANFMT_VALIDATION_BATCH_SIZE \
     "$VALIDATION_FILES_PER_BATCH" || return $?
@@ -404,6 +419,10 @@ main() {
       validate_positive_integer "--batch" "$1" || return $?
       selected_batch="$1"
       shift
+      continue
+    fi
+    if [[ "$specification" == "--skip-final-build" ]]; then
+      skip_final_build=1
       continue
     fi
 
@@ -461,7 +480,7 @@ main() {
 
     run_optional_phase "Download $name build cache" get_build_cache "$project_dir"
     run_project_validation_batches "$name" "$project_dir" "$file_selector" \
-      "$selected_batch"
+      "$selected_batch" "$skip_final_build"
   done
 
   section "Validation summary"
