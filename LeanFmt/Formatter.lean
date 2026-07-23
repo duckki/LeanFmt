@@ -39,8 +39,84 @@ namespace Internal
 
 /-! Shared phases used by ordinary, traced, and profiled formatting. -/
 
+def ignoreRegionStartMarker : String := "-- leanfmt: off"
+
+def ignoreRegionStopMarker : String := "-- leanfmt: on"
+
 def normalizeSource (source : String) : String :=
   SpaceRules.normalizeLineEndings source
+
+def lineChunks (source : String) : List String :=
+  match source.splitOn "\n" with
+  | [] => []
+  | line :: rest =>
+      let rec go : String → List String → List String
+        | current, [] => [current]
+        | current, next :: rest => (current ++ "\n") :: go next rest
+      go line rest
+
+inductive SourceChunk where
+  | format (text : String)
+  | preserve (text : String)
+deriving BEq, Repr
+
+namespace SourceChunk
+
+def text : SourceChunk → String
+  | .format text => text
+  | .preserve text => text
+
+def merge (left right : SourceChunk) : Option SourceChunk :=
+  match left, right with
+  | .format leftText, .format rightText => some <| .format (leftText ++ rightText)
+  | .preserve leftText, .preserve rightText => some <| .preserve (leftText ++ rightText)
+  | _, _ => none
+
+end SourceChunk
+
+def pushSourceChunk (chunks : List SourceChunk) (chunk : SourceChunk)
+    : List SourceChunk :=
+  if chunk.text.isEmpty then
+    chunks
+  else
+    match chunks with
+    | previous :: rest =>
+        match SourceChunk.merge previous chunk with
+        | some merged => merged :: rest
+        | none => chunk :: chunks
+    | [] => [chunk]
+
+def lineStartsWithMarker (line marker : String) : Bool :=
+  (SpaceRules.stripLeadingHorizontalWhitespace line).startsWith marker
+
+partial def chunkIgnoredRegionsAux
+    : List String → Bool → String → List SourceChunk → List SourceChunk
+  | [], preserving, pending, chunks =>
+      let chunk := if preserving then .preserve pending else .format pending
+      (pushSourceChunk chunks chunk).reverse
+  | line :: rest, preserving, pending, chunks =>
+      if preserving then
+        let pending := pending ++ line
+        if lineStartsWithMarker line ignoreRegionStopMarker then
+          chunkIgnoredRegionsAux rest false ""
+            (pushSourceChunk chunks (.preserve pending))
+        else
+          chunkIgnoredRegionsAux rest true pending chunks
+      else if lineStartsWithMarker line ignoreRegionStartMarker
+              && !lineStartsWithMarker line ignoreNextMarker then
+        let chunks := pushSourceChunk chunks (.format pending)
+        chunkIgnoredRegionsAux rest true line chunks
+      else
+        chunkIgnoredRegionsAux rest false (pending ++ line) chunks
+
+def chunkIgnoredRegions (source : String) : List SourceChunk :=
+  chunkIgnoredRegionsAux (lineChunks source) false "" []
+
+def hasIgnoredRegions (source : String) : Bool :=
+  (lineChunks source).any
+    fun line =>
+      lineStartsWithMarker line ignoreRegionStartMarker
+      && !lineStartsWithMarker line ignoreNextMarker
 
 def buildModule (source : String) (rawSyntax : Syntax) : SyntaxTree.Module :=
   let tree := SyntaxTree.extractTree source rawSyntax
@@ -91,6 +167,32 @@ partial def convergeSourceWithEnv
         warnConvergenceFallback fileName "an intermediate result did not parse"
         pure { formatted := fallback, fellBack := true }
 
+def formatChunkWithEnv
+    (env : Environment) (source fileName : String) (options : Options := {})
+    : IO FormatResult :=
+  convergeSourceWithEnv env source fileName maxConvergencePasses [] source options
+
+def formatSourceChunksWithEnv
+    (env : Environment) (chunks : List SourceChunk) (fileName : String)
+    (options : Options := {})
+    : IO FormatResult := do
+  let mut fellBack := false
+  let mut formatted := ""
+  for chunk in chunks do
+    match chunk with
+    | .preserve text =>
+        formatted := formatted ++ text
+    | .format text =>
+        let result ← formatChunkWithEnv env text fileName options
+        fellBack := fellBack || result.fellBack
+        formatted := formatted ++ result.formatted
+  pure { formatted, fellBack }
+
+def formatIgnoredRegionChunksWithEnv
+    (env : Environment) (source fileName : String) (options : Options := {})
+    : IO FormatResult :=
+  formatSourceChunksWithEnv env (chunkIgnoredRegions source) fileName options
+
 end Internal
 
 def formatSourceWithEnvDetailed
@@ -98,8 +200,11 @@ def formatSourceWithEnvDetailed
     (options : Options := {})
     : IO Internal.FormatResult :=
   let normalized := Internal.normalizeSource source
-  Internal.convergeSourceWithEnv env normalized fileName Internal.maxConvergencePasses
-    [] normalized options
+  if Internal.hasIgnoredRegions normalized then
+    Internal.formatIgnoredRegionChunksWithEnv env normalized fileName options
+  else
+    Internal.convergeSourceWithEnv env normalized fileName Internal.maxConvergencePasses
+      [] normalized options
 
 def formatSourceWithEnv (env : Environment) (source fileName : String := "<input>")
     (options : Options := {})

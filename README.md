@@ -98,6 +98,35 @@ to include hidden descendants during directory traversal. LeanFmt uses a
 90-character line limit by default; pass `--line-width N` when a project uses a
 different convention.
 
+To preserve the next complete syntax node exactly, put `-- leanfmt: off next`
+immediately before it. The marker works for top-level commands and nested terms:
+
+```lean
+-- leanfmt: off next
+def handAligned   :   Nat:=
+       1
+```
+
+```lean
+def handAlignedFunction : Nat → Nat :=
+  -- leanfmt: off next
+  fun n =>
+      n + 1
+```
+
+To preserve a manual source region exactly, wrap it in line comments:
+
+```lean
+-- leanfmt: off
+def handAligned   :   Nat:=
+       1
+-- leanfmt: on
+```
+
+LeanFmt formats parseable chunks outside the ignored region and keeps the marker
+lines and enclosed lines unchanged, apart from the command's normal line-ending
+normalization.
+
 To verify formatting without changing files, use `--check`:
 
 ```sh

@@ -607,8 +607,19 @@ def isAttributeModifierBlock (tree : SyntaxTree.Tree) : Bool :=
   | .node (.raw `Lean.Parser.Term.attributes) _ => true
   | _ => false
 
+def ignoreNextMarker : String := "-- leanfmt: off next"
+
+def isIgnoreNextTarget (tree : SyntaxTree.Tree) : Bool :=
+  match tree with
+  | .node (.raw `Lean.Parser.Module.module) _
+  | .node (.raw `null) _ => false
+  | .node _ _ =>
+      tree.firstToken?.any fun token => token.leading.text.contains ignoreNextMarker
+  | _ => false
+
 def shouldEmitOriginalTree (tree : SyntaxTree.Tree) : Bool :=
-  isProofTree tree
+  isIgnoreNextTarget tree
+  || isProofTree tree
   || isProofLayoutIsland tree
   || isProofLemmaCommand tree
   || isAttributeModifierBlock tree

@@ -4951,6 +4951,106 @@ def assertPrefixedTermWrappersHaveRules (env : Lean.Environment) : IO Unit := do
     Formatter.formatSourceWithEnv env source "prefixed-term-wrapper-rules.lean"
   assertEq "prefixed term wrappers stay attached" source formatted
 
+def assertIgnoredRegionsPreserveSourceLines (env : Lean.Environment) : IO Unit := do
+  let source :=
+    "def before:Nat:=1\n"
+    ++ "\n"
+    ++ "-- leanfmt: off\n"
+    ++ "def ignored   :   Nat:=\n"
+    ++ "       2\n"
+    ++ "-- leanfmt: on\n"
+    ++ "\n"
+    ++ "def after:Nat:=3\n"
+  let expected :=
+    "def before:Nat:=1\n"
+    ++ "-- leanfmt: off\n"
+    ++ "def ignored   :   Nat:=\n"
+    ++ "       2\n"
+    ++ "-- leanfmt: on\n"
+    ++ "def after:Nat:=3\n"
+  let formatted ← Formatter.formatSourceWithEnv env source "ignored-region.lean"
+  assertEq "ignored region preserves source lines while formatting outside"
+    expected formatted
+  let formattedAgain ← Formatter.formatSourceWithEnv env formatted "ignored-region.lean"
+  assertEq "ignored region formatting is idempotent" formatted formattedAgain
+
+def assertIgnoredRegionMayContinueToEnd (env : Lean.Environment) : IO Unit := do
+  let source :=
+    "def before:Nat:=1\n"
+    ++ "-- leanfmt: off\n"
+    ++ "def ignored   :   Nat:=\n"
+    ++ "       2\n"
+  let expected :=
+    "def before:Nat:=1\n"
+    ++ "-- leanfmt: off\n"
+    ++ "def ignored   :   Nat:=\n"
+    ++ "       2\n"
+  let formatted ← Formatter.formatSourceWithEnv env source "ignored-region-to-end.lean"
+  assertEq "unterminated ignored region preserves to end of file" expected formatted
+
+def assertIgnoreNextPreservesNextCommand (env : Lean.Environment) : IO Unit := do
+  let source :=
+    "-- leanfmt: off next\n"
+    ++ "def kept   :   Nat:=\n"
+    ++ "       1\n"
+    ++ "\n"
+    ++ "def after:Nat:=2\n"
+  let expected :=
+    "-- leanfmt: off next\n"
+    ++ "def kept   :   Nat:=\n"
+    ++ "       1\n"
+    ++ "\n"
+    ++ "def after:Nat:=2\n"
+  let formatted ← Formatter.formatSourceWithEnv env source "ignored-next-command.lean"
+  assertEq "ignore next preserves only the next command" expected formatted
+  let formattedAgain ←
+    Formatter.formatSourceWithEnv env formatted "ignored-next-command.lean"
+  assertEq "ignore next command formatting is idempotent" formatted formattedAgain
+
+def assertIgnoreNextPreservesAttributedCommand (env : Lean.Environment) : IO Unit := do
+  let source :=
+    "-- leanfmt: off next\n"
+    ++ "@[simp]\n"
+    ++ "theorem kept   :   True:=by\n"
+    ++ "       trivial\n"
+    ++ "\n"
+    ++ "def after:Nat:=2\n"
+  let expected :=
+    "-- leanfmt: off next\n"
+    ++ "@[simp]\n"
+    ++ "theorem kept   :   True:=by\n"
+    ++ "       trivial\n"
+    ++ "\n"
+    ++ "def after:Nat:=2\n"
+  let formatted ←
+    Formatter.formatSourceWithEnv env source "ignored-next-attributed-command.lean"
+  assertEq "ignore next preserves an attributed command" expected formatted
+
+def assertIgnoreNextPreservesNestedTerm (env : Lean.Environment) : IO Unit := do
+  let source :=
+    "def kept\n"
+    ++ "    : Nat → Nat :=\n"
+    ++ "  -- leanfmt: off next\n"
+    ++ "  fun i =>\n"
+    ++ "    if i = 0 then 1\n"
+    ++ "    else          2\n"
+    ++ "\n"
+    ++ "def after:Nat:=2\n"
+  let expected :=
+    "def kept : Nat → Nat :=\n"
+    ++ "  -- leanfmt: off next\n"
+    ++ "  fun i =>\n"
+    ++ "    if i = 0 then 1\n"
+    ++ "    else          2\n"
+    ++ "\n"
+    ++ "def after:Nat:=2\n"
+  let formatted ← Formatter.formatSourceWithEnv env source "ignored-next-term.lean"
+  assertEq "ignore next preserves a nested term and its command boundaries"
+    expected formatted
+  let formattedAgain ←
+    Formatter.formatSourceWithEnv env formatted "ignored-next-term.lean"
+  assertEq "nested ignore next formatting is idempotent" formatted formattedAgain
+
 def assertCslibStyleCoreSyntaxHasRules (env : Lean.Environment) : IO Unit := do
   let source :=
     "module\n"
@@ -5201,6 +5301,11 @@ def runCliAndArchitectureTests (env : Lean.Environment) : IO Unit := do
   assertSyntaxAuthoringDefinitionPreservesCode env
   assertCustomBracedTermSyntaxKeepsNestedSourceLayout env
   assertPrefixedTermWrappersHaveRules env
+  assertIgnoredRegionsPreserveSourceLines env
+  assertIgnoredRegionMayContinueToEnd env
+  assertIgnoreNextPreservesNextCommand env
+  assertIgnoreNextPreservesAttributedCommand env
+  assertIgnoreNextPreservesNestedTerm env
   assertCslibStyleCoreSyntaxHasRules env
 
 #eval

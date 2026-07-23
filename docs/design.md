@@ -177,6 +177,46 @@ These rules apply to every formatted file:
 - A nonempty file ends with exactly one newline.
 - Empty formatted output remains empty.
 
+## Ignored Regions
+
+Use `-- leanfmt: off next` before syntax to preserve the next complete syntax
+node exactly:
+
+```lean
+-- leanfmt: off next
+def handAligned   :   Nat:=
+       1
+```
+
+The marker attaches to the next parsed Lean syntax node, not the next indentation
+block. At the top level, it preserves the complete command. Within a declaration,
+it can preserve a nested term such as a manually aligned function body:
+
+```lean
+def handAlignedFunction : Nat → Nat :=
+  -- leanfmt: off next
+  fun n =>
+      n + 1
+```
+
+Use `-- leanfmt: off` and `-- leanfmt: on` on their own line-comment lines to
+preserve a manual source region exactly:
+
+```lean
+def formattedBefore:Nat:=0
+
+-- leanfmt: off
+def handAligned   :   Nat:=
+       1
+-- leanfmt: on
+
+def formattedAfter:Nat:=2
+```
+
+LeanFmt formats the parseable chunks before and after the region, then splices
+the ignored marker lines and enclosed lines back unchanged. An `off` marker
+without a matching `on` marker preserves the rest of the file.
+
 ## Comments
 
 Line comments, block comments, nested block comments, and doc comments keep
