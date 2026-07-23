@@ -2152,14 +2152,13 @@ def assertParenthesizedLetIKeepsTightOpeningDelimiter (env : Lean.Environment)
       "parenthesized-letI-tight-opening-formatted.lean"
   assertEq "parenthesized letI formatting is idempotent" formatted formattedAgain
 
-def assertBinderLetIKeepsSingleSpaceAfterColon (env : Lean.Environment) : IO Unit := do
+def assertBinderLetIAlignsAfterColon (env : Lean.Environment) : IO Unit := do
   let source :=
     "def binderLetI [h : letI := veryLongInstanceProviderName alphaArgument functionArgument; VeryLongTypeclassName alphaArgument] : Nat := default\n"
   let formatted ← Formatter.formatSourceWithEnv env source "binder-letI-spacing.lean"
   assertTrue "binder letI preserves code"
     (← codePreservedIgnoringWhitespace env source formatted)
-  assertTextContains "binder letI keeps one space after colon" formatted ": letI"
-  assertTextLacks "binder letI does not gain alignment padding" formatted ":  letI"
+  assertTextContains "binder letI aligns after colon" formatted ":  letI"
   let formattedAgain ←
     Formatter.formatSourceWithEnv env formatted "binder-letI-spacing-formatted.lean"
   assertEq "binder letI formatting is idempotent" formatted formattedAgain
@@ -3030,7 +3029,7 @@ def assertElseIfChainBreaksThenBranchesTogether (env : Lean.Environment) : IO Un
   let expected :=
     "def toffoliMulBasis (i : Fin 8) : Result :=\n"
     ++ "  Vector.basis\n"
-    ++ "    ( if i = (6 : Fin 8) then\n"
+    ++ "    (if i = (6 : Fin 8) then\n"
     ++ "        (7 : Fin 8)\n"
     ++ "      else if i = (7 : Fin 8) then\n"
     ++ "        (6 : Fin 8)\n"
@@ -3083,7 +3082,8 @@ def assertIfThenElseBreaksBalanced (env : Lean.Environment) : IO Unit := do
   let formatted ← Formatter.formatSourceWithEnv env source "if-then-else-balanced.lean"
   assertEq "if-then-else balanced breaks" expected formatted
 
-def assertParenthesizedIfAlignsBeforeBranchIndent (env : Lean.Environment) : IO Unit := do
+def assertParenthesizedIfKeepsTightHeadAndAlignedBranches (env : Lean.Environment)
+    : IO Unit := do
   let source :=
     "def diagnosticExit : UInt32 :=\n"
     ++ "  pure\n"
@@ -3094,13 +3094,13 @@ def assertParenthesizedIfAlignsBeforeBranchIndent (env : Lean.Environment) : IO 
   let expected :=
     "def diagnosticExit : UInt32 :=\n"
     ++ "  pure\n"
-    ++ "    ( if buildExit == 0 && commentExit == 0 && styleExit == 0 && leanExit == 0 then\n"
+    ++ "    (if buildExit == 0 && commentExit == 0 && styleExit == 0 && leanExit == 0 then\n"
     ++ "        0\n"
     ++ "      else\n"
     ++ "        1)\n"
   let formatted ←
     Formatter.formatSourceWithEnv env source "parenthesized-if-alignment.lean"
-  assertEq "parenthesized if aligns before branch indentation" expected formatted
+  assertEq "parenthesized if keeps tight head and aligned branches" expected formatted
 
 def assertMatchArmRhsIndent (env : Lean.Environment) : IO Unit := do
   let source :=
@@ -5276,7 +5276,7 @@ def runExpressionAndRendererTests (env : Lean.Environment) : IO Unit := do
   assertLetIExpressionKeepsBodyBreak env
   assertLetExpressionBlocksFlatRendering env
   assertParenthesizedLetIKeepsTightOpeningDelimiter env
-  assertBinderLetIKeepsSingleSpaceAfterColon env
+  assertBinderLetIAlignsAfterColon env
   assertParenthesizedLetRhsIndentUnderImplication env
   assertOffColumnParenthesizedLetRhsRoundsUp env
   assertLetBodyAfterInfixClosesLetLayout env
@@ -5332,7 +5332,7 @@ def runControlFlowTests (env : Lean.Environment) : IO Unit := do
   assertLetMatchAlternativesAlign env
   assertMatchArmPreservesSourceBreakBeforeShortRhs env
   assertIfThenElseBreaksBalanced env
-  assertParenthesizedIfAlignsBeforeBranchIndent env
+  assertParenthesizedIfKeepsTightHeadAndAlignedBranches env
   assertMatchArmRhsIndent env
   assertMatchPeerBreakConsistency env
   assertMatchDiscriminantApplicationIndent env

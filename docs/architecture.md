@@ -330,11 +330,13 @@ Rule methods mean:
   a multiline segment to an indentation boundary. Fitting flat segments do not need
   alignment. The `let` rule uses this because Lean's layout parser requires a stable
   indentation column; conditionals use it to keep `if`, `then`, and `else` on a stable
-  grid. The `let` rule declines alignment when padding would alter fixed punctuation
-  spacing, such as after an opening token or `:`.
+  grid. Rules only request alignment. The renderer suppresses same-line alignment
+  padding immediately after `(` to preserve tight parenthesis spacing; this exception
+  affects the first line, not the segment's continuation indentation.
 - `roundUpBaseIndentation`: positive structural breaks start from the indentation boundary
-  after the segment's physical start. Delimited structures, tuples, arrays, and binding
-  right-hand sides use this so contents remain one full level past an off-column head.
+  after the segment's physical start. Conditionals, delimited structures, tuples, arrays,
+  and binding right-hand sides use this so contents remain one full level past an
+  off-column head.
 - `breakPoints`: logical child boundaries. Rules must not read renderer state.
 
 The default rule is deliberately shape-only. It distinguishes missing children, empty

@@ -945,13 +945,13 @@ multiline conditional even when a flatter form fits. Because conditionals are
 non-flow rules, any accepted branch break activates the complete balanced
 branch layout.
 
-Conditionals start on an indentation boundary. When an opening parenthesis
-would otherwise put `if` off-column, a space inside the parenthesis aligns
-`if`, `else`, and their branch indentation:
+Conditionals normally start on an indentation boundary. An immediately preceding
+opening parenthesis keeps tight spacing instead; branch indentation rounds up from
+the off-column `if`. This exception affects only the first line:
 
 ```lean
 pure
-  ( if firstCheck && secondCheck && thirdCheck && fourthCheck then
+  (if firstCheck && secondCheck && thirdCheck && fourthCheck then
       0
     else
       1)

@@ -311,6 +311,11 @@ def RenderState.defaultWhitespace (state : RenderState) (token : SyntaxTree.Toke
   | some left, none =>
       SpaceRules.interTokenWhitespace state.source left token preserveLines
 
+def RenderState.allowsStartAlignment (state : RenderState) : Bool :=
+  match state.lastToken?, state.pendingIndent? with
+  | some token, none => SpaceRules.allowsHorizontalAlignmentAfterToken token.lexeme
+  | _, _ => true
+
 def RenderState.ensureBlankCommandBoundaryBeforeRenderedTree
     (before rendered : RenderState) (tree : SyntaxTree.Tree)
     : RenderState :=
@@ -1796,6 +1801,8 @@ partial def renderNestedSegment
     else if nestedLayoutFits
               { state with context := childContext, lineFitSuffixWidth := lineFitSuffix }
               childSegment then
+      state
+    else if !state.allowsStartAlignment then
       state
     else
       let naturalStartColumn := state.segmentStartColumn childSegment
