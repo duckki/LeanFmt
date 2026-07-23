@@ -1793,16 +1793,17 @@ partial def renderNestedSegment
   let childBreakPoints :=
     if emitOriginal then [] else ruleBreakPoints childContext childSegment childRule
   let inheritsBase := childRule.inheritBase childContext childSegment
+  let startAlignment := childRule.startAlignment childContext childSegment
   let suffixStop := suffixStop?.getD segment.stop
   let lineFitSuffix := lineFitSuffixForChild state segment index suffixStop child
   let state :=
-    if inheritsBase || !childRule.alignStartToIndentation childContext childSegment then
+    if inheritsBase || startAlignment == .none then
       state
     else if nestedLayoutFits
               { state with context := childContext, lineFitSuffixWidth := lineFitSuffix }
               childSegment then
       state
-    else if !state.allowsStartAlignment then
+    else if startAlignment == .preferred && !state.allowsStartAlignment then
       state
     else
       let naturalStartColumn := state.segmentStartColumn childSegment

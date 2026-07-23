@@ -541,6 +541,14 @@ structure Point where
   y : Nat
 ```
 
+The field break does not force a fitting `extends` clause onto a continuation
+line:
+
+```lean
+structure Candidate extends CandidateKey where
+  occurrenceCount : Nat
+```
+
 Long field types use the same binder/type continuation principles as other
 declarations.
 
@@ -886,15 +894,37 @@ The body aligns with `let`, not with the right-hand side. When a `let` appears
 after a leading operator, LeanFmt may insert alignment space before `let` so the
 result also satisfies Lean's indentation-sensitive parser.
 
-When fixed delimiter spacing keeps `let` off an indentation column, the body
-rounds up to the next column and the right-hand side remains one level deeper:
+For a layout-delimited `let`, Lean must be able to tell where the right-hand
+side ends and the body begins. When the body starts with syntax that could also
+be another function argument, LeanFmt aligns `let` to an indentation column.
+This may retain a space after an opening parenthesis:
 
 ```lean
 result
-  = (let matching :=
+  = ( let matching :=
         computeMatchingSelections schema responseName selections
       useMatchingSelections matching)
 ```
+
+When the leading syntax cannot continue a function application, the body
+boundary is already unambiguous and the opening parenthesis remains tight.
+Examples include bodies starting with `match`, `if`, `let`, or `by`:
+
+```lean
+result
+  = (let collectedRest :=
+        collectRest selections
+      match lookupField fieldName with
+      | none => collectedRest
+      | some field => field :: collectedRest)
+```
+
+LeanFmt asks Lean's active term parser this question at function-argument
+precedence. Syntax extensions declared or imported by a project therefore
+follow their own declared precedence instead of a built-in keyword list.
+
+An explicitly semicolon-delimited `let` does not depend on indentation for this
+boundary and keeps tight parenthesis spacing.
 
 A structured right-hand side keeps its own layout below `:=`:
 

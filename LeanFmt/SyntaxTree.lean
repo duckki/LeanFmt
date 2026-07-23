@@ -58,6 +58,7 @@ end Token
 
 inductive NodeKind where
   | raw (kind : SyntaxNodeKind)
+  | letExpression (kind : SyntaxNodeKind) (bodyCanStartApplicationArgument : Bool)
   | application
   | infixChain (kind : SyntaxNodeKind)
   | definition
@@ -74,6 +75,8 @@ deriving BEq, Inhabited, Repr
 
 def nodeKindName : NodeKind → String
   | .raw kind => toString kind
+  | .letExpression kind bodyCanStartApplicationArgument =>
+      s!"LeanFmt.SyntaxTree.NodeKind.letExpression {kind} {bodyCanStartApplicationArgument}"
   | .application => "LeanFmt.SyntaxTree.NodeKind.application"
   | .infixChain kind => s!"LeanFmt.SyntaxTree.NodeKind.infixChain {kind}"
   | .definition => "LeanFmt.SyntaxTree.NodeKind.definition"
@@ -290,6 +293,7 @@ def removeOverlappingSourceTokens (source : String) (tree : Tree) : Tree :=
 
 def rawKind? : Tree → Option SyntaxNodeKind
   | .node (.raw kind) _ => some kind
+  | .node (.letExpression kind _) _ => some kind
   | _ => none
 
 /-! ## Logical regrouping -/
@@ -817,8 +821,43 @@ def regroupTopLevelAnnotations : Tree → Tree
       | _ => Tree.node (.raw `Lean.Parser.Module.module) children
   | tree => tree
 
-def extractTree (source : String) (stx : Syntax) : Tree :=
+structure LetBodyParserFact where
+  letStart : String.Pos.Raw
+  bodyCanStartApplicationArgument : Bool
+deriving BEq, Repr
+
+def letBodyParserFact? (facts : Array LetBodyParserFact) (start : String.Pos.Raw)
+    : Option LetBodyParserFact :=
+  facts.find? fun fact => fact.letStart == start
+
+partial def annotateLetExpressions (facts : Array LetBodyParserFact) : Tree → Tree
+  | .missing => .missing
+  | .leaf token => .leaf token
+  | .node kind children =>
+      let children := children.map (annotateLetExpressions facts)
+      match kind with
+      | .raw rawKind =>
+          if rawKind == `Lean.Parser.Term.let
+              || rawKind == `Lean.Parser.Term.letI
+              || rawKind == `Lean.Parser.Term.letrec then
+            let bodyCanStartApplicationArgument :=
+              match Tree.firstToken? (.node kind children) with
+              | some token =>
+                  (letBodyParserFact? facts token.span.start
+                    |>.map (·.bodyCanStartApplicationArgument)).getD
+                    true
+              | none => true
+            .node (.letExpression rawKind bodyCanStartApplicationArgument) children
+          else
+            .node kind children
+      | _ => .node kind children
+
+def extractTree
+    (source : String) (stx : Syntax)
+    (letBodyParserFacts : Array LetBodyParserFact := #[])
+    : Tree :=
   regroupTopLevelAnnotations
+  <| annotateLetExpressions letBodyParserFacts
   <| regroupTree
   <| removeOverlappingSourceTokens source
   <| extractRawTree source stx
@@ -865,6 +904,71 @@ def parserStateCommandContext (inputContext : Parser.InputContext)
     cancelTk? := none
   }
 
+def parserModuleContext (commandState : Elab.Command.State)
+    : Parser.ParserModuleContext :=
+  let scope := commandState.scopes.head!
+  {
+    env := commandState.env
+    options := scope.opts
+    currNamespace := scope.currNamespace
+    openDecls := scope.openDecls
+  }
+
+def syntaxSourceText? (source : String) (stx : Syntax) : Option String := do
+  let start ← stx.getPos? (canonicalOnly := true)
+  let stop ← stx.getTailPos? (canonicalOnly := true)
+  if start < stop then
+    some <| sourceText source start stop
+  else
+    none
+
+def bodyCanStartApplicationArgument
+    (parserContext : Parser.ParserModuleContext)
+    (bodySource : String)
+    : Bool :=
+  let inputContext := Parser.mkInputContext bodySource "<let-body-argument-probe>"
+  let state :=
+    (Parser.termParser Parser.argPrec).fn.run inputContext parserContext
+      (Parser.getTokenTable parserContext.env)
+      (Parser.mkParserState bodySource)
+  !state.hasError && 0 < state.pos
+
+def letBodyIndex? (kind : SyntaxNodeKind) : Option Nat :=
+  if kind == `Lean.Parser.Term.let || kind == `Lean.Parser.Term.letI then
+    some 4
+  else if kind == `Lean.Parser.Term.letrec then
+    some 3
+  else
+    none
+
+partial def collectLetBodyParserFacts
+    (source : String) (parserContext : Parser.ParserModuleContext)
+    (stx : Syntax) (facts : Array LetBodyParserFact := #[])
+    : Array LetBodyParserFact :=
+  let facts :=
+    match stx with
+    | .node _ kind children =>
+        match letBodyIndex? kind with
+        | some bodyIndex =>
+            match stx.getPos? (canonicalOnly := true), children[bodyIndex]? with
+            | some letStart, some body =>
+                match syntaxSourceText? source body with
+                | some bodySource =>
+                    facts.push
+                      {
+                        letStart
+                        bodyCanStartApplicationArgument :=
+                          bodyCanStartApplicationArgument parserContext bodySource
+                      }
+                | none => facts
+            | _, _ => facts
+        | none => facts
+    | _ => facts
+  stx.getArgs.foldl
+    (fun facts child =>
+      collectLetBodyParserFacts source parserContext child facts)
+    facts
+
 def elaborateParserStateCommand
     (inputContext : Parser.InputContext)
     (commandState : Elab.Command.State)
@@ -884,10 +988,11 @@ partial def parseModuleCommandsQuiet
     (commandState : Elab.Command.State)
     (updateParserState : Bool)
     (commands : Array Syntax)
-    : IO (Array Syntax) := do
-  let env := commandState.env
+    (letBodyParserFacts : Array LetBodyParserFact)
+    : IO (Array Syntax × Array LetBodyParserFact) := do
+  let parserContext := parserModuleContext commandState
   let (command, state, messages) :=
-    Parser.parseCommand inputContext { env, options := {} } state messages
+    Parser.parseCommand inputContext parserContext state messages
   if Parser.isTerminalCommand command then
     if messages.hasUnreported then
       let messageTexts ← messages.toList.mapM fun message => message.toString
@@ -899,27 +1004,35 @@ partial def parseModuleCommandsQuiet
           else
             s!"failed to parse file:\n{details}"
     else
-      pure commands
+      pure (commands, letBodyParserFacts)
   else
     do
+      let letBodyParserFacts :=
+        collectLetBodyParserFacts inputContext.inputString parserContext command
+          letBodyParserFacts
       let commandState ←
         if updateParserState && commandUpdatesParserState command then
           elaborateParserStateCommand inputContext commandState command
         else
           pure commandState
       parseModuleCommandsQuiet inputContext state messages commandState
-        updateParserState (commands.push command)
+        updateParserState (commands.push command) letBodyParserFacts
 
-def parseModuleSyntaxWithEnvCore
+structure ParsedModuleSyntax where
+  rawSyntax : Syntax
+  letBodyParserFacts : Array LetBodyParserFact
+deriving Repr
+
+def parseModuleSyntaxWithEnvCoreDetailed
     (env : Environment) (source fileName : String) (updateParserState : Bool)
-    : IO Syntax := do
+    : IO ParsedModuleSyntax := do
   let inputContext := Parser.mkInputContext source fileName
   let (header, state, messages) ← Parser.parseHeader inputContext
   let commandState := Elab.Command.mkState env
-  let commands ←
+  let (commands, letBodyParserFacts) ←
     try
       parseModuleCommandsQuiet inputContext state messages commandState
-        updateParserState #[]
+        updateParserState #[] #[]
     catch parseError =>
       if updateParserState then
         let frontendState ← Elab.IO.processCommands inputContext state commandState
@@ -927,11 +1040,23 @@ def parseModuleSyntaxWithEnvCore
           frontendState.commands.filter
             fun command =>
               !Parser.isTerminalCommand command
-        pure commands
+        pure (commands, #[])
       else
         throw parseError
   pure
-  <| (mkNode `Lean.Parser.Module.module #[header, mkListNode commands]).raw.updateLeading
+    {
+      rawSyntax :=
+        (mkNode `Lean.Parser.Module.module
+          #[header, mkListNode commands]).raw.updateLeading
+      letBodyParserFacts
+    }
+
+def parseModuleSyntaxWithEnvCore
+    (env : Environment) (source fileName : String) (updateParserState : Bool)
+    : IO Syntax := do
+  pure
+    (← parseModuleSyntaxWithEnvCoreDetailed env source fileName
+        updateParserState).rawSyntax
 
 def parseModuleSyntaxWithEnv (env : Environment) (source fileName : String) : IO Syntax :=
   parseModuleSyntaxWithEnvCore env source fileName (updateParserState := true)
@@ -946,9 +1071,10 @@ def parseModuleSyntax (source fileName : String) : IO Syntax := do
 
 def parseModuleStringWithEnv (env : Environment) (source fileName : String := "<input>")
     : IO Module := do
-  let rawSyntax ← parseModuleSyntaxWithEnv env source fileName
-  let tree := extractTree source rawSyntax
-  pure { source, rawSyntax, tree, tokens := tree.tokens }
+  let parsed ←
+    parseModuleSyntaxWithEnvCoreDetailed env source fileName (updateParserState := true)
+  let tree := extractTree source parsed.rawSyntax parsed.letBodyParserFacts
+  pure { source, rawSyntax := parsed.rawSyntax, tree, tokens := tree.tokens }
 
 def parseModuleString (source fileName : String := "<input>") : IO Module := do
   parseModuleStringWithEnv (← importLeanEnvironment) source fileName

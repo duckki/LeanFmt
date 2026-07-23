@@ -71,11 +71,14 @@ Formatting a file follows this pipeline:
 
 1. Normalize line endings to `\n`.
 2. Parse the header and commands with Lean's module parser. The default public API
-   uses an environment that imports `Lean` with parser extensions enabled. The CLI
-   first tries that default environment, then loads an import-specific environment when
-   project syntax requires it. Multi-file package formatting first handles files that
-   parse in the default environment, then groups the remaining files by import header
-   so each imported environment is reused within one short-lived worker process.
+   uses an environment that imports `Lean` with parser extensions enabled. While each
+   command's parser scope is active, probe every layout-delimited `let` body with Lean's
+   term parser at application-argument precedence and retain the result as a parser
+   fact. The CLI first tries the default environment, then loads an import-specific
+   environment when project syntax requires it. Multi-file package formatting first
+   handles files that parse in the default environment, then groups the remaining files
+   by import header so each imported environment is reused within one short-lived worker
+   process.
 3. Convert Lean `Syntax` to a `SyntaxTree.Tree` of tokens and raw parser nodes.
 4. Regroup selected raw nodes into logical `SyntaxTree.NodeKind` nodes.
 5. Render the resulting tree using line-break rules and space rules.
@@ -134,6 +137,9 @@ The tree shape is intentionally small:
 ```lean
 inductive NodeKind where
   | raw (kind : SyntaxNodeKind)
+  | letExpression
+      (kind : SyntaxNodeKind)
+      (bodyCanStartApplicationArgument : Bool)
   | application
   | infixChain (kind : SyntaxNodeKind)
   | definition
@@ -177,6 +183,7 @@ Current logical regroupings are:
 
 | Logical node | Why it exists | Expected children |
 | --- | --- | --- |
+| `.letExpression kind bodyCanStartApplicationArgument` | Layout-delimited `let` needs a parser-derived answer to whether its body could be consumed as one more right-hand-side application argument. The active parser scope supplies this fact, so imported and locally declared syntax extensions behave according to their precedence without appearing in a formatter keyword list. | The original raw `let`, `letI`, or `letrec` children, unchanged. The raw kind is retained for ordinary rule dispatch and diagnostics. |
 | `.application` | Lean parser applications are nested per argument, but formatting wants one function-application segment. | Child `0` is the head, children `1...` are arguments in source order. Raw `null` argument containers are spliced. |
 | `.infixChain kind` | Same-kind infix peers should break as one balanced chain, and renderer indentation should not infer peer structure from nested raw nodes. | Odd-length array alternating operand, operator, operand. Operands are even indexes; operators are odd indexes. |
 | `.definition` | Definitions and abbreviations need one node containing header, assignment marker, body, and suffixes. | The raw `declValSimple` wrapper is spliced so child `4` is the value/body when the recognized shape is present. |
@@ -193,6 +200,16 @@ Current logical regroupings are:
 
 Regrouping deliberately avoids semantic interpretation. For example, it flattens only
 same-kind infix parser nodes; it does not decide operator precedence itself.
+
+The `letExpression` annotation is a syntactic parser fact rather than semantic
+interpretation. For each concrete body, `SyntaxTree` runs `termParser argPrec` against
+the body's source text in the command's current parser context. A successful prefix parse
+means the body could continue the binding's right-hand-side application, so the rule
+requires start alignment. A failed probe means the leading syntax itself separates the
+body, so visual alignment is only preferred. The probe runs once while parsing the
+command; rendering consumes the stored Boolean and never reparses the body. If the
+incremental command parser falls back to Lean's full frontend or a source span is
+unavailable, the missing fact defaults conservatively to required alignment.
 
 ### Recognized raw nodes
 
@@ -268,6 +285,11 @@ structure BreakPoint where
   index : Nat
   indentLevels : Nat := 0
 
+inductive StartAlignment where
+  | none
+  | preferred
+  | required
+
 structure LineBreakRule where
   name : String
   atomic : Bool := false
@@ -276,7 +298,7 @@ structure LineBreakRule where
   flow : RuleContext -> Segment -> Bool := fun _ _ => false
   inheritBase : RuleContext -> Segment -> Bool := defaultInheritBase
   liftsTailIndentation : RuleContext -> Segment -> Bool := fun _ _ => false
-  alignStartToIndentation : RuleContext -> Segment -> Bool := fun _ _ => false
+  startAlignment : RuleContext -> Segment -> StartAlignment := fun _ _ => .none
   roundUpBaseIndentation : Bool := false
   breakPoints : RuleContext -> Segment -> List BreakPoint := fun _ _ => []
 ```
@@ -319,20 +341,22 @@ Rule methods mean:
   interpolation contents cannot split independently.
 - `mandatory`: returned breaks are structural and are applied without a flat attempt.
 - `flow`: returned breaks are candidates; flat layout is tried first, then accepted
-  source breaks, then computed wrapping.
+  source breaks, then computed wrapping. Structure headers use flow so a mandatory
+  field line does not force a fitting `extends ... where` clause to break.
 - `inheritBase`: this segment uses the surrounding base indentation instead of its
   rendered start column.
 - `liftsTailIndentation`: while rendering every child except the final child, establish
   the indentation of the following rule boundary as that child's tail indentation.
   Infix-like and flow rules lift continuations one level beyond that tail. Rules never
   encode prefix widths or variable depth contributions.
-- `alignStartToIndentation`: renderer may insert spaces before the first token to move
-  a multiline segment to an indentation boundary. Fitting flat segments do not need
-  alignment. The `let` rule uses this because Lean's layout parser requires a stable
-  indentation column; conditionals use it to keep `if`, `then`, and `else` on a stable
-  grid. Rules only request alignment. The renderer suppresses same-line alignment
-  padding immediately after `(` to preserve tight parenthesis spacing; this exception
-  affects the first line, not the segment's continuation indentation.
+- `startAlignment`: rules classify start alignment as absent, preferred for visual
+  stability, or required by layout-sensitive parsing. The renderer decides whether
+  padding is needed after measuring the nested layout. It may suppress preferred
+  alignment immediately after `(`, as for conditionals and syntactically unambiguous
+  `let` bodies. Required alignment remains active when Lean's parser reports that a
+  layout-delimited body can start an application argument. Explicit
+  semicolon-delimited lets use preferred alignment because their body boundary does not
+  depend on layout.
 - `roundUpBaseIndentation`: positive structural breaks start from the indentation boundary
   after the segment's physical start. Conditionals, delimited structures, tuples, arrays,
   and binding right-hand sides use this so contents remain one full level past an

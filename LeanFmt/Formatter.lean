@@ -118,14 +118,19 @@ def hasIgnoredRegions (source : String) : Bool :=
       lineStartsWithMarker line ignoreRegionStartMarker
       && !lineStartsWithMarker line ignoreNextMarker
 
-def buildModule (source : String) (rawSyntax : Syntax) : SyntaxTree.Module :=
-  let tree := SyntaxTree.extractTree source rawSyntax
+def buildModule
+    (source : String) (rawSyntax : Syntax)
+    (letBodyParserFacts : Array SyntaxTree.LetBodyParserFact := #[])
+    : SyntaxTree.Module :=
+  let tree := SyntaxTree.extractTree source rawSyntax letBodyParserFacts
   { source, rawSyntax, tree, tokens := tree.tokens }
 
 def parseModuleWithEnv (env : Environment) (source fileName : String)
     : IO SyntaxTree.Module := do
-  let rawSyntax ← SyntaxTree.parseModuleSyntaxWithEnv env source fileName
-  pure <| buildModule source rawSyntax
+  let parsed ←
+    SyntaxTree.parseModuleSyntaxWithEnvCoreDetailed env source fileName
+      (updateParserState := true)
+  pure <| buildModule source parsed.rawSyntax parsed.letBodyParserFacts
 
 def formatPassWithEnv
     (env : Environment) (source fileName : String) (options : Options := {})
@@ -232,10 +237,15 @@ def formatSourceProfiledWithEnv
     : IO (String × FormatProfile) := do
   let totalStart ← IO.monoMsNow
   let (normalizedSource, normalizeMs) ← timeIO <| pure <| Internal.normalizeSource source
-  let (rawSyntax, parseMs) ←
-    timeIO <| SyntaxTree.parseModuleSyntaxWithEnv env normalizedSource fileName
+  let (parsedSyntax, parseMs) ←
+    timeIO
+    <| SyntaxTree.parseModuleSyntaxWithEnvCoreDetailed env normalizedSource fileName
+        (updateParserState := true)
   let (moduleTree, syntaxTreeMs) ←
-    timeIO <| pure <| Internal.buildModule normalizedSource rawSyntax
+    timeIO
+    <| pure
+    <| Internal.buildModule normalizedSource parsedSyntax.rawSyntax
+        parsedSyntax.letBodyParserFacts
   let (formatted, renderMs) ←
     timeIO <| do
       let firstPass ← formatModuleWithEnv env moduleTree options

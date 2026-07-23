@@ -360,7 +360,7 @@ def assertLayoutSensitiveTermsRemainParseableAndIdempotent (env : Lean.Environme
   assertTextContains "shifted local recursive continuation uses aligned local base"
     formatted "\n      loop values)"
   assertTextContains "multiline let argument breaks before the argument"
-    formatted "  abc\n    (let rec loop : List Nat -> Nat"
+    formatted "  abc\n    ( let rec loop : List Nat -> Nat"
   assertTextContains "try catch keeps its layout" formatted "  catch _ =>"
   assertTextContains "do for keeps its layout" formatted "  for value in values do"
   assertTextContains "do if keeps its layout" formatted "    if value == 0 then"
@@ -2207,7 +2207,8 @@ def assertParenthesizedLetRhsIndentUnderImplication (env : Lean.Environment)
       "parenthesized-let-rhs-under-implication.lean"
   assertEq "parenthesized let RHS indents under implication" expected formatted
 
-def assertOffColumnParenthesizedLetRhsRoundsUp (env : Lean.Environment) : IO Unit := do
+def assertParenthesizedLetAlignmentFollowsBodyPrecedence (env : Lean.Environment)
+    : IO Unit := do
   let source :=
     "def offColumnIdentifierLet : Prop :=\n"
     ++ "  normalizedSubselections\n"
@@ -2233,7 +2234,93 @@ def assertOffColumnParenthesizedLetRhsRoundsUp (env : Lean.Environment) : IO Uni
     ++ "      predicate matching errors)\n"
   let formatted ←
     Formatter.formatSourceWithEnv env source "off-column-parenthesized-let-rhs.lean"
-  assertEq "off-column parenthesized let RHS rounds up" expected formatted
+  assertEq "parenthesized let alignment follows body precedence" expected formatted
+  assertTrue "off-column parenthesized let preserves code"
+    (← codePreservedIgnoringWhitespace env source formatted)
+
+def assertParenthesizedLetWithMatchBodyKeepsTightOpening (env : Lean.Environment)
+    : IO Unit := do
+  let source :=
+    "def parenthesizedLetMatchBody : Prop :=\n"
+    ++ "  staticCollectForGround schema variables lookupParent groundType boolCase rest\n"
+    ++ "  = ( let collectedRest :=\n"
+    ++ "        staticCollectForGroundWithEnoughCharactersForLayoutTesting\n"
+    ++ "          schema variables lookupParent groundType\n"
+    ++ "          boolCase rest\n"
+    ++ "      match schema.lookupField lookupParent fieldName with\n"
+    ++ "      | none => collectedRest\n"
+    ++ "      | some fieldDefinition => collectedRest)\n"
+  let expected :=
+    "def parenthesizedLetMatchBody : Prop :=\n"
+    ++ "  staticCollectForGround schema variables lookupParent groundType boolCase rest\n"
+    ++ "  = (let collectedRest :=\n"
+    ++ "        staticCollectForGroundWithEnoughCharactersForLayoutTesting\n"
+    ++ "          schema variables lookupParent groundType\n"
+    ++ "          boolCase rest\n"
+    ++ "      match schema.lookupField lookupParent fieldName with\n"
+    ++ "      | none => collectedRest\n"
+    ++ "      | some fieldDefinition => collectedRest)\n"
+  let formatted ←
+    Formatter.formatSourceWithEnv env source "parenthesized-let-match-body.lean"
+  assertEq "parenthesized let with match body keeps tight opening" expected formatted
+  assertTrue "parenthesized let with match body preserves code"
+    (← codePreservedIgnoringWhitespace env source formatted)
+  let formattedAgain ←
+    Formatter.formatSourceWithEnv env formatted
+      "parenthesized-let-match-body-formatted.lean"
+  assertEq "parenthesized let with match body formatting is idempotent"
+    formatted formattedAgain
+
+def assertParenthesizedLetUsesProjectSyntaxPrecedence (env : Lean.Environment)
+    : IO Unit := do
+  let source :=
+    "syntax:lead \"project_leading_body\" : term\n"
+    ++ "syntax:max \"project_argument_body\" : term\n"
+    ++ "\n"
+    ++ "def leadingSyntaxLet : Prop :=\n"
+    ++ "  result = (let value := exceptionallyLongValueProviderNameForLayoutTesting argument\n"
+    ++ "    project_leading_body)\n"
+    ++ "\n"
+    ++ "def argumentSyntaxLet : Prop :=\n"
+    ++ "  result = (let value := exceptionallyLongValueProviderNameForLayoutTesting argument\n"
+    ++ "    project_argument_body)\n"
+  let formatted ←
+    Formatter.formatSourceWithEnv env source "let-project-syntax-precedence.lean"
+  assertTextContains "leading project syntax keeps tight let opening"
+    formatted "= (let value :="
+  assertTextContains "argument project syntax aligns let opening"
+    formatted "= ( let value :="
+  assertTrue "project syntax let formatting preserves code"
+    (← codePreservedIgnoringWhitespace env source formatted)
+  let formattedAgain ←
+    Formatter.formatSourceWithEnv env formatted
+      "let-project-syntax-precedence-formatted.lean"
+  assertEq "project syntax let formatting is idempotent" formatted formattedAgain
+
+def assertTheoremParenthesizedLetKeepsValueSuffix (env : Lean.Environment) : IO Unit := do
+  let source :=
+    "theorem repeatedSiblingSelectionsUseSingleFragmentSmoke\n"
+    ++ "    : ( let minimized :=\n"
+    ++ "          GraphQL.NamedFragment.Minimize.minimize\n"
+    ++ "            Execution.sampleSchema repeatedSiblingSelectionSetOperation\n"
+    ++ "        minimized.fragmentDefinitions.length = 1) := by\n"
+    ++ "  native_decide\n"
+  let expected :=
+    "theorem repeatedSiblingSelectionsUseSingleFragmentSmoke\n"
+    ++ "    : ( let minimized :=\n"
+    ++ "          GraphQL.NamedFragment.Minimize.minimize\n"
+    ++ "            Execution.sampleSchema repeatedSiblingSelectionSetOperation\n"
+    ++ "        minimized.fragmentDefinitions.length = 1) := by\n"
+    ++ "  native_decide\n"
+  let formatted ←
+    Formatter.formatSourceWithEnv env source "theorem-parenthesized-let-value-suffix.lean"
+  assertEq "theorem parenthesized let keeps value suffix" expected formatted
+  assertTrue "theorem parenthesized let preserves code"
+    (← codePreservedIgnoringWhitespace env source formatted)
+  let formattedAgain ←
+    Formatter.formatSourceWithEnv env formatted
+      "theorem-parenthesized-let-value-suffix-formatted.lean"
+  assertEq "theorem parenthesized let formatting is idempotent" formatted formattedAgain
 
 def assertLetBodyAfterInfixClosesLetLayout (env : Lean.Environment) : IO Unit := do
   let source :=
@@ -3561,6 +3648,15 @@ def assertStructureExtendsBreaksBeforeWhereFields (env : Lean.Environment) : IO 
     ++ "  field : Nat\n"
   let formatted ← Formatter.formatSourceWithEnv env source "structure-extends-rule.lean"
   assertEq "structure extends breaks before where fields" expected formatted
+
+def assertShortStructureExtendsHeaderStaysFlat (env : Lean.Environment) : IO Unit := do
+  let source :=
+    "structure Candidate extends CandidateKey where\n"
+    ++ "  occurrenceCount : Nat\n"
+    ++ "deriving Repr\n"
+  let formatted ←
+    Formatter.formatSourceWithEnv env source "short-structure-extends-header.lean"
+  assertEq "short structure extends header stays flat" source formatted
 
 def assertInductiveAlternativesBreakMandatory (env : Lean.Environment) : IO Unit := do
   let source := "inductive Color where | red | green | blue\n"
@@ -5304,7 +5400,10 @@ def runExpressionAndRendererTests (env : Lean.Environment) : IO Unit := do
   assertParenthesizedLetIKeepsTightOpeningDelimiter env
   assertBinderLetIAlignsAfterColon env
   assertParenthesizedLetRhsIndentUnderImplication env
-  assertOffColumnParenthesizedLetRhsRoundsUp env
+  assertParenthesizedLetAlignmentFollowsBodyPrecedence env
+  assertParenthesizedLetWithMatchBodyKeepsTightOpening env
+  assertParenthesizedLetUsesProjectSyntaxPrecedence env
+  assertTheoremParenthesizedLetKeepsValueSuffix env
   assertLetBodyAfterInfixClosesLetLayout env
   assertDeclarationTypeBreak env
   assertImplicitBinderPreservesTightBraces env
@@ -5380,6 +5479,7 @@ def runCollectionAndDeclarationTests (env : Lean.Environment) : IO Unit := do
   assertStructureFieldsBreakMandatory env
   assertStructureFieldTypeBreakIndentation env
   assertStructureExtendsBreaksBeforeWhereFields env
+  assertShortStructureExtendsHeaderStaysFlat env
   assertInductiveAlternativesBreakMandatory env
   assertStructInstanceFieldsBreakMandatory env
   assertStructInstanceFieldsBreakMandatoryBetweenFields env

@@ -30,6 +30,12 @@ structure BreakPoint where
   indentLevels : Nat := 0
 deriving BEq, Repr
 
+inductive StartAlignment where
+  | none
+  | preferred
+  | required
+deriving BEq, Repr
+
 -----------------------------------------------------------------------------------------
 -- RuleContext utilities
 -----------------------------------------------------------------------------------------
@@ -81,6 +87,7 @@ end Segment
 def Segment.rawKind? (segment : Segment) : Option Lean.SyntaxNodeKind :=
   match segment.parent with
   | .node (.raw kind) _ => some kind
+  | .node (.letExpression kind _) _ => some kind
   | _ => none
 
 def RuleContext.push (context : RuleContext) (segment : Segment) (childIndex : Nat)
@@ -98,6 +105,7 @@ def RuleContext.parentRawKind? (context : RuleContext) : Option Lean.SyntaxNodeK
 def Frame.rawKind? (frame : Frame) : Option Lean.SyntaxNodeKind :=
   match frame.segment.parent with
   | .node (.raw kind) _ => some kind
+  | .node (.letExpression kind _) _ => some kind
   | _ => none
 
 def Frame.nodeKind? (frame : Frame) : Option SyntaxTree.NodeKind :=
@@ -191,7 +199,7 @@ structure LineBreakRule where
   flow : RuleContext → Segment → Bool := fun _ _ => false
   inheritBase : RuleContext → Segment → Bool := defaultInheritBase
   liftsTailIndentation : RuleContext → Segment → Bool := fun _ _ => false
-  alignStartToIndentation : RuleContext → Segment → Bool := fun _ _ => false
+  startAlignment : RuleContext → Segment → StartAlignment := fun _ _ => .none
   roundUpBaseIndentation : Bool := false
   breakPoints : RuleContext → Segment → List BreakPoint := fun _ _ => []
 
@@ -1169,6 +1177,15 @@ def letBreaks (_context : RuleContext) (segment : Segment) : List BreakPoint :=
   | some breakPoint => [breakPoint]
   | none => []
 
+def letHasExplicitBodySeparator (segment : Segment) : Bool :=
+  childStartsWithLexeme segment 3 ";" || childStartsWithLexeme segment 3 "in"
+
+def letBodyCanStartApplicationArgument (segment : Segment) : Bool :=
+  match segment.parent with
+  | .node (.letExpression _ bodyCanStartApplicationArgument) _ =>
+      bodyCanStartApplicationArgument
+  | _ => true
+
 def letRecBreaks (_context : RuleContext) (segment : Segment) : List BreakPoint :=
   match boundaryBreak? segment 3 0 with
   | some breakPoint => [breakPoint]
@@ -1368,7 +1385,13 @@ def letRule : LineBreakRule :=
     mandatory := fun _ _ => true
     -- Put `let` on an indentation column so the RHS and body can both use the
     -- ordinary indentation formulas while still satisfying Lean's layout parser.
-    alignStartToIndentation := fun _ _ => true
+    startAlignment :=
+      fun _ segment =>
+        if letHasExplicitBodySeparator segment
+            || !letBodyCanStartApplicationArgument segment then
+          .preferred
+        else
+          .required
     breakPoints := letBreaks
   }
 
@@ -1376,7 +1399,9 @@ def letRecRule : LineBreakRule :=
   {
     name := "letRec"
     mandatory := fun _ _ => true
-    alignStartToIndentation := fun _ _ => true
+    startAlignment :=
+      fun _ segment =>
+        if letBodyCanStartApplicationArgument segment then .required else .preferred
     breakPoints := letRecBreaks
   }
 
@@ -1531,8 +1556,8 @@ def declarationModifierRule : LineBreakRule :=
 def structureRule : LineBreakRule :=
   {
     name := "structure"
-    mandatory := fun context segment => !(structureBreaks context segment).isEmpty
     useExistingBreaks := fun _ _ => true
+    flow := fun context segment => !(structureBreaks context segment).isEmpty
     breakPoints := structureBreaks
   }
 
@@ -2056,7 +2081,7 @@ def ifThenElseRule : LineBreakRule :=
   {
     name := "ifThenElse"
     useExistingBreaks := fun _ _ => true
-    alignStartToIndentation := fun _ _ => true
+    startAlignment := fun _ _ => .preferred
     roundUpBaseIndentation := true
     breakPoints := ifThenElseBreaks
   }
@@ -2065,7 +2090,7 @@ def ifThenElseChainRule : LineBreakRule :=
   {
     name := "ifThenElseChain"
     useExistingBreaks := fun _ _ => true
-    alignStartToIndentation := fun _ _ => true
+    startAlignment := fun _ _ => .preferred
     roundUpBaseIndentation := true
     breakPoints := ifThenElseChainBreaks
   }
@@ -2714,6 +2739,8 @@ def ruleFor : SyntaxTree.Tree → Option LineBreakRule
   | .node (.raw `Lean.Parser.Term.explicitBinder) _ => some binderRule
   | .node (.raw `Lean.Parser.Term.implicitBinder) _ => some binderRule
   | .node (.raw `Lean.Parser.Term.let) _ => some letRule
+  | .node (.letExpression kind _) _ =>
+      if kind == `Lean.Parser.Term.letrec then some letRecRule else some letRule
   | .node (.raw `Lean.Parser.Term.letrec) _ => some letRecRule
   | .node (.raw `Lean.Parser.Term.letIdDecl) _ => some letIdDeclRule
   | .node (.raw `Lean.Parser.Term.letPatDecl) _ => some letPatternDeclRule
