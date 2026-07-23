@@ -355,8 +355,10 @@ require mathlib from git
   "https://github.com/leanprover-community/mathlib4.git" @ "v4.32.0"
 ```
 
-An attribute may share a declaration's line when the source keeps them together
-and the complete declaration fits on that line:
+An attribute may share the line of any top-level command that accepts declaration
+attributes when the source keeps them together and the complete command fits on
+that line. This applies equally to built-in declarations and commands added by
+syntax extensions:
 
 ```lean
 @[simp] theorem eraseP_nil : [].eraseP p = [] := rfl

@@ -539,6 +539,53 @@ def assertAttributesFlowBeforeDeclarations (env : Lean.Environment) : IO Unit :=
     Formatter.formatSourceWithEnv env source "fitting-attribute-declarations.lean"
   assertEq "attributes stay inline only with single-line declarations" expected formatted
 
+  let multilineSource :=
+    "@[inline]\n"
+    ++ "def annotatedDefinition : Nat := by\n"
+    ++ "  exact 0\n"
+    ++ "@[simp]\n"
+    ++ "theorem annotatedTheorem : True := by\n"
+    ++ "  trivial\n"
+    ++ "@[ext]\n"
+    ++ "structure AnnotatedStructure where\n"
+    ++ "  field : Nat\n"
+    ++ "@[derive Repr]\n"
+    ++ "inductive AnnotatedInductive where\n"
+    ++ "  | constructor\n"
+  let multilineFormatted ←
+    Formatter.formatSourceWithEnv env multilineSource
+      "multiline-attribute-declarations.lean"
+  let multilineExpected :=
+    "@[inline]\n"
+    ++ "def annotatedDefinition : Nat := by\n"
+    ++ "  exact 0\n"
+    ++ "\n"
+    ++ "@[simp]\n"
+    ++ "theorem annotatedTheorem : True := by\n"
+    ++ "  trivial\n"
+    ++ "\n"
+    ++ "@[ext]\n"
+    ++ "structure AnnotatedStructure where\n"
+    ++ "  field : Nat\n"
+    ++ "\n"
+    ++ "@[derive Repr]\n"
+    ++ "inductive AnnotatedInductive where\n"
+    ++ "  | constructor\n"
+  assertEq "multiline declarations keep attributes on separate lines"
+    multilineExpected multilineFormatted
+
+  let inlineMultilineSource :=
+    "@[simp] theorem inlineAnnotatedMultilineTheorem : True := by\n" ++ "  trivial\n"
+  let inlineMultilineExpected :=
+    "@[simp]\n"
+    ++ "theorem inlineAnnotatedMultilineTheorem : True := by\n"
+    ++ "  trivial\n"
+  let inlineMultilineFormatted ←
+    Formatter.formatSourceWithEnv env inlineMultilineSource
+      "inline-multiline-attribute-declaration.lean"
+  assertEq "inline attribute breaks before a multiline command"
+    inlineMultilineExpected inlineMultilineFormatted
+
   let longSource :=
     "@[simp] theorem theoremNameWithEnoughCharactersToRequireAnAttributeHeaderBreak (value : VeryLongInputTypeName) : VeryLongOutputTypeName := proof\n"
   let longExpected :=
@@ -1139,6 +1186,8 @@ def assertTopLevelAnnotationsBreakConsistently (env : Lean.Environment) : IO Uni
         "private def annotatedPrivateDefinition := 1\n"
       ),
       ("theorem", "theorem", "theorem annotatedTheorem : True := by trivial\n"),
+      ("axiom", "axiom", "axiom annotatedAxiom : True\n"),
+      ("example", "example", "example : True := by trivial\n"),
       ("opaque", "opaque", "opaque annotatedOpaque : Nat\n"),
       ("abbreviation", "abbrev", "abbrev AnnotatedAbbreviation := Nat\n"),
       ("structure", "structure", "structure AnnotatedStructure where\n  field : Nat\n"),
@@ -1158,6 +1207,12 @@ def assertTopLevelAnnotationsBreakConsistently (env : Lean.Environment) : IO Uni
     let second ←
       Formatter.formatSourceWithEnv env formatted s!"annotated-{name}-second.lean"
     assertEq s!"{name} annotation break is idempotent" formatted second
+    let sourceBrokenBeforeCommand := "@[simp]\n" ++ command
+    let formattedBrokenBeforeCommand ←
+      Formatter.formatSourceWithEnv env sourceBrokenBeforeCommand
+        s!"source-broken-annotated-{name}.lean"
+    assertTextContains s!"{name} preserves its source annotation break"
+      formattedBrokenBeforeCommand ("@[simp]\n" ++ commandPrefix)
 
 def assertDeclarationValueInfixBreaksAfterAssign (env : Lean.Environment) : IO Unit := do
   let source :=

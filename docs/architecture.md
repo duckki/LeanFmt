@@ -180,7 +180,7 @@ Current logical regroupings are:
 | `.application` | Lean parser applications are nested per argument, but formatting wants one function-application segment. | Child `0` is the head, children `1...` are arguments in source order. Raw `null` argument containers are spliced. |
 | `.infixChain kind` | Same-kind infix peers should break as one balanced chain, and renderer indentation should not infer peer structure from nested raw nodes. | Odd-length array alternating operand, operator, operand. Operands are even indexes; operators are odd indexes. |
 | `.definition` | Definitions and abbreviations need one node containing header, assignment marker, body, and suffixes. | The raw `declValSimple` wrapper is spliced so child `4` is the value/body when the recognized shape is present. |
-| `.annotatedDeclaration` | Every declaration annotation and command form one flow, including commands introduced by syntax extensions, declarations nested under command wrappers, and recursive declarations under `where`. Source breaks are preserved; otherwise the command remains after its annotations only when the complete command fits. | Child `0` contains only the leading annotations. Any remaining modifiers and the command follow as separate children in source order. An annotation embedded in an extensible command node is extracted without changing that command's remaining child indexes. Optional wrappers around a recursive declaration's attributes are removed. |
+| `.annotatedDeclaration` | Every command form that accepts declaration annotations forms one flow, whether it is built in, introduced by a syntax extension, nested under a command wrapper, or recursive under `where`. Source breaks are preserved; otherwise the command remains after its annotations only when the complete command fits on one physical line. | Child `0` contains only the leading annotations. Any remaining modifiers and the command follow as separate children in source order. An annotation embedded in an extensible command node is extracted without changing that command's remaining child indexes. Optional wrappers around a recursive declaration's attributes are removed. |
 | `.signatureParameters` | Parameter sequences need flow behavior at binder boundaries without forcing rules to inspect raw `null` wrappers. | Direct binder/parameter children from `optDeclSig` or `declSig`. |
 | `.matchDiscriminants` | Multiple match scrutinees need peer flow boundaries after commas, aligned under the first scrutinee, rather than generic nested parser wrapping. | Children of the discriminant sequence immediately before `with`, preserving alternating discriminants and commas. |
 | `.matchPatterns` | Multiple patterns in one alternative need peer/balanced wrapping rather than raw nested `null` behavior. | Pattern children from the `matchAlt` pattern wrapper, with a redundant single `null` wrapper removed. |
@@ -411,9 +411,22 @@ For each segment:
    wrapping.
 11. For non-flow rules with break points, apply all returned breaks simultaneously.
 
-Flat rendering is speculative. The renderer can render into temporary output, check the
-configured line width, and keep or discard that result. This is why rules return only
-break opportunities and do not need access to line width.
+Fit measurement is speculative. The renderer emits into an empty probe while retaining
+the current line and pending boundary state, then records two facts from that one result:
+
+- `flat` means the complete segment occupies one physical line.
+- `fits` means the result stays within the configured width. It may reuse a multiline
+  layout owned by an opaque or already-broken nested child without activating this
+  segment's own break points.
+
+Ordinary indented flow may retain the fitting first line of such a nested layout, as in
+`f (by` followed by a multiline proof. A zero-indentation flow boundary separates peer
+pieces: if the following piece is not flat, the renderer takes the boundary. This is why
+a multiline command moves below its annotation without classifying every multiline
+application as flat.
+
+This separation keeps line-width and nested-layout decisions in the renderer. Rules
+return only break opportunities and do not need access to either fact.
 
 ### Source breaks
 
