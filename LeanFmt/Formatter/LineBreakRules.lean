@@ -2621,6 +2621,7 @@ def ruleFor : SyntaxTree.Tree → Option LineBreakRule
   | .node (.raw `token.«← ») _ => some defaultRule
   | .node (.raw `Lean.Parser.Attr.simp) _ => some defaultRule
   | .node (.raw `Lean.Parser.Attr.grind) _ => some defaultRule
+  | .node (.raw `Lean.Parser.Attr.grind!) _ => some defaultRule
   | .node (.raw `Lean.Parser.Attr.grindMod) _ => some defaultRule
   | .node (.raw `Lean.Parser.Attr.grindEq) _ => some defaultRule
   | .node (.raw `Lean.Parser.Attr.grindEqBoth) _ => some defaultRule
@@ -2636,6 +2637,7 @@ def ruleFor : SyntaxTree.Tree → Option LineBreakRule
   | .node (.raw `Lean.Parser.Attr.simpsConfigItem) _ => some defaultRule
   | .node (.raw `Lean.Parser.Attr.norm_cast) _ => some defaultRule
   | .node (.raw `Lean.Parser.Attr.ext) _ => some defaultRule
+  | .node (.raw `Lean.Parser.Attr.extIff) _ => some defaultRule
   | .node (.raw `Lean.Parser.Attr.higherOrder) _ => some defaultRule
   | .node (.raw `Lean.Attr.coe) _ => some defaultRule
   | .node (.raw `Lean.Parser.Attr.instance) _ => some defaultRule
@@ -2720,6 +2722,7 @@ def ruleFor : SyntaxTree.Tree → Option LineBreakRule
   | .node (.raw `Aesop.Frontend.Parser.phaseNorm) _ => some defaultRule
   | .node (.raw `Aesop.Frontend.Parser.phaseUnsafe) _ => some defaultRule
   | .node (.raw `Aesop.Frontend.Parser.builder_nameApply) _ => some defaultRule
+  | .node (.raw `Aesop.Frontend.Parser.builder_nameCases) _ => some defaultRule
   | .node (.raw `Aesop.Frontend.Parser.builder_nameForward) _ => some defaultRule
   | .node (.raw `Aesop.Frontend.Parser.«priority_%») _ => some defaultRule
   | .node (.raw `Aesop.Frontend.Parser.«priority-_») _ => some defaultRule
@@ -2745,6 +2748,9 @@ def ruleFor : SyntaxTree.Tree → Option LineBreakRule
   | .node (.raw `Matroid.ExchangeProperty.aesop_mat) _ => some defaultRule
   | .node (.raw `aesop_graph) _ => some defaultRule
   | .node (.raw `CategoryTheory.cat_disch) _ => some defaultRule
+  | .node (.raw `CategoryTheory.SimplicialObject.Truncated.mkNotation) _ =>
+      some defaultRule
+  | .node (.raw `SimplexCategory.Truncated.mkNotation) _ => some defaultRule
   | .node (.raw `Mathlib.Tactic.TermCongr.termCongr) _ => some defaultRule
   | .node (.raw `Mathlib.Util.«commandCompile_inductive%_») _ =>
       some defaultRule
