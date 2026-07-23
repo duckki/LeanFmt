@@ -54,7 +54,7 @@ def size (segment : Segment) : Nat :=
   segment.stop - segment.start
 
 def indexes (segment : Segment) : List Nat :=
-  (List.range segment.size).map fun offset => segment.start + offset
+  List.range' segment.start segment.size
 
 def parentIndexes (segment : Segment) : List Nat :=
   match segment.children? with

@@ -740,6 +740,37 @@ partial def renderWithoutRuleBreaks
           | none => state)
         state
 
+def layoutProbeHasNotOverflowed (state : RenderState) : Bool :=
+  state.completedLineOverflowCount == 0
+  && lineFits state.currentLine state.options.lineWidth
+
+partial def probeLayoutWithoutRuleBreaks?
+    (state : RenderState) (segment : LineBreakRules.Segment)
+    : Option RenderState :=
+  match segment.parent with
+  | .missing => some state
+  | .leaf token =>
+      let rendered := state.emitToken token false
+      if layoutProbeHasNotOverflowed rendered then some rendered else none
+  | .node _ _ =>
+      let rec loop (state : RenderState) : List Nat → Option RenderState
+        | [] => some state
+        | index :: rest =>
+            match segment.child? index with
+            | none => loop state rest
+            | some child =>
+                let rendered? :=
+                  if shouldEmitOriginalChild segment.parent index child then
+                    let rendered := state.emitOriginalTree child
+                    if layoutProbeHasNotOverflowed rendered then some rendered else none
+                  else
+                    probeLayoutWithoutRuleBreaks? state
+                      (LineBreakRules.Segment.ofTree child)
+                match rendered? with
+                | some rendered => loop rendered rest
+                | none => none
+      loop state segment.indexes
+
 def currentLineFitsWith (state : RenderState) (suffix : String) : Bool :=
   !introducesCompletedLineOverflow state.currentLine suffix state.options.lineWidth
   && lineFitsWithTrailingWidth
@@ -1273,38 +1304,68 @@ partial def segmentAllowsLayoutWithoutRuleBreaks
                           && loop rest
                 loop segment.indexes
 
-structure LayoutFit where
+structure LayoutProbe where
   fits : Bool
   flat : Bool
+  rendered? : Option RenderState := none
 
-def measureLayoutFit
+def RenderState.commitLayoutProbe (state : RenderState) (probe : LayoutProbe)
+    : RenderState :=
+  match probe.rendered? with
+  | none => state
+  | some rendered =>
+      {
+        state with
+          output := state.output ++ rendered.output
+          outputLineBreakCount :=
+            state.outputLineBreakCount + rendered.outputLineBreakCount
+          completedLineOverflowCount :=
+            state.completedLineOverflowCount + rendered.completedLineOverflowCount
+          currentLine := rendered.currentLine
+          lastToken? := rendered.lastToken?
+          pendingIndent? := rendered.pendingIndent?
+          pendingCommandBoundary? := rendered.pendingCommandBoundary?
+      }
+
+def measureLayout
     (state : RenderState) (segment : LineBreakRules.Segment)
     (respectSourceBreaks : Bool := true)
-    : LayoutFit :=
+    : LayoutProbe :=
   if !segmentAllowsLayoutWithoutRuleBreaks state.source state.context segment
         respectSourceBreaks then
     { fits := false, flat := false }
   else
     let probe := state.forFitProbe
-    let rendered := renderWithoutRuleBreaks probe segment
-    let fits := currentLineFitsWith state rendered.output
-    {
-      fits
-      flat := fits && !renderedSegmentIsMultiline probe rendered segment
-    }
+    let rendered? :=
+      if lineFits state.currentLine state.options.lineWidth then
+        probeLayoutWithoutRuleBreaks? probe segment
+      else
+        some <| renderWithoutRuleBreaks probe segment
+    match rendered? with
+    | none => { fits := false, flat := false }
+    | some rendered =>
+        let fits :=
+          if lineFits state.currentLine state.options.lineWidth then
+            renderedCandidateFits probe rendered
+          else
+            currentLineFitsWith state rendered.output
+        {
+          fits
+          flat := fits && !renderedSegmentIsMultiline probe rendered segment
+          rendered? := some rendered
+        }
 
 def nestedLayoutFits (state : RenderState) (segment : LineBreakRules.Segment) : Bool :=
-  (measureLayoutFit state segment).fits
+  (measureLayout state segment).fits
 
-def layoutFitsWithoutRuleBreaks
-    (state : RenderState) (segment : LineBreakRules.Segment)
+def LayoutProbe.acceptedForRule
+    (probe : LayoutProbe)
     (isFlow : Bool) (breakPoints : List LineBreakRules.BreakPoint)
     : Bool :=
-  let fit := measureLayoutFit state segment false
   if isFlow && breakPoints.any fun breakPoint => breakPoint.indentLevels == 0 then
-    fit.flat
+    probe.flat
   else
-    fit.fits
+    probe.fits
 
 def segmentFirstTokenColumn (state : RenderState) (segment : LineBreakRules.Segment)
     : Nat :=
@@ -1461,21 +1522,21 @@ def FlowRenderContext.stateForPieceFit
   else
     { state with lineFitSuffixWidth := 0 }
 
-def FlowRenderContext.pieceFit
+def FlowRenderContext.measurePiece
     (flow : FlowRenderContext) (state : RenderState) (index : Nat)
-    : LayoutFit :=
-  measureLayoutFit (flow.stateForPieceFit state index)
+    : LayoutProbe :=
+  measureLayout (flow.stateForPieceFit state index)
     (flow.segment.slice index (flow.nextBreakIndex index))
     false
 
-def FlowRenderContext.childFits
+def FlowRenderContext.measureChild
     (flow : FlowRenderContext) (state : RenderState) (index : Nat)
     (context : LineBreakRules.RuleContext)
     (childSegment : LineBreakRules.Segment)
     (respectSourceBreaks : Bool := true)
-    : Bool :=
+    : LayoutProbe :=
   let probe := { flow.stateForPieceFit state index with context }
-  (measureLayoutFit probe childSegment respectSourceBreaks).fits
+  measureLayout probe childSegment respectSourceBreaks
 
 def FlowRenderContext.childFirstLineFits
     (flow : FlowRenderContext) (state : RenderState) (index : Nat)
@@ -1501,21 +1562,19 @@ def FlowRenderContext.withBreak
 def FlowRenderContext.stateForForcedNestedChild?
     (flow : FlowRenderContext) (state : RenderState) (index : Nat)
     (breakAfterPreviousChild : Bool)
-    (childContext : LineBreakRules.RuleContext)
-    (childSegment : LineBreakRules.Segment)
+    (childFit : LayoutProbe) (pieceFit : LayoutProbe)
     : Option RenderState :=
   match flow.breakAt? index with
   | some breakPoint =>
-      let pieceFit := flow.pieceFit state index
       if index == flow.segment.start then
-        if flow.childFits state index childContext childSegment then
+        if childFit.fits then
           some state
         else
           some
           <| state.withPendingIndent
               (state.currentIndent + breakPoint.indentLevels * indentationSpaces)
       else if breakAfterPreviousChild
-              || !flow.childFits state index childContext childSegment false
+              || !childFit.fits
               || (breakPoint.indentLevels == 0 && !pieceFit.flat)
               || !pieceFit.fits then
         some <| flow.withBreak state breakPoint
@@ -1660,10 +1719,12 @@ partial def renderSegmentByRule (state : RenderState) (segment : LineBreakRules.
     renderChildren state segment
   else if useExistingBreaks then
     renderUsingExistingBreaks state segment rule breakPoints isFlow
-  else if layoutFitsWithoutRuleBreaks state segment isFlow breakPoints then
-    renderWithoutRuleBreaks state segment
   else
-    renderAfterFlatFailure state segment rule breakPoints isFlow
+    let probe := measureLayout state segment false
+    if probe.acceptedForRule isFlow breakPoints then
+      state.commitLayoutProbe probe
+    else
+      renderAfterFlatFailure state segment rule breakPoints isFlow
 
 partial def renderRuleLayout
     (state : RenderState) (segment : LineBreakRules.Segment)
@@ -1705,8 +1766,9 @@ partial def renderUsingExistingBreaks
     match tryRenderSegmentWithSourceBreaks? state segment rule with
     | some rendered => rendered
     | none =>
-        if layoutFitsWithoutRuleBreaks state segment isFlow breakPoints then
-          renderWithoutRuleBreaks state segment
+        let probe := measureLayout state segment false
+        if probe.acceptedForRule isFlow breakPoints then
+          state.commitLayoutProbe probe
         else
           renderAfterFlatFailure state segment rule breakPoints isFlow
 
@@ -1885,6 +1947,14 @@ partial def renderFlowChildren
     | some child =>
         let childSegment := LineBreakRules.Segment.ofTree child
         let childContext := state.context.push flow.segment index
+        let childFit :=
+          flow.measureChild state index childContext childSegment
+            (index == flow.segment.start)
+        let pieceFit :=
+          if index == flow.segment.start || (flow.breakAt? index).isNone then
+            childFit
+          else
+            flow.measurePiece state index
         let renderNestedAndContinue (state : RenderState) :=
           let before := state
           let rendered :=
@@ -1893,14 +1963,13 @@ partial def renderFlowChildren
           renderFlowChildren rendered flow (index + 1)
             (renderedTreeIsMultiline before rendered child)
         match flow.stateForForcedNestedChild? state index breakAfterPreviousChild
-                childContext childSegment with
+                childFit pieceFit with
         | some state => renderNestedAndContinue state
         | none =>
             if segmentHasRuleSourceBreaks state.source childContext childSegment then
               renderNestedAndContinue state
-            else if flow.childFits state index childContext childSegment then
-              renderFlowChildren (renderWithoutRuleBreaks state childSegment)
-                flow (index + 1) false
+            else if childFit.fits then
+              renderFlowChildren (state.commitLayoutProbe childFit) flow (index + 1) false
             else if flow.childFirstLineFits state index childContext child then
               renderNestedAndContinue state
             else
