@@ -2443,6 +2443,7 @@ def ruleFor : SyntaxTree.Tree → Option LineBreakRule
   | .node (.raw `Lean.Parser.Command.eraseAttr) _ => some defaultRule
   | .node (.raw `Lean.Parser.Command.classInductive) _ => some defaultRule
   | .node (.raw `Lean.Parser.commandUnseal__) _ => some defaultRule
+  | .node (.raw `Lean.Parser.Command.recommended_spelling) _ => some defaultRule
   | .node (.raw `Lean.«command__Unif_hint____Where_|_-⊢__») _ =>
       some defaultRule
   | .node (.raw `Lean.unifConstraintElem) _ => some defaultRule
@@ -2607,6 +2608,7 @@ def ruleFor : SyntaxTree.Tree → Option LineBreakRule
   | .node (.raw `Batteries.ExtendedBinder.extBinderParenthesized) _ => some defaultRule
   | .node (.raw `choice) _ => some transparentRule
   | .node (.raw `Lean.Parser.Syntax.atom) _ => some transparentRule
+  | .node (.raw `Lean.Parser.Syntax.unary) _ => some defaultRule
   | .node (.raw `Lean.Parser.Syntax.cat) _ => some transparentRule
   | .node (.raw `Lean.Parser.Syntax.paren) _ => some transparentRule
   | .node (.raw `stx_?) _ => some transparentRule
@@ -2727,6 +2729,7 @@ def ruleFor : SyntaxTree.Tree → Option LineBreakRule
   | .node (.raw `adaptationNoteCmd) _ => some defaultRule
   | .node (.raw `adaptationNoteTermStx) _ => some defaultRule
   | .node (.raw `commandSuppress_compilation) _ => some defaultRule
+  | .node (.raw `notation_class) _ => some defaultRule
   | .node (.raw `wikidataId) _ => some defaultRule
   | .node (.raw `goldenRatio.termφ) _ => some defaultRule
   | .node (.raw `goldenRatio.termψ) _ => some defaultRule
