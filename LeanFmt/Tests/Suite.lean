@@ -2943,7 +2943,7 @@ def assertElseIfChainBreaksThenBranchesTogether (env : Lean.Environment) : IO Un
     ++ "  Vector.basis\n"
     ++ "    ( if i = (6 : Fin 8) then\n"
     ++ "        (7 : Fin 8)\n"
-    ++ "      else if i = (7 : Fin 8) then (6 : Fin 8) else i)\n"
+    ++ "      else if i = (7 : Fin 8) then (6 : Fin 8) else if i = (5 : Fin 8) then (4 : Fin 8) else i)\n"
   let expected :=
     "def toffoliMulBasis (i : Fin 8) : Result :=\n"
     ++ "  Vector.basis\n"
@@ -2951,6 +2951,8 @@ def assertElseIfChainBreaksThenBranchesTogether (env : Lean.Environment) : IO Un
     ++ "        (7 : Fin 8)\n"
     ++ "      else if i = (7 : Fin 8) then\n"
     ++ "        (6 : Fin 8)\n"
+    ++ "      else if i = (5 : Fin 8) then\n"
+    ++ "        (4 : Fin 8)\n"
     ++ "      else\n"
     ++ "        i)\n"
   let formatted ←

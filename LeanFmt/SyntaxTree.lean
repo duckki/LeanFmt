@@ -67,6 +67,8 @@ inductive NodeKind where
   | matchPatterns
   | doForHeader
   | structureUpdate
+  | ifThenElseClause
+  | ifThenElseChain
   | proofBody
 deriving BEq, Inhabited, Repr
 
@@ -81,6 +83,8 @@ def nodeKindName : NodeKind → String
   | .matchPatterns => "LeanFmt.SyntaxTree.NodeKind.matchPatterns"
   | .doForHeader => "LeanFmt.SyntaxTree.NodeKind.doForHeader"
   | .structureUpdate => "LeanFmt.SyntaxTree.NodeKind.structureUpdate"
+  | .ifThenElseClause => "LeanFmt.SyntaxTree.NodeKind.ifThenElseClause"
+  | .ifThenElseChain => "LeanFmt.SyntaxTree.NodeKind.ifThenElseChain"
   | .proofBody => "LeanFmt.SyntaxTree.NodeKind.proofBody"
 
 inductive Tree where
@@ -592,6 +596,46 @@ def regroupStructInstChildren (children : Array Tree) : Array Tree :=
         children
   | none => children
 
+def isIfThenElseKind (kind : SyntaxNodeKind) : Bool :=
+  kind == `termIfThenElse || kind == `boolIfThenElse
+
+def ifThenElseChainParts? : Tree → Option (Array Tree)
+  | .node (.raw kind) children => do
+      if !isIfThenElseKind kind || children.size != 6 then
+        none
+      let thenBranch ← children[3]?
+      let elseKeyword ← children[4]?
+      let elseBranch ← children[5]?
+      some
+        #[
+          .node .ifThenElseClause (childrenRange children 0 3),
+          thenBranch,
+          elseKeyword,
+          elseBranch
+        ]
+  | .node .ifThenElseChain children => some children
+  | _ => none
+
+def prependElseToIfThenElseClause (elseKeyword : Tree) (parts : Array Tree)
+    : Option (Array Tree) := do
+  let first ← parts[0]?
+  match first with
+  | .node .ifThenElseClause children =>
+      some <| parts.set! 0 (.node .ifThenElseClause (#[elseKeyword] ++ children))
+  | _ => none
+
+def regroupIfThenElseChain (kind : SyntaxNodeKind) (children : Array Tree) : Tree :=
+  let chain? : Option Tree := do
+    let thenBranch ← children[3]?
+    let elseKeyword ← children[4]?
+    let elseBranch ← children[5]?
+    let continuation ← ifThenElseChainParts? elseBranch
+    let continuation ← prependElseToIfThenElseClause elseKeyword continuation
+    some
+    <| .node .ifThenElseChain
+    <| #[.node .ifThenElseClause (childrenRange children 0 3), thenBranch] ++ continuation
+  chain?.getD <| .node (.raw kind) children
+
 def regroupByTacticChildren (children : Array Tree) : Array Tree :=
   match children[0]? with
   | some byKeyword =>
@@ -634,7 +678,9 @@ partial def flattenDelimitedCollectionChildren (children : Array Tree) : Array T
   | none => children
 
 def regroupRawNode (kind : SyntaxNodeKind) (children : Array Tree) : Tree :=
-  if kind == `Lean.Parser.Term.app && children.size == 2 then
+  if isIfThenElseKind kind then
+    regroupIfThenElseChain kind children
+  else if kind == `Lean.Parser.Term.app && children.size == 2 then
     match children[0]?, children[1]? with
     | some head, some argumentContainer =>
         let headAndArgs :=

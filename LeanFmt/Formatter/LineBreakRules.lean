@@ -1667,35 +1667,17 @@ def mutualBreaks (_context : RuleContext) (segment : Segment) : List BreakPoint 
 
 /-! ### Conditionals, matches, functions, and quantifiers -/
 
-def ifThenElseKind (kind : Lean.SyntaxNodeKind) : Bool :=
-  kind == `termIfThenElse || kind == `boolIfThenElse
-
-def frameIsIfThenElseElseBranch (frame : Frame) : Bool :=
-  match frame.rawKind? with
-  | some kind => ifThenElseKind kind && frame.childIndex == 5
-  | none => false
-
-def ifThenElseElseBranch (context : RuleContext) : Bool :=
-  let rec loop : List Frame → Bool
-    | [] => false
-    | parent :: rest =>
-        frameIsIfThenElseElseBranch parent
-        || (parent.rawKind? == some `null && parent.segment.size == 1 && loop rest)
-  loop context.ancestors
-
-def ifThenElseElseBranchIsIf (segment : Segment) : Bool :=
-  match segment.child? 5 with
-  | some (.node (.raw kind) _) => ifThenElseKind kind
-  | _ => false
-
 def ifThenElseBreaks (_context : RuleContext) (segment : Segment) : List BreakPoint :=
-  let breakSpecs :=
-    if ifThenElseElseBranchIsIf segment then
-      [(3, 1), (4, 0)]
-    else
-      [(3, 1), (4, 0), (5, 1)]
-  breakSpecs.filterMap
+  [(3, 1), (4, 0), (5, 1)].filterMap
     fun (index, indentLevels) => boundaryBreak? segment index indentLevels
+
+def ifThenElseChainBreaks (_context : RuleContext) (segment : Segment)
+    : List BreakPoint :=
+  (List.range (segment.size - 1)).filterMap
+    fun offset =>
+      let index := segment.start + offset + 1
+      let indentLevels := if offset % 2 == 0 then 1 else 0
+      boundaryBreak? segment index indentLevels
 
 def firstMatchAlternativesIndex? (segment : Segment) : Option Nat :=
   match firstChildRawKind? segment `Lean.Parser.Term.matchAlts with
@@ -2083,11 +2065,17 @@ def commandInChainRule : LineBreakRule :=
 def ifThenElseRule : LineBreakRule :=
   {
     name := "ifThenElse"
-    mandatory := fun context _ => ifThenElseElseBranch context
     useExistingBreaks := fun _ _ => true
-    inheritBase := fun context _ => ifThenElseElseBranch context
     alignStartToIndentation := fun _ _ => true
     breakPoints := ifThenElseBreaks
+  }
+
+def ifThenElseChainRule : LineBreakRule :=
+  {
+    name := "ifThenElseChain"
+    useExistingBreaks := fun _ _ => true
+    alignStartToIndentation := fun _ _ => true
+    breakPoints := ifThenElseChainBreaks
   }
 
 def matchExpressionRule : LineBreakRule :=
@@ -2744,6 +2732,8 @@ def ruleFor : SyntaxTree.Tree → Option LineBreakRule
   | .node (.infixChain `Lean.Parser.Term.binderTactic) _ =>
       some binderTacticRule
   | .node (.infixChain _) _ => some infixChainRule
+  | .node .ifThenElseClause _ => some transparentRule
+  | .node .ifThenElseChain _ => some ifThenElseChainRule
   | .node (.raw `termIfThenElse) _ => some ifThenElseRule
   | .node (.raw `boolIfThenElse) _ => some ifThenElseRule
   | .node (.raw `Lean.Parser.Term.match) _ => some matchExpressionRule

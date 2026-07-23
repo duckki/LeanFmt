@@ -875,7 +875,9 @@ else
 ```
 
 An `else if` keeps the nested `if` on the `else` line rather than adding an
-extra branch indentation.
+extra branch indentation. The complete chain is one balanced structure: if one
+branch boundary breaks, every `then` branch and the final `else` branch break
+together.
 
 ```lean
 if firstCondition then
