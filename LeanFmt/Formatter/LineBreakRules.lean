@@ -1129,8 +1129,9 @@ def patternAliasParenBreaks (context : RuleContext) (segment : Segment)
 def signatureParameterBreaks (context : RuleContext) (segment : Segment)
     : List BreakPoint :=
   let indentLevels :=
-    if parentIsRawKind context `Lean.Parser.Command.optDeclSig
-        && grandparentIsRawKind context `Lean.Parser.Command.ctor then
+    if (parentIsRawKind context `Lean.Parser.Command.optDeclSig
+          && grandparentIsRawKind context `Lean.Parser.Command.ctor)
+        || parentIsRawKind context `Lean.«command__Unif_hint____Where_|_-⊢__» then
       1
     else
       2

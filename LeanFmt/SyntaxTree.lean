@@ -335,6 +335,11 @@ def regroupSignatureParameters : Tree → Tree
   | .node (.raw `null) children => .node .signatureParameters children
   | tree => tree
 
+def regroupUnifHintChildren (children : Array Tree) : Array Tree :=
+  match children[4]? with
+  | some parameters => children.set! 4 (regroupSignatureParameters parameters)
+  | none => children
+
 def regroupMatchPatterns : Tree → Tree
   | .node (.raw `null) children =>
       if children.size == 1 then
@@ -759,6 +764,8 @@ def regroupRawNode (kind : SyntaxNodeKind) (children : Array Tree) : Tree :=
     | some parameters =>
         .node (.raw kind) <| children.set! 0 (regroupSignatureParameters parameters)
     | none => .node (.raw kind) children
+  else if kind == `Lean.«command__Unif_hint____Where_|_-⊢__» then
+    .node (.raw kind) (regroupUnifHintChildren children)
   else if kind == `Lean.Parser.Term.letEqnsDecl then
     match regroupLetEquationSignature children with
     | some children => .node (.raw kind) children

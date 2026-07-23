@@ -46,6 +46,39 @@ def assertSyntaxTreeWhereRoundTrip (env : Lean.Environment) : IO Unit := do
   let moduleTree ← SyntaxTree.parseModuleStringWithEnv env source "syntax-tree-where.lean"
   assertEq "syntax tree where reconstruction" source moduleTree.reconstruct
 
+def assertUnifHintParametersRegrouped : IO Unit := do
+  let parameters :=
+    SyntaxTree.Tree.node (SyntaxTree.NodeKind.raw `null)
+      #[
+        .node (.raw `Lean.Parser.Term.implicitBinder) #[],
+        .node (.raw `Lean.Parser.Term.explicitBinder) #[]
+      ]
+  let raw :=
+    SyntaxTree.Tree.node
+      (SyntaxTree.NodeKind.raw `Lean.«command__Unif_hint____Where_|_-⊢__»)
+      #[
+        .missing,
+        .missing,
+        .missing,
+        .missing,
+        parameters,
+        .missing,
+        .missing,
+        .missing,
+        .missing
+      ]
+  let regrouped := SyntaxTree.regroupTree raw
+  let parametersRegrouped :=
+    match regrouped with
+    | .node _ children =>
+        match children[4]? with
+        | some (SyntaxTree.Tree.node SyntaxTree.NodeKind.signatureParameters binders) =>
+            binders.size == 2
+        | _ => false
+    | _ => false
+  assertTrue "unification hint parameters are grouped as signature parameters"
+    parametersRegrouped
+
 def assertPreservationDetectsSyntaxChange (env : Lean.Environment) : IO Unit := do
   let source :=
     "def letAlt (x? : Option Nat) : Nat := do\n"
@@ -5550,6 +5583,7 @@ def assertCslibStyleCoreSyntaxHasRules (env : Lean.Environment) : IO Unit := do
 def runSyntaxTreeTests (env : Lean.Environment) : IO Unit := do
   assertSyntaxTreeRoundTrip env
   assertSyntaxTreeWhereRoundTrip env
+  assertUnifHintParametersRegrouped
   assertPreservationDetectsSyntaxChange env
   assertOverlappingQuotationTokensRemoved env
   assertTacticQuotationAntiquotationPreserved env
