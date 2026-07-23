@@ -13,9 +13,7 @@ structure Options where
   includeHidden : Bool := false
   worker : Bool := false
   formatterOptions : Formatter.Options := {}
-  environmentCacheSize : Nat := 1
   workerBatchSize? : Option Nat := none
-  importEnvironmentFirst : Bool := false
   files : List FilePath := []
 deriving Repr
 
@@ -123,6 +121,8 @@ def usage : String :=
       "            Include hidden entries discovered during directory traversal.",
       "  --line-width N",
       s!"            Use N as the formatter line limit; default is {Formatter.maxLineWidth}.",
+      "  --worker-batch-size N",
+      "            Format at most N files in each worker process.",
       "  -h, --help",
       "",
       "Internal debugging options (not intended for general use):",
@@ -130,12 +130,6 @@ def usage : String :=
       "            Check code preservation, remaining overflow, and missing rules.",
       "  --check-idempotent",
       "            Fail if formatting the formatted output changes it again.",
-      "  --env-cache-size N",
-      "            Cache up to N imported environments per process; 0 disables the cache.",
-      "  --worker-batch-size N",
-      "            Format at most N files in each recursive worker process.",
-      "  --import-env-first",
-      "            Try source imports before the default parser environment.",
       "  With either diagnostic option, --check is a dry run; formatting",
       "  differences alone do not affect the exit status."
     ]
@@ -168,12 +162,6 @@ def parseArgs (args : List String) : ParseResult :=
         | none => .error s!"invalid --line-width value: {value}"
     | "--line-width" :: [] =>
         .error "--line-width requires a value"
-    | "--env-cache-size" :: value :: rest =>
-        match value.toNat? with
-        | some size => loop { options with environmentCacheSize := size } files rest
-        | none => .error s!"invalid --env-cache-size value: {value}"
-    | "--env-cache-size" :: [] =>
-        .error "--env-cache-size requires a value"
     | "--worker-batch-size" :: value :: rest =>
         match value.toNat? with
         | some size =>
@@ -184,8 +172,6 @@ def parseArgs (args : List String) : ParseResult :=
         | none => .error s!"invalid --worker-batch-size value: {value}"
     | "--worker-batch-size" :: [] =>
         .error "--worker-batch-size requires a value"
-    | "--import-env-first" :: rest =>
-        loop { options with importEnvironmentFirst := true } files rest
     | "--worker" :: rest =>
         loop { options with worker := true } files rest
     | "--recursive" :: rest | "-r" :: rest =>
@@ -200,11 +186,11 @@ def parseArgs (args : List String) : ParseResult :=
           loop options (FilePath.mk arg :: files) rest
   loop {} [] args
 
-def loadFormatterEnvironment (environmentCacheSize : Nat := 1) : IO EnvironmentCache := do
+def loadFormatterEnvironment : IO EnvironmentCache := do
   Lean.initSearchPath (← Lean.findSysroot)
   let default ← Formatter.defaultEnvironment
   let entries ← IO.mkRef []
-  pure { default, maxEntries := environmentCacheSize, entries }
+  pure { default, maxEntries := 1, entries }
 
 def importKey (importDecl : Lean.Import) : String :=
   s!"{importDecl.module}|all={importDecl.importAll}|exported={importDecl.isExported}|meta={importDecl.isMeta}"
@@ -252,27 +238,90 @@ def EnvironmentCache.environmentForImports
 
 def EnvironmentCache.environmentForSource
     (cache : EnvironmentCache) (source fileName : String)
-    (importEnvironmentFirst : Bool)
     : IO Lean.Environment := do
   let normalized := Formatter.Internal.normalizeSource source
-  let defaultEnvironmentIfSourceParses := do
+  try
     discard
     <| SyntaxTree.parseModuleSyntaxWithoutParserStateUpdates cache.default
         normalized fileName
     pure cache.default
-  if importEnvironmentFirst then
-    try
-      cache.environmentForImports (← importsForSource normalized fileName)
-    catch importError =>
-      try
-        defaultEnvironmentIfSourceParses
-      catch _ =>
-        throw importError
+  catch _ =>
+    cache.environmentForImports (← importsForSource normalized fileName)
+
+def sourceParsesWithDefaultEnvironment
+    (cache : EnvironmentCache) (source fileName : String)
+    : IO Bool := do
+  try
+    discard
+    <| SyntaxTree.parseModuleSyntaxWithoutParserStateUpdates cache.default
+        (Formatter.Internal.normalizeSource source) fileName
+    pure true
+  catch _ =>
+    pure false
+
+def partitionDefaultEnvironmentFiles (cache : EnvironmentCache) (files : List FilePath)
+    : IO (List FilePath × List FilePath) := do
+  let mut defaultFiles := []
+  let mut importFiles := []
+  for file in files do
+    let source ← IO.FS.readFile file
+    if (← sourceParsesWithDefaultEnvironment cache source file.toString) then
+      defaultFiles := file :: defaultFiles
+    else
+      importFiles := file :: importFiles
+  pure (defaultFiles.reverse, importFiles.reverse)
+
+def relativePathFromComponents (base path : List String) : Option FilePath :=
+  let rec dropCommon : List String → List String → List String × List String
+    | baseHead :: baseRest, pathHead :: pathRest =>
+        if baseHead == pathHead then
+          dropCommon baseRest pathRest
+        else
+          (baseHead :: baseRest, pathHead :: pathRest)
+    | baseRest, pathRest => (baseRest, pathRest)
+  let (baseRest, pathRest) := dropCommon base path
+  if baseRest.isEmpty then
+    some <| FilePath.mk <| "/".intercalate pathRest
   else
-    try
-      defaultEnvironmentIfSourceParses
-    catch _ =>
-      cache.environmentForImports (← importsForSource normalized fileName)
+    none
+
+def pathForWorkerCwd (cwd? : Option FilePath) (file : FilePath) : IO FilePath := do
+  match cwd? with
+  | none => pure file
+  | some cwd =>
+      let currentDir ← IO.currentDir
+      let absoluteFile := if file.isAbsolute then file else currentDir / file
+      let absoluteCwd := if cwd.isAbsolute then cwd else currentDir / cwd
+      match relativePathFromComponents
+              absoluteCwd.normalize.components absoluteFile.normalize.components with
+      | some relative => pure relative
+      | none => pure absoluteFile.normalize
+
+def pathsForWorkerCwd (cwd? : Option FilePath) (files : List FilePath)
+    : IO (List FilePath) :=
+  files.mapM (pathForWorkerCwd cwd?)
+
+def addFileToImportGroup
+    (groups : List (String × List FilePath)) (key : String) (file : FilePath)
+    : List (String × List FilePath) :=
+  let rec loop (seen : List (String × List FilePath))
+      : List (String × List FilePath) → List (String × List FilePath)
+    | [] => (key, [file]) :: seen
+    | (groupKey, files) :: rest =>
+        if groupKey == key then
+          seen.reverse ++ ((groupKey, file :: files) :: rest)
+        else
+          loop ((groupKey, files) :: seen) rest
+  loop [] groups
+
+def importFileGroups (files : List FilePath) : IO (List (List FilePath)) := do
+  let mut groups := []
+  for file in files do
+    let source ← IO.FS.readFile file
+    let imports ←
+      importsForSource (Formatter.Internal.normalizeSource source) file.toString
+    groups := addFileToImportGroup groups (importsKey imports) file
+  pure <| groups.reverse.map fun (_, files) => files.reverse
 
 def reportFormattingException
     (options : Options)
@@ -332,12 +381,10 @@ def runDiagnosticChecks
         { exceptionCounts with notIdempotent := exceptionCounts.notIdempotent + 1 }
   pure exceptionCounts
 
-def formatFile (cache : EnvironmentCache) (options : Options) (path : FilePath)
+def formatFileWithEnv (env : Lean.Environment) (options : Options) (path : FilePath)
     : IO FileOutcome := do
   try
     let source ← IO.FS.readFile path
-    let env ←
-      cache.environmentForSource source path.toString options.importEnvironmentFirst
     let result ←
       Formatter.formatSourceWithEnvDetailed env source path.toString
         options.formatterOptions
@@ -359,6 +406,16 @@ def formatFile (cache : EnvironmentCache) (options : Options) (path : FilePath)
       IO.FS.writeFile path formatted
       IO.println s!"formatted {path}"
       pure { changed := true }
+  catch error =>
+    IO.eprintln s!"leanfmt: {path}: {error}"
+    pure { failed := true }
+
+def formatFile (cache : EnvironmentCache) (options : Options) (path : FilePath)
+    : IO FileOutcome := do
+  try
+    let source ← IO.FS.readFile path
+    let env ← cache.environmentForSource source path.toString
+    formatFileWithEnv env options path
   catch error =>
     IO.eprintln s!"leanfmt: {path}: {error}"
     pure { failed := true }
@@ -404,12 +461,8 @@ def Options.workerArgs (options : Options) (files : List FilePath) : Array Strin
         args := args.push "--check-idempotent"
       if options.includeHidden then
         args := args.push "--include-hidden"
-      if options.importEnvironmentFirst then
-        args := args.push "--import-env-first"
       args := args.push "--line-width"
       args := args.push s!"{options.formatterOptions.lineWidth}"
-      args := args.push "--env-cache-size"
-      args := args.push s!"{options.environmentCacheSize}"
       for file in files do
         args := args.push file.toString
       args
@@ -438,16 +491,20 @@ partial def findLakePackageRoot? (path : FilePath) : IO (Option FilePath) := do
     | none => pure none
 
 def workerCwd? (options : Options) : IO (Option FilePath) := do
-  let rec firstDirectoryRoot? : List FilePath → IO (Option FilePath)
-    | [] => pure none
+  let rec commonRoot? (expected? : Option FilePath) : List FilePath → IO (Option FilePath)
+    | [] => pure expected?
     | path :: rest => do
-        if (← path.pathExists) && (← path.isDir) then
-          match (← findLakePackageRoot? path) with
-          | some root => pure <| some root
-          | none => firstDirectoryRoot? rest
-        else
-          firstDirectoryRoot? rest
-  firstDirectoryRoot? options.files
+        let some root ←
+          findLakePackageRoot? path
+        | pure none
+        match expected? with
+        | none => commonRoot? (some root) rest
+        | some expected =>
+            if root.normalize == expected.normalize then
+              commonRoot? expected? rest
+            else
+              pure none
+  commonRoot? none options.files
 
 def expectedLeanToolchain : String :=
   s!"leanprover/lean4:v{Lean.versionStringCore}"
@@ -479,39 +536,13 @@ def workerExecutable : IO FilePath := do
 
 def shouldUseWorker (options : Options) (cwd? : Option FilePath) (fileCount : Nat)
     : Bool :=
-  options.recursive
-  && !options.worker
-  && (cwd?.isSome || options.workerBatchSize?.any (fun size => fileCount > size))
+  !options.worker
+  && ((cwd?.isSome && fileCount > 1)
+      || options.workerBatchSize?.any (fun size => fileCount > size))
 
-def textMentionsLakePackage (text packageName : String) : Bool :=
-  text.contains s!"\"name\": \"{packageName}\""
-  || text.contains s!"\"name\":\"{packageName}\""
-  || text.contains s!"require {packageName}"
-
-def packageDependsOn (cwd : FilePath) (packageName : String) : IO Bool := do
-  let manifest := cwd / "lake-manifest.json"
-  let lakefileLean := cwd / "lakefile.lean"
-  let lakefileToml := cwd / "lakefile.toml"
-  let mut found := false
-  if (← manifest.pathExists) then
-    found := found || textMentionsLakePackage (← IO.FS.readFile manifest) packageName
-  if (← lakefileLean.pathExists) then
-    found := found || textMentionsLakePackage (← IO.FS.readFile lakefileLean) packageName
-  if (← lakefileToml.pathExists) then
-    found := found || textMentionsLakePackage (← IO.FS.readFile lakefileToml) packageName
-  pure found
-
-def smallMathlibHeavyExternalBatchLimit : Nat := 64
-
-def defaultWorkerBatchSize (cwd? : Option FilePath) (files : List FilePath) : IO Nat := do
-  match cwd? with
-  | some cwd =>
-      if files.length <= smallMathlibHeavyExternalBatchLimit
-          && (← packageDependsOn cwd "mathlib") then
-        pure 1
-      else
-        pure files.length
-  | none => pure files.length
+def defaultWorkerBatchSize (_cwd? : Option FilePath) (files : List FilePath)
+    : IO Nat := do
+  pure files.length
 
 def initialWorkerBatchSize (options : Options) (cwd? : Option FilePath)
     (files : List FilePath)
@@ -523,6 +554,7 @@ def initialWorkerBatchSize (options : Options) (cwd? : Option FilePath)
 def runWorkerBatch (options : Options) (cwd? : Option FilePath) (files : List FilePath)
     : IO UInt32 := do
   let executable ← workerExecutable
+  let files ← pathsForWorkerCwd cwd? files
   let child ←
     IO.Process.spawn
       {
@@ -547,31 +579,56 @@ partial def runWorkerBatches
         loop (failed || exitCode != 0) (remaining.drop initialBatchSize)
   loop false files
 
+def summarizeOutcomes (options : Options) (outcomes : List FileOutcome) : IO UInt32 := do
+  let changed := outcomes.any (·.changed)
+  let failed := outcomes.any (·.failed)
+  let exceptionCounts : ExceptionCounts :=
+    outcomes.foldl (fun counts outcome => counts.add outcome.exceptionCounts) {}
+  if !exceptionCounts.isEmpty then
+    IO.eprintln exceptionCounts.summary
+  let diagnosticMode := options.checkException || options.checkIdempotent
+  let formattingDifferenceFailed := options.check && !diagnosticMode && changed
+  pure <| if failed || formattingDifferenceFailed then 1 else 0
+
+def formatDefaultEnvironmentFiles
+    (cache : EnvironmentCache) (options : Options) (files : List FilePath)
+    : IO UInt32 := do
+  let outcomes ← files.mapM (formatFileWithEnv cache.default options)
+  summarizeOutcomes options outcomes
+
+partial def runImportWorkerGroups
+    (options : Options) (cwd? : Option FilePath) (groups : List (List FilePath))
+    : IO UInt32 := do
+  let rec loop (failed : Bool) : List (List FilePath) → IO UInt32
+    | [] => pure <| if failed then 1 else 0
+    | group :: rest => do
+        let exitCode ← runWorkerBatches options cwd? group
+        loop (failed || exitCode != 0) rest
+  loop false groups
+
+def runMixedWorkerBatches
+    (cache : EnvironmentCache) (options : Options) (cwd? : Option FilePath)
+    (files : List FilePath)
+    : IO UInt32 := do
+  let (defaultFiles, importFiles) ← partitionDefaultEnvironmentFiles cache files
+  let defaultExitCode ← formatDefaultEnvironmentFiles cache options defaultFiles
+  let importGroups ← importFileGroups importFiles
+  let importExitCode ← runImportWorkerGroups options cwd? importGroups
+  pure <| if defaultExitCode != 0 || importExitCode != 0 then 1 else 0
+
 def runOptionsWithCache (cache : EnvironmentCache) (options : Options) : IO UInt32 := do
   let files ← expandInputPaths options
   let cwd? ← workerCwd? options
   if shouldUseWorker options cwd? files.length then
     if (← checkWorkerToolchain cwd?) then
-      runWorkerBatches options cwd? files
+      runMixedWorkerBatches cache options cwd? files
     else
       pure 1
   else
-    let mut changed := false
-    let mut failed := false
-    let mut exceptionCounts : ExceptionCounts := {}
-    for file in files do
-      let outcome ← formatFile cache options file
-      changed := changed || outcome.changed
-      failed := failed || outcome.failed
-      exceptionCounts := exceptionCounts.add outcome.exceptionCounts
-    if !exceptionCounts.isEmpty then
-      IO.eprintln exceptionCounts.summary
-    let diagnosticMode := options.checkException || options.checkIdempotent
-    let formattingDifferenceFailed := options.check && !diagnosticMode && changed
-    pure <| if failed || formattingDifferenceFailed then 1 else 0
+    summarizeOutcomes options (← files.mapM (formatFile cache options))
 
 def runOptions (options : Options) : IO UInt32 := do
-  let cache ← loadFormatterEnvironment options.environmentCacheSize
+  let cache ← loadFormatterEnvironment
   runOptionsWithCache cache options
 
 def runMain (args : List String) : IO UInt32 := do

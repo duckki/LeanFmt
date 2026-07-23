@@ -12,8 +12,6 @@ readonly WORK_DIR="${LEANFMT_VALIDATION_DIR:-$REPO_ROOT/.scratch/external-valida
 readonly VALIDATION_FILES_PER_BATCH="${LEANFMT_VALIDATION_BATCH_SIZE:-100}"
 readonly BUILD_FILES_PER_BATCH="${LEANFMT_VALIDATION_BUILD_BATCH_SIZE:-$VALIDATION_FILES_PER_BATCH}"
 readonly FORMATTER_WORKER_BATCH_SIZE="${LEANFMT_VALIDATION_FORMATTER_BATCH_SIZE:-}"
-readonly FORMATTER_ENV_CACHE_SIZE="${LEANFMT_VALIDATION_FORMATTER_ENV_CACHE_SIZE:-0}"
-readonly FORMATTER_IMPORT_ENV_FIRST="${LEANFMT_VALIDATION_IMPORT_ENV_FIRST:-1}"
 readonly FORMATTER_LINE_WIDTH="${LEANFMT_VALIDATION_LINE_WIDTH:-}"
 readonly DEFAULT_FILE_SELECTOR="${LEANFMT_VALIDATION_FILE_PATTERN:-*.lean}"
 
@@ -76,18 +74,6 @@ run_optional_phase() {
     printf 'SKIPPED (exit %d, %ds): %s\n' \
       "$status" "$((SECONDS - started_at))" "$description" >&2
   fi
-}
-
-validate_nonnegative_integer() {
-  local name="$1"
-  local value="$2"
-
-  if [[ "$value" =~ ^[0-9]+$ ]]; then
-    return 0
-  fi
-
-  printf '%s must be a nonnegative integer, got %q.\n' "$name" "$value" >&2
-  return 2
 }
 
 validate_positive_integer() {
@@ -328,20 +314,17 @@ run_formatter_file_list() {
   local list_file="$2"
   shift 2
 
-  local -a formatter_options=(--env-cache-size "$FORMATTER_ENV_CACHE_SIZE")
-  if [[ "$FORMATTER_IMPORT_ENV_FIRST" == "1" ]]; then
-    formatter_options+=(--import-env-first)
-  fi
+  local -a formatter_command=(lake env "$FORMATTER")
   if [[ -n "$FORMATTER_LINE_WIDTH" ]]; then
-    formatter_options+=(--line-width "$FORMATTER_LINE_WIDTH")
+    formatter_command+=(--line-width "$FORMATTER_LINE_WIDTH")
   fi
   if [[ -n "$FORMATTER_WORKER_BATCH_SIZE" ]]; then
-    formatter_options+=(--worker-batch-size "$FORMATTER_WORKER_BATCH_SIZE")
+    formatter_command+=(--worker-batch-size "$FORMATTER_WORKER_BATCH_SIZE")
   fi
 
   (
     cd "$project_dir" || exit 1
-    xargs -0 lake env "$FORMATTER" "${formatter_options[@]}" "$@" < "$list_file"
+    xargs -0 "${formatter_command[@]}" "$@" < "$list_file"
   )
 }
 
@@ -437,8 +420,7 @@ run_project_validation_batches() {
 
     if run_phase_result \
         "Format $project_name batch $batch/$total_batches after clean diagnostics ($file_selector)" \
-        run_formatter_file_list "$project_dir" "$list_file" --check-exception \
-          --check-idempotent; then
+        run_formatter_file_list "$project_dir" "$list_file"; then
       :
     else
       status=$?
@@ -511,10 +493,6 @@ main() {
     validate_positive_integer LEANFMT_VALIDATION_FORMATTER_BATCH_SIZE \
       "$FORMATTER_WORKER_BATCH_SIZE" || return $?
   fi
-  validate_nonnegative_integer LEANFMT_VALIDATION_FORMATTER_ENV_CACHE_SIZE \
-    "$FORMATTER_ENV_CACHE_SIZE" || return $?
-  validate_boolean LEANFMT_VALIDATION_IMPORT_ENV_FIRST \
-    "$FORMATTER_IMPORT_ENV_FIRST" || return $?
   if [[ -n "$FORMATTER_LINE_WIDTH" ]]; then
     validate_positive_integer LEANFMT_VALIDATION_LINE_WIDTH \
       "$FORMATTER_LINE_WIDTH" || return $?

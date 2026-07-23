@@ -1670,13 +1670,18 @@ def mutualBreaks (_context : RuleContext) (segment : Segment) : List BreakPoint 
 def ifThenElseKind (kind : Lean.SyntaxNodeKind) : Bool :=
   kind == `termIfThenElse || kind == `boolIfThenElse
 
+def frameIsIfThenElseElseBranch (frame : Frame) : Bool :=
+  match frame.rawKind? with
+  | some kind => ifThenElseKind kind && frame.childIndex == 5
+  | none => false
+
 def ifThenElseElseBranch (context : RuleContext) : Bool :=
-  match context.ancestors with
-  | parent :: _ =>
-      match parent.rawKind? with
-      | some kind => ifThenElseKind kind && parent.childIndex == 5
-      | none => false
-  | _ => false
+  let rec loop : List Frame → Bool
+    | [] => false
+    | parent :: rest =>
+        frameIsIfThenElseElseBranch parent
+        || (parent.rawKind? == some `null && parent.segment.size == 1 && loop rest)
+  loop context.ancestors
 
 def ifThenElseElseBranchIsIf (segment : Segment) : Bool :=
   match segment.child? 5 with
@@ -2078,6 +2083,7 @@ def commandInChainRule : LineBreakRule :=
 def ifThenElseRule : LineBreakRule :=
   {
     name := "ifThenElse"
+    mandatory := fun context _ => ifThenElseElseBranch context
     useExistingBreaks := fun _ _ => true
     inheritBase := fun context _ => ifThenElseElseBranch context
     alignStartToIndentation := fun _ _ => true

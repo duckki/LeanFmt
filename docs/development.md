@@ -425,17 +425,10 @@ Clones are recreated under `.scratch/external-validation`. Set
 `LEANFMT_VALIDATION_BUILD_BATCH_SIZE` to change the selected-module build batch
 size. `LEANFMT_VALIDATION_BATCH_SIZE` changes the validation batch size, and
 `LEANFMT_VALIDATION_FORMATTER_BATCH_SIZE` passes `--worker-batch-size` to
-LeanFmt to override its automatic worker batch choice. The formatter
-imported-environment cache is
-disabled during external validation by default; set
-`LEANFMT_VALIDATION_FORMATTER_ENV_CACHE_SIZE=N` to allow each formatter process
-to retain up to `N` imported environments. External validation also passes
-`--import-env-first` to the formatter by default so mathlib files do not first
-attempt a whole-file parse with LeanFmt's default Lean environment. If an imported
-environment cannot be loaded, LeanFmt still uses the default environment when it can
-parse the file. Set
-`LEANFMT_VALIDATION_IMPORT_ENV_FIRST=0` to restore the ordinary CLI strategy of
-trying the default environment before loading source imports. Set
+LeanFmt to override its automatic worker batch choice. Multi-file package formatter
+invocations first format files that parse in LeanFmt's default Lean environment, then
+group files that need imported syntax by import header so each imported environment is
+reused within a short-lived worker process. Set
 `LEANFMT_VALIDATION_LINE_WIDTH=N` to pass a project-specific line width to every
 formatter invocation.
 
