@@ -443,6 +443,47 @@ def regroupLetRecDeclAnnotations (children : Array Tree) : Option (Array Tree) :
           (.node .annotatedDeclaration #[annotations, declaration])).set!
         declarationIndex .missing
 
+partial def lakeConfigChildren? : Tree → Option (Array Tree)
+  | .node (.raw `Lake.DSL.declValWhere) children => some children
+  | .node _ children =>
+      children.foldl
+        (fun found child =>
+          match found with
+          | some children => some children
+          | none => lakeConfigChildren? child)
+        none
+  | _ => none
+
+def regroupLakeCommandChildren (children : Array Tree) : Array Tree :=
+  children.foldl
+    (fun regrouped child =>
+      if rawKind? child == some `Lake.DSL.optConfig then
+        match lakeConfigChildren? child with
+        | some configChildren => regrouped ++ configChildren
+        | none => regrouped.push child
+      else
+        regrouped.push child)
+    #[]
+
+partial def flattenLakeRequireTree : Tree → Array Tree
+  | .missing => #[]
+  | tree@(.node (.raw kind) children) =>
+      if kind == `null
+          || kind == `Lake.DSL.depSpec
+          || kind == `Lake.DSL.depName
+          || kind == `Lake.DSL.identOrStr
+          || kind == `Lake.DSL.fromClause
+          || kind == `Lake.DSL.fromSource
+          || kind == `Lake.DSL.fromGit then
+        children.foldl
+          (fun flattened child => flattened ++ flattenLakeRequireTree child) #[]
+      else
+        #[tree]
+  | tree => #[tree]
+
+def regroupLakeRequireChildren (children : Array Tree) : Array Tree :=
+  children.foldl (fun flattened child => flattened ++ flattenLakeRequireTree child) #[]
+
 def regroupDefinitionChildren (children : Array Tree) : Option (Array Tree) := do
   let declVal ← children[3]?
   match declVal with
@@ -614,6 +655,10 @@ def regroupRawNode (kind : SyntaxNodeKind) (children : Array Tree) : Tree :=
             .node .application (#[head] ++ appendApplicationArgumentContainers children 3)
           ]
     | _, _, _ => .node (.raw kind) children
+  else if kind == `Lake.DSL.packageCommand || kind == `Lake.DSL.leanLibCommand then
+    .node (.raw kind) (regroupLakeCommandChildren children)
+  else if kind == `Lake.DSL.requireDecl then
+    .node (.raw kind) (regroupLakeRequireChildren children)
   else if kind == `Lean.Parser.Term.binderTactic then
     .node (.infixChain kind) (regroupBinderTacticChildren children)
   else if isBinaryInfixRawNode kind children then

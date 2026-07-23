@@ -183,6 +183,12 @@ def assertCustomNotationBracketSpacing : IO Unit := do
   assertEq "source space before explicit identifier marker is preserved" " "
     (Formatter.SpaceRules.interTokenWhitespace "f @x"
       (syntheticAtomTokenAt "f" 0 1) (syntheticAtomTokenAt "@" 2 3))
+  assertEq "explicit identifier marker stays tight without source space" ""
+    (Formatter.SpaceRules.interTokenWhitespace "@x"
+      (syntheticAtomTokenAt "@" 0 1) (syntheticAtomTokenAt "x" 1 2))
+  assertEq "at separator preserves source space" " "
+    (Formatter.SpaceRules.interTokenWhitespace "@ \"rev\""
+      (syntheticAtomTokenAt "@" 0 1) (syntheticAtomTokenAt "\"rev\"" 2 7))
   assertEq "true postfix superscript marker stays tight" ""
     (Formatter.SpaceRules.spaceBetweenTokens
       (syntheticAtomToken "m") (syntheticAtomToken "⁻¹"))
@@ -4425,6 +4431,39 @@ def assertDeclarationRuleTransparent : IO Unit := do
   assertTrue "declaration rule has no break points"
     (rule.breakPoints context segment == [])
 
+def assertLakeDslFormatting : IO Unit := do
+  let env ← SyntaxTree.importEnvironment #[{ module := `Lake }]
+  let source :=
+    "import Lake\n"
+    ++ "open Lake DSL\n"
+    ++ "\n"
+    ++ "package quantum where\n"
+    ++ "  srcDir := \".\"\n"
+    ++ "\n"
+    ++ "require mathlib from git\n"
+    ++ "  \"https://github.com/leanprover-community/mathlib4.git\" @ \"v4.32.0\"\n"
+    ++ "\n"
+    ++ "@[default_target]\n"
+    ++ "lean_lib QuantumComputing where\n"
+  let expected :=
+    "import Lake\n"
+    ++ "\n"
+    ++ "open Lake DSL\n"
+    ++ "\n"
+    ++ "package quantum where\n"
+    ++ "  srcDir := \".\"\n"
+    ++ "\n"
+    ++ "require mathlib from git\n"
+    ++ "  \"https://github.com/leanprover-community/mathlib4.git\" @ \"v4.32.0\"\n"
+    ++ "\n"
+    ++ "@[default_target]\n"
+    ++ "lean_lib QuantumComputing where\n"
+  let formatted ← Formatter.formatSourceWithEnv env source "lakefile.lean"
+  assertEq "Lake DSL commands preserve conventional layout" expected formatted
+  let moduleTree ← SyntaxTree.parseModuleStringWithEnv env formatted "lakefile.lean"
+  assertTrue "Lake DSL commands have complete rule dispatch"
+    (Formatter.Diagnostics.missingRuleOccurrencesForModule moduleTree).isEmpty
+
 def assertMathlibLowRiskSyntaxKindsHaveRules : IO Unit := do
   let kinds : List Lean.SyntaxNodeKind :=
     [
@@ -4471,6 +4510,17 @@ def assertMathlibLowRiskSyntaxKindsHaveRules : IO Unit := do
       `Lean.Parser.Command.classInductive,
       `Lean.«command__Unif_hint____Where_|_-⊢__»,
       `Lean.unifConstraintElem,
+      `Lake.DSL.packageCommand,
+      `Lake.DSL.leanLibCommand,
+      `Lake.DSL.requireDecl,
+      `Lake.DSL.identOrStr,
+      `Lake.DSL.optConfig,
+      `Lake.DSL.declValWhere,
+      `Lake.DSL.depSpec,
+      `Lake.DSL.depName,
+      `Lake.DSL.fromClause,
+      `Lake.DSL.fromSource,
+      `Lake.DSL.fromGit,
       `lemma,
       `Lean.Parser.Term.explicit,
       `Lean.Parser.Term.explicitUniv,
@@ -5085,6 +5135,7 @@ def runCliAndArchitectureTests (env : Lean.Environment) : IO Unit := do
   assertCliFixtureUpdate env
   assertFormatterArchitecture
   assertDeclarationRuleTransparent
+  assertLakeDslFormatting
   assertMathlibLowRiskSyntaxKindsHaveRules
   assertMissingRuleCheckUsesDispatch env cache
   assertCheckCommandHasRule env

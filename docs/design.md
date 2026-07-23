@@ -303,6 +303,18 @@ import Very.Long.Module.Name.ThatRemainsOneImportCommand
 syntax "widget" : term
 ```
 
+Lake package commands keep `where` on the header and indent configuration fields one
+level. A multiline Git dependency breaks after `git`, and its revision separator keeps
+ordinary source spacing:
+
+```lean
+package example where
+  srcDir := "."
+
+require mathlib from git
+  "https://github.com/leanprover-community/mathlib4.git" @ "v4.32.0"
+```
+
 An attribute may share a declaration's line when the source keeps them together
 and the complete declaration fits on that line:
 

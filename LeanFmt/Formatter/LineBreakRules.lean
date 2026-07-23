@@ -2261,6 +2261,52 @@ def groupRule : LineBreakRule :=
     breakPoints := groupBreaks
   }
 
+def lakeDslWrapperRule : LineBreakRule :=
+  {
+    name := "lakeDslWrapper"
+    inheritBase := fun _ _ => true
+  }
+
+def lakeCommandBreaks (context : RuleContext) (segment : Segment) : List BreakPoint :=
+  let annotationBreaks := leadingAnnotationBreaks context segment
+  let configBreaks := [breakAfterLexeme? segment "where" 1].filterMap id
+  annotationBreaks ++ configBreaks
+
+def lakeCommandHasConfigBody (segment : Segment) : Bool :=
+  (breakAfterLexeme? segment "where" 1).isSome
+
+def lakeCommandRule : LineBreakRule :=
+  {
+    name := "lakeCommand"
+    useExistingBreaks := fun _ _ => true
+    mandatory := fun _ segment => lakeCommandHasConfigBody segment
+    flow := fun _ segment => !lakeCommandHasConfigBody segment
+    inheritBase := fun _ _ => true
+    breakPoints := lakeCommandBreaks
+  }
+
+def lakeRequireBreaks (_context : RuleContext) (segment : Segment) : List BreakPoint :=
+  [breakAfterLexeme? segment "git" 1].filterMap id
+
+def lakeRequireRule : LineBreakRule :=
+  {
+    name := "lakeRequire"
+    useExistingBreaks := fun _ _ => true
+    inheritBase := fun _ _ => true
+    breakPoints := lakeRequireBreaks
+  }
+
+def lakeFromGitBreaks (_context : RuleContext) (segment : Segment) : List BreakPoint :=
+  [boundaryBreak? segment 1 1].filterMap id
+
+def lakeFromGitRule : LineBreakRule :=
+  {
+    name := "lakeFromGit"
+    useExistingBreaks := fun _ _ => true
+    inheritBase := fun _ _ => true
+    breakPoints := lakeFromGitBreaks
+  }
+
 def matchAltsWhereDeclsRule : LineBreakRule :=
   {
     name := "matchAltsWhereDecls"
@@ -2370,6 +2416,17 @@ def ruleFor : SyntaxTree.Tree → Option LineBreakRule
   | .node (.raw `Lean.«command__Unif_hint____Where_|_-⊢__») _ =>
       some defaultRule
   | .node (.raw `Lean.unifConstraintElem) _ => some defaultRule
+  | .node (.raw `Lake.DSL.packageCommand) _ => some lakeCommandRule
+  | .node (.raw `Lake.DSL.leanLibCommand) _ => some lakeCommandRule
+  | .node (.raw `Lake.DSL.requireDecl) _ => some lakeRequireRule
+  | .node (.raw `Lake.DSL.identOrStr) _ => some lakeDslWrapperRule
+  | .node (.raw `Lake.DSL.optConfig) _ => some lakeDslWrapperRule
+  | .node (.raw `Lake.DSL.declValWhere) _ => some whereStructInstRule
+  | .node (.raw `Lake.DSL.depSpec) _ => some lakeDslWrapperRule
+  | .node (.raw `Lake.DSL.depName) _ => some lakeDslWrapperRule
+  | .node (.raw `Lake.DSL.fromClause) _ => some lakeDslWrapperRule
+  | .node (.raw `Lake.DSL.fromSource) _ => some lakeDslWrapperRule
+  | .node (.raw `Lake.DSL.fromGit) _ => some lakeFromGitRule
   | .node (.raw `lemma) _ => some theoremRule
   -- Transparent expression wrappers and atomic syntax.
   | .node (.raw `Lean.Parser.Term.paren) _ => some parenRule

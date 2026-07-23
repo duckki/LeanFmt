@@ -132,7 +132,7 @@ def stringStartsWithAny (value : String) (prefixes : List String) : Bool :=
   prefixes.any fun candidate => value.startsWith candidate
 
 def noSpaceAfterToken (lexeme : String) : Bool :=
-  lexeme == "@" || stringEndsWithAny lexeme ["(", "[", "⟨", "⟪", "⦃"]
+  stringEndsWithAny lexeme ["(", "[", "⟨", "⟪", "⦃"]
 
 def allowsHorizontalAlignmentAfterToken (lexeme : String) : Bool :=
   !noSpaceAfterToken lexeme && lexeme != ":"
