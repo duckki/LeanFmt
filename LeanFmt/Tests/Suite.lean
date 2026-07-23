@@ -3603,6 +3603,25 @@ def assertQuantifierBinderSequenceBreaksBetweenBinders (env : Lean.Environment)
   let formatted ←
     Formatter.formatSourceWithEnv env source "quantifier-binder-sequence-break.lean"
   assertEq "quantifier binder sequence breaks between binders" expected formatted
+  let existentialSource :=
+    "theorem quantifierBinderOverflow : ∃ (ι : Type u) (_ : Fintype ι) (_ : DecidableEq ι) (p : ι → R) (_ : ∀ i, Irreducible <| p i) (e : ι → ℕ), DirectSum.IsInternal fun i => torsionBy R M <| p i ^ e i := by\n"
+    ++ "  exact proof\n"
+  let existentialExpected :=
+    "theorem quantifierBinderOverflow\n"
+    ++ "    : ∃ (ι : Type u) (_ : Fintype ι) (_ : DecidableEq ι) (p : ι → R) (_ : ∀ i, Irreducible <| p i)\n"
+    ++ "            (e : ι → ℕ),\n"
+    ++ "        DirectSum.IsInternal fun i => torsionBy R M <| p i ^ e i := by\n"
+    ++ "  exact proof\n"
+  let existentialFormatted ←
+    Formatter.formatSourceWithEnv env existentialSource
+      "existential-binder-sequence-break.lean" { lineWidth := 100 }
+  assertEq "existential binder wrapper breaks between binders"
+    existentialExpected existentialFormatted
+  let moduleTree ←
+    SyntaxTree.parseModuleStringWithEnv env existentialFormatted
+      "existential-binder-sequence-break.lean"
+  assertTrue "existential binder sequence has no overflow"
+    (Formatter.Diagnostics.overflowOccurrences moduleTree { lineWidth := 100 }).isEmpty
 
 def assertInductiveConstructorIndentation (env : Lean.Environment) : IO Unit := do
   let source :=

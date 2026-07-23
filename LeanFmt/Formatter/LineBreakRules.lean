@@ -552,10 +552,20 @@ def rawKindIsQuantifier (kind : Lean.SyntaxNodeKind) : Bool :=
 
 def quantifierBinderSequence (context : RuleContext) : Bool :=
   match context.ancestors with
-  | parent :: _ =>
-      match parent.rawKind? with
-      | some kind => rawKindIsQuantifier kind && parent.childIndex == 1
-      | none => false
+  | parent :: rest =>
+      let direct :=
+        match parent.rawKind? with
+        | some kind => rawKindIsQuantifier kind && parent.childIndex == 1
+        | none => false
+      let wrapped :=
+        match rest with
+        | quantifier :: _ =>
+            parent.rawKind? == some `Lean.explicitBinders
+            && parent.childIndex == 0
+            && (quantifier.rawKind?.map rawKindIsQuantifier).getD false
+            && quantifier.childIndex == 1
+        | _ => false
+      direct || wrapped
   | _ => false
 
 def groupedBinderIdentifierSequence (context : RuleContext) : Bool :=
