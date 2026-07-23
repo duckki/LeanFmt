@@ -2465,6 +2465,8 @@ def ruleFor : SyntaxTree.Tree → Option LineBreakRule
   | .node (.raw `Lean.Parser.Command.classInductive) _ => some defaultRule
   | .node (.raw `Lean.Parser.commandUnseal__) _ => some defaultRule
   | .node (.raw `Lean.Parser.Command.recommended_spelling) _ => some defaultRule
+  | .node (.raw `Topology.nhdsGT) _ => some transparentRule
+  | .node (.raw `Topology.nhdsLT) _ => some transparentRule
   | .node (.raw `Lean.«command__Unif_hint____Where_|_-⊢__») _ =>
       some defaultRule
   | .node (.raw `Lean.unifConstraintElem) _ => some defaultRule

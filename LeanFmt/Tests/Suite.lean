@@ -5037,6 +5037,8 @@ def assertMathlibLowRiskSyntaxKindsHaveRules : IO Unit := do
       `Lean.Parser.Command.classInductive,
       `Lean.Parser.commandUnseal__,
       `Lean.Parser.Command.recommended_spelling,
+      `Topology.nhdsGT,
+      `Topology.nhdsLT,
       `Lean.«command__Unif_hint____Where_|_-⊢__»,
       `Lean.unifConstraintElem,
       `Lake.DSL.packageCommand,
