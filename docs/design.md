@@ -877,6 +877,16 @@ The body aligns with `let`, not with the right-hand side. When a `let` appears
 after a leading operator, LeanFmt may insert alignment space before `let` so the
 result also satisfies Lean's indentation-sensitive parser.
 
+When fixed delimiter spacing keeps `let` off an indentation column, the body
+rounds up to the next column and the right-hand side remains one level deeper:
+
+```lean
+result
+  = (let matching :=
+        computeMatchingSelections schema responseName selections
+      useMatchingSelections matching)
+```
+
 A structured right-hand side keeps its own layout below `:=`:
 
 ```lean

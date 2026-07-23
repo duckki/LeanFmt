@@ -333,8 +333,8 @@ Rule methods mean:
   grid. The `let` rule declines alignment when padding would alter fixed punctuation
   spacing, such as after an opening token or `:`.
 - `roundUpBaseIndentation`: positive structural breaks start from the indentation boundary
-  after the segment's physical start. Delimited structures, tuples, and arrays use this
-  so contents are one full level past an off-column opening delimiter.
+  after the segment's physical start. Delimited structures, tuples, arrays, and binding
+  right-hand sides use this so contents remain one full level past an off-column head.
 - `breakPoints`: logical child boundaries. Rules must not read renderer state.
 
 The default rule is deliberately shape-only. It distinguishes missing children, empty

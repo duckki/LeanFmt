@@ -1396,6 +1396,7 @@ def letIdDeclRule : LineBreakRule :=
   {
     name := "letIdDecl"
     inheritBase := fun _ _ => true
+    roundUpBaseIndentation := true
     breakPoints := letIdDeclBreaks
   }
 
@@ -1403,6 +1404,7 @@ def letPatternDeclRule : LineBreakRule :=
   {
     name := "letPatternDecl"
     inheritBase := fun _ _ => true
+    roundUpBaseIndentation := true
     breakPoints := letPatternDeclBreaks
   }
 

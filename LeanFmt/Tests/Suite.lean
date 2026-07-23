@@ -2183,6 +2183,34 @@ def assertParenthesizedLetRhsIndentUnderImplication (env : Lean.Environment)
       "parenthesized-let-rhs-under-implication.lean"
   assertEq "parenthesized let RHS indents under implication" expected formatted
 
+def assertOffColumnParenthesizedLetRhsRoundsUp (env : Lean.Environment) : IO Unit := do
+  let source :=
+    "def offColumnIdentifierLet : Prop :=\n"
+    ++ "  normalizedSubselections\n"
+    ++ "  = (let matching := veryLongFieldSelectionsWithResponseNameInScope schema parentType responseName rest\n"
+    ++ "      let merged := mergeSelectionSets matching\n"
+    ++ "      predicate merged)\n"
+    ++ "\n"
+    ++ "def offColumnPatternLet : Prop :=\n"
+    ++ "  normalizedSubselections\n"
+    ++ "  = (let (matching, errors) := veryLongFieldSelectionsWithErrorsInScope schema parentType responseName rest; predicate matching errors)\n"
+  let expected :=
+    "def offColumnIdentifierLet : Prop :=\n"
+    ++ "  normalizedSubselections\n"
+    ++ "  = (let matching :=\n"
+    ++ "        veryLongFieldSelectionsWithResponseNameInScope schema parentType responseName rest\n"
+    ++ "      let merged := mergeSelectionSets matching\n"
+    ++ "      predicate merged)\n"
+    ++ "\n"
+    ++ "def offColumnPatternLet : Prop :=\n"
+    ++ "  normalizedSubselections\n"
+    ++ "  = (let (matching, errors) :=\n"
+    ++ "        veryLongFieldSelectionsWithErrorsInScope schema parentType responseName rest;\n"
+    ++ "      predicate matching errors)\n"
+  let formatted ←
+    Formatter.formatSourceWithEnv env source "off-column-parenthesized-let-rhs.lean"
+  assertEq "off-column parenthesized let RHS rounds up" expected formatted
+
 def assertLetBodyAfterInfixClosesLetLayout (env : Lean.Environment) : IO Unit := do
   let source :=
     "def implicationLetOperand : Prop :=\n"
@@ -5250,6 +5278,7 @@ def runExpressionAndRendererTests (env : Lean.Environment) : IO Unit := do
   assertParenthesizedLetIKeepsTightOpeningDelimiter env
   assertBinderLetIKeepsSingleSpaceAfterColon env
   assertParenthesizedLetRhsIndentUnderImplication env
+  assertOffColumnParenthesizedLetRhsRoundsUp env
   assertLetBodyAfterInfixClosesLetLayout env
   assertDeclarationTypeBreak env
   assertImplicitBinderPreservesTightBraces env
