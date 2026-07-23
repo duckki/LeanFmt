@@ -266,6 +266,20 @@ def assertCommandInWrapperPreservesBreakAfterIn (env : Lean.Environment) : IO Un
   assertTextContains "command in wrapper keeps command break after in"
     formatted "variable {p q r s t u v w : Prop} in\ntheorem"
 
+  let unsealSource :=
+    "unseal spectralSequence in\n"
+    ++ "theorem unsealedWrapper : True := by\n"
+    ++ "  trivial\n"
+  let unsealFormatted ←
+    Formatter.formatSourceWithEnv env unsealSource "unseal-command-in-wrapper.lean"
+  assertEq "unseal command wrapper preserves its break after in"
+    unsealSource unsealFormatted
+  let unsealTree ←
+    SyntaxTree.parseModuleStringWithEnv env unsealFormatted
+      "unseal-command-in-wrapper.lean"
+  assertTrue "unseal command wrapper has complete rule coverage"
+    (Formatter.Diagnostics.missingRuleOccurrencesForModule unsealTree).isEmpty
+
 def assertStackedCommandInWrappersBreakBeforeDeclaration (env : Lean.Environment)
     : IO Unit := do
   let source :=
@@ -684,6 +698,19 @@ def assertCommandAttributeBracketPayloadStaysAttached (env : Lean.Environment)
   let formatted ←
     Formatter.formatSourceWithEnv env source "command-attribute-bracket-payload.lean"
   assertEq "command attribute keeps bracket payload attached" expected formatted
+
+  let classSource :=
+    "structure Normal : Prop where\n"
+    ++ "  value : True\n"
+    ++ "\n"
+    ++ "attribute [class] Normal\n"
+  let classFormatted ←
+    Formatter.formatSourceWithEnv env classSource "class-command-attribute.lean"
+  assertEq "class command attribute preserves its layout" classSource classFormatted
+  let classTree ←
+    SyntaxTree.parseModuleStringWithEnv env classFormatted "class-command-attribute.lean"
+  assertTrue "class command attribute has complete rule coverage"
+    (Formatter.Diagnostics.missingRuleOccurrencesForModule classTree).isEmpty
 
 def assertPrivateTheoremModifierStaysOnHeader (env : Lean.Environment) : IO Unit := do
   let source := "private theorem privateTheoremModifier : True := by\n" ++ "  trivial\n"
@@ -4862,6 +4889,7 @@ def assertMathlibLowRiskSyntaxKindsHaveRules : IO Unit := do
       `Lean.Parser.Command.eraseAttr,
       `Lean.Parser.Command.deriving,
       `Lean.Parser.Command.classInductive,
+      `Lean.Parser.commandUnseal__,
       `Lean.«command__Unif_hint____Where_|_-⊢__»,
       `Lean.unifConstraintElem,
       `Lake.DSL.packageCommand,
@@ -4888,6 +4916,9 @@ def assertMathlibLowRiskSyntaxKindsHaveRules : IO Unit := do
       `Lean.Parser.Term.structInstFieldEqns,
       `Lean.Parser.Term.sort,
       `Lean.Parser.Term.letI,
+      `Lean.Parser.Term.letPosOpt,
+      `Lean.Parser.Term.letOpts,
+      `Lean.Parser.Term.letOptNondep,
       `Lean.Parser.Term.doLetExpr,
       `Lean.Parser.Term.doLetRec,
       `Lean.Parser.Term.doIfLetBind,
@@ -4904,8 +4935,14 @@ def assertMathlibLowRiskSyntaxKindsHaveRules : IO Unit := do
       `Lean.Parser.Term.nofun,
       `Lean.Parser.Term.doNested,
       `Lean.Parser.Term.doSeqBracketed,
+      `Lean.Parser.Term.whereFinally,
       `Lean.Parser.Tactic.tacticSeq,
       `Lean.Parser.Tactic.tacticSeq1Indented,
+      `Lean.Parser.Tactic.tacticRwa__,
+      `Lean.Parser.Tactic.rwRuleSeq,
+      `Lean.Parser.Tactic.rwRule,
+      `Lean.Parser.Tactic.location,
+      `Lean.Parser.Tactic.locationHyp,
       `Lean.Parser.Tactic.exact,
       `Lean.Parser.Tactic.tacticRfl,
       `Lean.Parser.Tactic.grind,
@@ -4939,6 +4976,7 @@ def assertMathlibLowRiskSyntaxKindsHaveRules : IO Unit := do
       `BigOperators.bigOpBinders,
       `BigOperators.bigOpBinder,
       `Algebra.subalgebra_adjoin,
+      `«AddActionHomLocal≺»,
       `Batteries.ExtendedBinder.extBinders,
       `Batteries.ExtendedBinder.extBinder,
       `Batteries.ExtendedBinder.extBinderCollection,
@@ -4961,6 +4999,7 @@ def assertMathlibLowRiskSyntaxKindsHaveRules : IO Unit := do
       `Lean.Parser.Attr.grindEqBoth,
       `Lean.Attr.coe,
       `Lean.Parser.Attr.instance,
+      `Lean.Parser.Attr.class,
       `Lean.deprecated,
       `token.existing,
       `Parser.Attr.functor_norm,
@@ -4981,6 +5020,7 @@ def assertMathlibLowRiskSyntaxKindsHaveRules : IO Unit := do
       `Mathlib.Util.«commandCompile_inductive%_»,
       `Mathlib.Util.TermReduce.deltaStx,
       `Mathlib.Meta.setBuilder,
+      `Ideal.Submodule.Module.Submodule.Module.Module.Submodule.Submodule.Module.Module.Submodule.Submodule.QuotientTorsion.Ideal.Quotient.AddMonoid.AddSubgroup.torsionByStx,
       `Mathlib.Meta.macroPattSetBuilder,
       `Mathlib.Meta.SetNotationForOrder.«binderPred⊂_»,
       `Mathlib.Notation3.notation3,
@@ -5019,6 +5059,7 @@ def assertMathlibLowRiskSyntaxKindsHaveRules : IO Unit := do
       `Lean.Parser.Tactic.quot,
       `PiNotation.piNotation,
       `prioLow,
+      `prioMid,
       `prioHigh,
       `Lean.Parser.precedence,
       `precMax,

@@ -2424,6 +2424,7 @@ def ruleFor : SyntaxTree.Tree → Option LineBreakRule
   | .node (.raw `Lean.Parser.Command.simpsRule.erase) _ => some defaultRule
   | .node (.raw `Lean.Parser.Command.eraseAttr) _ => some defaultRule
   | .node (.raw `Lean.Parser.Command.classInductive) _ => some defaultRule
+  | .node (.raw `Lean.Parser.commandUnseal__) _ => some defaultRule
   | .node (.raw `Lean.«command__Unif_hint____Where_|_-⊢__») _ =>
       some defaultRule
   | .node (.raw `Lean.unifConstraintElem) _ => some defaultRule
@@ -2479,6 +2480,9 @@ def ruleFor : SyntaxTree.Tree → Option LineBreakRule
   | .node (.raw `Lean.Parser.Term.letConfig) _ => some defaultRule
   | .node (.raw `Lean.Parser.Term.letDecl) _ => some defaultRule
   | .node (.raw `Lean.Parser.Term.letI) _ => some letRule
+  | .node (.raw `Lean.Parser.Term.letPosOpt) _ => some defaultRule
+  | .node (.raw `Lean.Parser.Term.letOpts) _ => some defaultRule
+  | .node (.raw `Lean.Parser.Term.letOptNondep) _ => some defaultRule
   | .node (.raw `Lean.Parser.Term.doLetExpr) _ => some doLetExprRule
   | .node (.raw `Lean.Parser.Term.doIfLetBind) _ => some defaultRule
   | .node (.raw `Lean.Parser.Term.doHave) _ => some defaultRule
@@ -2515,9 +2519,15 @@ def ruleFor : SyntaxTree.Tree → Option LineBreakRule
   | .node (.raw `Lean.Parser.Term.fromTerm) _ => some fromTermRule
   | .node (.raw `Lean.Parser.Term.byTactic) _ => some byTacticRule
   | .node (.raw `Lean.Parser.Term.byTactic') _ => some byTacticRule
+  | .node (.raw `Lean.Parser.Term.whereFinally) _ => some defaultRule
   | .node .proofBody _ => some defaultRule
   | .node (.raw `Lean.Parser.Tactic.tacticSeq) _ => some defaultRule
   | .node (.raw `Lean.Parser.Tactic.tacticSeq1Indented) _ => some defaultRule
+  | .node (.raw `Lean.Parser.Tactic.tacticRwa__) _ => some defaultRule
+  | .node (.raw `Lean.Parser.Tactic.rwRuleSeq) _ => some defaultRule
+  | .node (.raw `Lean.Parser.Tactic.rwRule) _ => some defaultRule
+  | .node (.raw `Lean.Parser.Tactic.location) _ => some defaultRule
+  | .node (.raw `Lean.Parser.Tactic.locationHyp) _ => some defaultRule
   | .node (.raw `Lean.Parser.Tactic.exact) _ => some defaultRule
   | .node (.raw `Lean.Parser.Tactic.tacticRfl) _ => some defaultRule
   | .node (.raw `Lean.Parser.Tactic.grind) _ => some defaultRule
@@ -2569,6 +2579,7 @@ def ruleFor : SyntaxTree.Tree → Option LineBreakRule
   | .node (.raw `BigOperators.bigOpBinders) _ => some defaultRule
   | .node (.raw `BigOperators.bigOpBinder) _ => some defaultRule
   | .node (.raw `Algebra.subalgebra_adjoin) _ => some defaultRule
+  | .node (.raw `«AddActionHomLocal≺») _ => some defaultRule
   | .node (.raw `«DistribMulActionHomLocal≺») _ => some defaultRule
   | .node (.raw `«DistribMulActionHomIdLocal≺») _ => some defaultRule
   | .node (.raw `Std.termF!_) _ => some defaultRule
@@ -2607,6 +2618,7 @@ def ruleFor : SyntaxTree.Tree → Option LineBreakRule
   | .node (.raw `Lean.Parser.Attr.higherOrder) _ => some defaultRule
   | .node (.raw `Lean.Attr.coe) _ => some defaultRule
   | .node (.raw `Lean.Parser.Attr.instance) _ => some defaultRule
+  | .node (.raw `Lean.Parser.Attr.class) _ => some defaultRule
   | .node (.raw `Lean.deprecated) _ => some defaultRule
   | .node (.raw `token.existing) _ => some defaultRule
   | .node (.raw `Parser.Attr.functor_norm) _ => some defaultRule
@@ -2639,6 +2651,10 @@ def ruleFor : SyntaxTree.Tree → Option LineBreakRule
   | .node (.raw `PiNotation.piNotation) _ => some defaultRule
   | .node (.raw `coeFunNotation) _ => some defaultRule
   | .node (.raw `Mathlib.Meta.setBuilder) _ => some defaultRule
+  | .node
+      (.raw
+        `Ideal.Submodule.Module.Submodule.Module.Module.Submodule.Submodule.Module.Module.Submodule.Submodule.QuotientTorsion.Ideal.Quotient.AddMonoid.AddSubgroup.torsionByStx)
+      _ => some defaultRule
   | .node (.raw `Mathlib.Meta.macroPattSetBuilder) _ => some defaultRule
   | .node (.raw `Mathlib.Notation3.notation3) _ => some defaultRule
   | .node (.raw `Mathlib.Notation3.notation3Item) _ => some defaultRule
@@ -2684,6 +2700,7 @@ def ruleFor : SyntaxTree.Tree → Option LineBreakRule
   | .node (.raw `Aesop.Frontend.Parser.«priority_%») _ => some defaultRule
   | .node (.raw `Aesop.Frontend.Parser.«priority-_») _ => some defaultRule
   | .node (.raw `prioLow) _ => some defaultRule
+  | .node (.raw `prioMid) _ => some defaultRule
   | .node (.raw `prioHigh) _ => some defaultRule
   | .node (.raw `Lean.Parser.precedence) _ => some defaultRule
   | .node (.raw `precArg) _ => some defaultRule
