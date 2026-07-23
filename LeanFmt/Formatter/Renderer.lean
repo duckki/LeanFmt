@@ -107,12 +107,30 @@ def shiftLineIndent (sourceColumn targetColumn : Nat) (line : String) : String :
     let removeCount := min (sourceColumn - targetColumn) (leadingWhitespace line).length
     (line.drop removeCount).toString
 
+def rebaseOriginalLines (sourceColumn targetColumn : Nat)
+    : Bool → List String → List String
+  | _, [] => []
+  | insideBlockComment, line :: rest =>
+      let adjusted :=
+        if insideBlockComment then
+          line
+        else
+          shiftLineIndent sourceColumn targetColumn line
+      let insideBlockComment :=
+        if insideBlockComment then
+          !SpaceRules.lineClosesBlockComment line
+        else
+          SpaceRules.lineOpensBlockComment line
+      adjusted :: rebaseOriginalLines sourceColumn targetColumn insideBlockComment rest
+
 def rebaseOriginalTextIndent (sourceColumn targetColumn : Nat) (text : String) : String :=
   match (SpaceRules.normalizeLineEndings text).splitOn "\n" with
   | [] => text
   | first :: rest =>
       String.intercalate "\n"
-      <| first :: rest.map (shiftLineIndent sourceColumn targetColumn)
+      <| first
+          :: rebaseOriginalLines sourceColumn targetColumn
+              (SpaceRules.lineOpensBlockComment first) rest
 
 structure SourceBreak where
   index : Nat

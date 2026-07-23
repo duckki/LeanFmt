@@ -1160,12 +1160,16 @@ def assertMovedProofBodiesKeepRelativeIndentation (env : Lean.Environment) : IO 
     "def proofUnderMovedLambda :=\n"
     ++ "  fun ⟨x, hx⟩ =>\n"
     ++ "  have h : True := by\n"
+    ++ "    /- Keep this\n"
+    ++ "         internal comment indentation. -/\n"
     ++ "    exact True.intro\n"
     ++ "  h\n"
   let lambdaExpected :=
     "def proofUnderMovedLambda :=\n"
     ++ "  fun ⟨x, hx⟩ =>\n"
     ++ "    have h : True := by\n"
+    ++ "      /- Keep this\n"
+    ++ "         internal comment indentation. -/\n"
     ++ "      exact True.intro\n"
     ++ "    h\n"
   let lambdaFormatted ←
