@@ -4221,12 +4221,26 @@ def assertCliChecksStillFormatUnlessCheck
         files := [overflowFile, afterExceptionFile]
       }
   assertTrue "CLI exception check rejects remaining overflow" (overflowExitCode == 1)
-  assertEq "CLI exception failure prevents writes"
-    overflowSource (← IO.FS.readFile overflowFile)
+  let overflowFormatted ←
+    Formatter.formatSourceWithEnv env overflowSource overflowFile.toString
+  assertEq "CLI exception failure writes the checked candidate"
+    overflowFormatted (← IO.FS.readFile overflowFile)
   let afterExceptionFormatted ←
     Formatter.formatSourceWithEnv env afterExceptionSource afterExceptionFile.toString
   assertEq "CLI continues with files after an exception"
     afterExceptionFormatted (← IO.FS.readFile afterExceptionFile)
+  IO.FS.writeFile overflowFile overflowSource
+  let checkedOverflowExitCode ←
+    LeanFmt.Cli.runOptionsWithCache cache
+      {
+        check := true
+        checkException := true
+        includeHidden := true
+        files := [overflowFile]
+      }
+  assertTrue "CLI checked exception still fails" (checkedOverflowExitCode == 1)
+  assertEq "explicit check prevents writing a failing candidate"
+    overflowSource (← IO.FS.readFile overflowFile)
 
   let idempotentFile := root / "Idempotent.lean"
   let idempotentSource := "def  idempotent  : Nat := 0\n"

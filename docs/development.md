@@ -145,9 +145,11 @@ line-ender set. The set contains closing delimiters and punctuation such as comm
 semicolons that may finish a formatted line.
 
 The bundle is designed to accept additional formatter-development checks later. Any
-reported exception makes the command fail and prevents that file from being rewritten.
-The formatter still processes the remaining files, then prints counts for every
-exception kind at the end.
+reported exception makes the command fail. Without `--check`, the formatter still
+writes an available checked candidate so a subsequent build can validate that exact
+output. A format fallback has no candidate and keeps the source unchanged. The
+formatter also processes the remaining files, then prints counts for every exception
+kind at the end.
 
 `--check-idempotent` remains separate because it performs another complete formatting
 pass. Non-idempotence is a hard exception and is included in the final exception counts.
@@ -367,10 +369,10 @@ Do not commit before review unless the reviewer explicitly asks for a commit.
 ## External validation
 
 The external validator clones one or more explicitly provided Git repositories,
-downloads their Lake build caches, builds each project, checks every tracked Lean
-file for preservation, unknown rules, and idempotence in dry-run mode from that
-project's `lake env`, formats only after those diagnostics pass, and then builds
-each project again:
+downloads their Lake build caches, builds each complete project, then formats every
+tracked Lean file from that project's `lake env` while checking preservation, unknown
+rules, and idempotence. It builds the complete project again after each formatted
+batch:
 
 ```sh
 scripts/validate-external-projects.sh $HOME/lean-libs/mathlib4
@@ -399,17 +401,17 @@ scripts/validate-external-projects.sh \
   mathlib=https://github.com/leanprover-community/mathlib4.git
 ```
 
-Validation runs in batches of 100 files by default. Each validation batch builds
-the selected modules before formatting, checks formatter diagnostics, formats the
-files after clean diagnostics, and builds the same modules again. Within each
-validation batch, LeanFmt manages formatter worker processes and batch sizing.
-Batch builds skip package configuration files such as `lakefile.lean`, while the
-formatter still checks and formats them. The validator prints the total file
-count, total batch count, selected batch, batch index range, first/last file for
-each batch, and whether a formatter worker batch override was supplied.
-Without `--batch`, it runs batches in order and stops at the first batch whose
-build, formatter diagnostics, or formatting pass fails. Pass `--batch N` to run
-only a specific 1-based validation batch:
+Validation runs in batches of 100 files by default. The validator first runs one
+complete project build. Each validation batch then formats its files directly with
+the exception and idempotency checks enabled and runs another complete project build.
+The post-format build runs even when formatter diagnostics fail, so it can report
+whether the checked candidate also breaks elaboration or linting. After reporting
+both results, validation stops at that failed batch. Within each batch, LeanFmt
+manages formatter worker processes and batch sizing. The validator prints the total
+file count, total batch count, selected batch, batch index range, first/last file for
+each batch, and whether a formatter worker batch override was supplied. Without
+`--batch`, it runs batches in order and stops at the first failed batch. Pass
+`--batch N` to run only a specific 1-based validation batch:
 
 ```sh
 scripts/validate-external-projects.sh \
@@ -422,8 +424,7 @@ Clones are recreated under `.scratch/external-validation`. Set
 `LEANFMT_VALIDATION_DIR` to use another directory,
 `LEANFMT_VALIDATION_SKIP_CACHE=1` to build without downloading caches,
 `LEANFMT_VALIDATION_FILE_PATTERN` to change the default file selector, or
-`LEANFMT_VALIDATION_BUILD_BATCH_SIZE` to change the selected-module build batch
-size. `LEANFMT_VALIDATION_BATCH_SIZE` changes the validation batch size, and
+`LEANFMT_VALIDATION_BATCH_SIZE` to change the validation batch size.
 `LEANFMT_VALIDATION_FORMATTER_BATCH_SIZE` passes `--worker-batch-size` to
 LeanFmt to override its automatic worker batch choice. Multi-file package formatter
 invocations first format files that parse in LeanFmt's default Lean environment, then
@@ -443,9 +444,8 @@ LEANFMT_VALIDATION_LINE_WIDTH=100 scripts/validate-external-projects.sh \
   cslib=$HOME/work/lean-libs/cslib
 ```
 
-The script converts selected `.lean` paths to module targets and builds those
-modules in batches. It stops at the first failing validation batch and exits with
-a nonzero status if any phase failed. Each phase and the final summary include
-elapsed wall-clock time. Build-cache retrieval is an optional optimization:
+The script stops at the first failing validation batch after running its post-format
+build and exits with a nonzero status if any phase failed. Each phase and the final
+summary include elapsed wall-clock time. Build-cache retrieval is an optional optimization:
 repositories without a `cache` executable are reported as skipped rather than
 failed.

@@ -395,16 +395,18 @@ def formatFileWithEnv (env : Lean.Environment) (options : Options) (path : FileP
         pure { formatFallback := 1 }
       else
         runDiagnosticChecks env options path source formatted
+    let changed := !result.fellBack && formatted != source
+    if changed && !options.check then
+      IO.FS.writeFile path formatted
+      IO.println s!"formatted {path}"
     if !exceptionCounts.isEmpty then
-      pure { failed := true, exceptionCounts }
-    else if formatted == source then
+      pure { changed, failed := true, exceptionCounts }
+    else if !changed then
       pure {}
     else if options.check then
       IO.eprintln s!"needs formatting: {path}"
       pure { changed := true }
     else
-      IO.FS.writeFile path formatted
-      IO.println s!"formatted {path}"
       pure { changed := true }
   catch error =>
     IO.eprintln s!"leanfmt: {path}: {error}"
