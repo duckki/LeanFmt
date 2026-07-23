@@ -2720,6 +2720,7 @@ def ruleFor : SyntaxTree.Tree → Option LineBreakRule
   | .node (.raw `Aesop.Frontend.Parser.phaseNorm) _ => some defaultRule
   | .node (.raw `Aesop.Frontend.Parser.phaseUnsafe) _ => some defaultRule
   | .node (.raw `Aesop.Frontend.Parser.builder_nameApply) _ => some defaultRule
+  | .node (.raw `Aesop.Frontend.Parser.builder_nameForward) _ => some defaultRule
   | .node (.raw `Aesop.Frontend.Parser.«priority_%») _ => some defaultRule
   | .node (.raw `Aesop.Frontend.Parser.«priority-_») _ => some defaultRule
   | .node (.raw `prioLow) _ => some defaultRule

@@ -5153,6 +5153,7 @@ def assertMathlibLowRiskSyntaxKindsHaveRules : IO Unit := do
       `Aesop.Frontend.Parser.phaseNorm,
       `Aesop.Frontend.Parser.phaseUnsafe,
       `Aesop.Frontend.Parser.builder_nameApply,
+      `Aesop.Frontend.Parser.builder_nameForward,
       `Aesop.Frontend.Parser.«priority_%»,
       `Aesop.Frontend.Parser.«priority-_»,
       `Lean.Parser.Level.hole,
