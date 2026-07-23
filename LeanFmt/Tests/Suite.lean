@@ -2233,6 +2233,28 @@ def assertParenthesizedLetRhsIndentUnderImplication (env : Lean.Environment)
     Formatter.formatSourceWithEnv env source
       "parenthesized-let-rhs-under-implication.lean"
   assertEq "parenthesized let RHS indents under implication" expected formatted
+  let applicationSource :=
+    "theorem parenthesizedLetBody (h : Hypothesis) : Result :=\n"
+    ++ "  let ⟨i, hi⟩ := h\n"
+    ++ "  total.elim id fun hgf =>\n"
+    ++ "    False.elim\n"
+    ++ "      (let ⟨K, hK0, j, hKj⟩ := hgf\n"
+    ++ "      contradiction hi K hK0 j hKj)\n"
+  let applicationExpected :=
+    "theorem parenthesizedLetBody (h : Hypothesis) : Result :=\n"
+    ++ "  let ⟨i, hi⟩ := h\n"
+    ++ "  total.elim id\n"
+    ++ "    fun hgf =>\n"
+    ++ "      False.elim\n"
+    ++ "        ( let ⟨K, hK0, j, hKj⟩ := hgf\n"
+    ++ "          contradiction hi K hK0 j hKj)\n"
+  let applicationFormatted ←
+    Formatter.formatSourceWithEnv env applicationSource
+      "parenthesized-let-body-in-application.lean" { lineWidth := 100 }
+  assertEq "parenthesized let body closes at its containing indentation"
+    applicationExpected applicationFormatted
+  assertTrue "parenthesized let body preserves syntax"
+    (← codePreservedIgnoringWhitespace env applicationSource applicationFormatted)
 
 def assertParenthesizedLetAlignmentFollowsBodyPrecedence (env : Lean.Environment)
     : IO Unit := do
