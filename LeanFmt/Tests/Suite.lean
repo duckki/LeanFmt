@@ -2609,6 +2609,23 @@ def assertChildFitCountsParentSuffix (env : Lean.Environment) : IO Unit := do
   let formatted ← Formatter.formatSourceWithEnv env source "child-fit-parent-suffix.lean"
   assertEq "child fit counts parent suffix" expected formatted
 
+def assertNestedChildFitCountsInfixSuffix (env : Lean.Environment) : IO Unit := do
+  let source :=
+    "def nestedInfixSuffixExample :=\n"
+    ++ "  Submodule.liftQSpanSingleton _\n"
+    ++ "    (CharacterModule.int.divByNat <| if addOrderOf a = 0 then 2 else addOrderOf a).toIntLinearMap <| by\n"
+    ++ "      exact h\n"
+  let expected :=
+    "def nestedInfixSuffixExample :=\n"
+    ++ "  Submodule.liftQSpanSingleton _\n"
+    ++ "    (CharacterModule.int.divByNat\n"
+    ++ "      <| if addOrderOf a = 0 then 2 else addOrderOf a).toIntLinearMap <| by\n"
+    ++ "      exact h\n"
+  let formatted ←
+    Formatter.formatSourceWithEnv env source "nested-child-fit-infix-suffix.lean"
+      { lineWidth := 100 }
+  assertEq "nested child fit counts an enclosing infix suffix" expected formatted
+
 def assertLineFitCountsTrailingComment (env : Lean.Environment) : IO Unit := do
   let source :=
     "inductive Relation : Nat → Nat → Prop\n"
@@ -5545,6 +5562,7 @@ def runExpressionAndRendererTests (env : Lean.Environment) : IO Unit := do
   assertReturnTypeArrowFlows env
   assertLogicalArrowBreaksBalanced env
   assertChildFitCountsParentSuffix env
+  assertNestedChildFitCountsInfixSuffix env
   assertLineFitCountsTrailingComment env
   assertColumnIndentationIsConservative
   assertCurrentLineFitChecksCompletedLines

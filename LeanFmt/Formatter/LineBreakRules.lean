@@ -421,11 +421,19 @@ def suffixProjectionMember (context : RuleContext) : Bool :=
       && parent.childIndex != 0
   | _ => false
 
+def suffixInfixOperator (context : RuleContext) : Bool :=
+  match context.ancestors with
+  | parent :: _ =>
+      match parent.nodeKind? with
+      | some (.infixChain _) => parent.childIndex % 2 == 1
+      | _ => false
+  | _ => false
+
 def suffixTokenAction (context : RuleContext) (token : SyntaxTree.Token)
     : SuffixTokenAction :=
   if token.lexeme.isEmpty then
     .skip
-  else if suffixProjectionMember context then
+  else if suffixProjectionMember context || suffixInfixOperator context then
     .emit
   else if suffixEligibleToken token then
     .emit
