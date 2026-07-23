@@ -126,5 +126,5 @@ def longEqualityWithAssignment : Prop :=
   have hresolveLater
       : resolvers.resolve later.parentType later.fieldName later.arguments source
         = resolvers.resolve first.parentType first.fieldName first.arguments source := by
-    exact proof
+        exact proof
   body

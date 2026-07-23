@@ -1155,6 +1155,45 @@ def assertProofBodyUntouched (env : Lean.Environment) : IO Unit := do
   let formatted ← Formatter.formatSourceWithEnv env source "proof-body-untouched.lean"
   assertEq "proof body untouched" source formatted
 
+def assertMovedProofBodiesKeepRelativeIndentation (env : Lean.Environment) : IO Unit := do
+  let lambdaSource :=
+    "def proofUnderMovedLambda :=\n"
+    ++ "  fun ⟨x, hx⟩ =>\n"
+    ++ "  have h : True := by\n"
+    ++ "    exact True.intro\n"
+    ++ "  h\n"
+  let lambdaExpected :=
+    "def proofUnderMovedLambda :=\n"
+    ++ "  fun ⟨x, hx⟩ =>\n"
+    ++ "    have h : True := by\n"
+    ++ "      exact True.intro\n"
+    ++ "    h\n"
+  let lambdaFormatted ←
+    Formatter.formatSourceWithEnv env lambdaSource "proof-under-moved-lambda.lean"
+  assertEq "proof body follows a moved lambda body" lambdaExpected lambdaFormatted
+
+  let matchSource :=
+    "def proofUnderMovedMatchAlternative :=\n"
+    ++ "  le_antisymm veryLongLeftProofNameWithEnoughCharactersToForceTheOperatorToBreak\n"
+    ++ "    veryLongRightProofNameWithEnoughCharactersToForceTheOperatorToBreak <|\n"
+    ++ "    match condition with\n"
+    ++ "    | true => by\n"
+    ++ "      exact True.intro\n"
+    ++ "    | false => by\n"
+    ++ "      exact True.intro\n"
+  let matchFormatted ←
+    Formatter.formatSourceWithEnv env matchSource
+      "proof-under-moved-match-alternative.lean"
+  assertTrue "match alternative proof outer layout changes"
+    (matchFormatted != matchSource)
+  assertTrue "moved match alternative proof preserves code"
+    (← codePreservedIgnoringWhitespace env matchSource matchFormatted)
+  let matchFormattedAgain ←
+    Formatter.formatSourceWithEnv env matchFormatted
+      "proof-under-moved-match-alternative-formatted.lean"
+  assertEq "moved match alternative proof is idempotent"
+    matchFormatted matchFormattedAgain
+
 def assertShowProofTermUntouched (env : Lean.Environment) : IO Unit := do
   let source := "#check (show True by\n" ++ "  trivial)\n"
   let formatted ← Formatter.formatSourceWithEnv env source "show-proof-term.lean"
@@ -5550,6 +5589,7 @@ def runBasicFormattingTests (env : Lean.Environment) : IO Unit := do
   assertMatchArmKeepsDoOnArrowLine env
   assertWhereFormattingKeepsSuffix env
   assertProofBodyUntouched env
+  assertMovedProofBodiesKeepRelativeIndentation env
   assertShowProofTermUntouched env
   assertTheoremTermProofBodyUntouched env
   assertTheoremEquationProofBodyUntouched env

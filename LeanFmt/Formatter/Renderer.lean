@@ -95,6 +95,25 @@ def hasBlankLineStructure (text : String) : Bool :=
   hasLineBreakChar text
   && SpaceRules.containsSubstring (SpaceRules.normalizeLineEndings text) "\n\n"
 
+def originalColumnAt (source : String) (position : String.Pos.Raw) : Nat :=
+  lineWidth <| charsAfterLastNewline <| SyntaxTree.sourceText source 0 position
+
+def shiftLineIndent (sourceColumn targetColumn : Nat) (line : String) : String :=
+  if line.isEmpty then
+    line
+  else if sourceColumn <= targetColumn then
+    spaces (targetColumn - sourceColumn) ++ line
+  else
+    let removeCount := min (sourceColumn - targetColumn) (leadingWhitespace line).length
+    (line.drop removeCount).toString
+
+def rebaseOriginalTextIndent (sourceColumn targetColumn : Nat) (text : String) : String :=
+  match (SpaceRules.normalizeLineEndings text).splitOn "\n" with
+  | [] => text
+  | first :: rest =>
+      String.intercalate "\n"
+      <| first :: rest.map (shiftLineIndent sourceColumn targetColumn)
+
 structure SourceBreak where
   index : Nat
   indent : Nat
@@ -691,16 +710,44 @@ def RenderState.emitOriginalTree
     : RenderState :=
   match SyntaxTree.Tree.firstToken? tree, SyntaxTree.Tree.lastToken? tree with
   | some firstToken, some lastToken =>
+      let usesPendingIndent := respectPendingIndent && state.pendingIndent?.isSome
+      let originalLeading :=
+        match state.lastToken? with
+        | some leftToken =>
+            SyntaxTree.sourceText state.source leftToken.span.stop firstToken.span.start
+        | none => firstToken.leading.text
       let leading :=
-        if respectPendingIndent && state.pendingIndent?.isSome then
+        if usesPendingIndent then
           state.defaultWhitespace firstToken true
         else
-          match state.lastToken? with
-          | some leftToken =>
-              SyntaxTree.sourceText state.source leftToken.span.stop firstToken.span.start
-          | none => firstToken.leading.text
+          originalLeading
       let sourceText :=
         SyntaxTree.sourceText state.source firstToken.span.start lastToken.span.stop
+      let sourceColumn := originalColumnAt state.source firstToken.span.start
+      let proofTargetColumn? :=
+        if !isProofTree tree then
+          none
+        else if usesPendingIndent then
+          some
+          <| max sourceColumn
+              (lineWidth <| currentLineAfterAppend state.currentLine leading)
+        else if treeHasLineBreakTrivia tree then
+          some <| max sourceColumn ((state.segmentIndentation + 1) * indentationSpaces)
+        else
+          none
+      let leading :=
+        match proofTargetColumn? with
+        | some targetColumn =>
+            if usesPendingIndent then
+              leading
+            else
+              rebaseOriginalTextIndent sourceColumn targetColumn leading
+        | none => leading
+      let sourceText :=
+        match proofTargetColumn? with
+        | some targetColumn =>
+            rebaseOriginalTextIndent sourceColumn targetColumn sourceText
+        | none => sourceText
       {
         state.appendOutput <| leading ++ sourceText with
           lastToken? := some lastToken
@@ -1837,8 +1884,8 @@ partial def renderNestedSegment
     if emitOriginal then
       childState.emitOriginalTree child
         (respectPendingIndent :=
-          !state.originalTreeStartsOnNewSourceLine child
-          || (isProofTree child && !treeHasLineBreakTrivia child)
+          isProofTree child
+          || !state.originalTreeStartsOnNewSourceLine child
           || isProofLemmaCommand child
           || state.pendingCommandBoundary?.isSome)
     else
