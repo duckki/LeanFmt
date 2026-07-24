@@ -708,16 +708,15 @@ def derivingClauseBreaks (_context : RuleContext) (segment : Segment) : List Bre
             none
       | none => none
 
+def declarationWhereSuffixBreak? (segment : Segment) : Option BreakPoint := do
+  let index ←
+    segment.indexes.find? fun index =>
+      3 < index && childStartsWithLexeme segment index "where"
+  boundaryBreak? segment index 0
+
 def definitionBreaks (context : RuleContext) (segment : Segment) : List BreakPoint :=
   let valueBreak := [declarationValueBreak? segment].filterMap id
-  let whereBreak :=
-    match segment.indexes.find?
-            fun index => childStartsWithLexeme segment index "where" with
-    | some index =>
-        match boundaryBreak? segment index 0 with
-        | some breakPoint => [breakPoint]
-        | none => []
-    | none => []
+  let whereBreak := [declarationWhereSuffixBreak? segment].filterMap id
   valueBreak ++ whereBreak ++ derivingBreaks context segment
 
 def leadingAnnotationBreak? (segment : Segment) : Option BreakPoint := do
@@ -1501,11 +1500,21 @@ def whereDeclsBreaks (_context : RuleContext) (segment : Segment) : List BreakPo
     match leadingBreak? segment segment.start 0 with
     | some breakPoint => [breakPoint]
     | none => []
+  let bodyIndexes := (nonemptyChildIndexes segment).drop 1
   let body :=
-    match boundaryBreak? segment 1 1 with
-    | some breakPoint => [breakPoint]
-    | none => []
+    bodyIndexes.filterMap fun index =>
+      if childStartsWithLexeme segment index "finally" then
+        if bodyIndexes.head? == some index then
+          none
+        else
+          boundaryBreak? segment index 0
+      else
+        boundaryBreak? segment index 1
   leading ++ body
+
+def whereFinallyBreaks (_context : RuleContext) (segment : Segment)
+    : List BreakPoint :=
+  [boundaryBreak? segment 1 1].filterMap id
 
 def whereStructInstBreaks (_context : RuleContext) (segment : Segment)
     : List BreakPoint :=
@@ -1528,6 +1537,13 @@ def whereDeclsRule : LineBreakRule :=
     breakPoints := whereDeclsBreaks
   }
 
+def whereFinallyRule : LineBreakRule :=
+  {
+    name := "whereFinally"
+    mandatory := fun context segment => !(whereFinallyBreaks context segment).isEmpty
+    breakPoints := whereFinallyBreaks
+  }
+
 def whereStructInstRule : LineBreakRule :=
   {
     name := "whereStructInst"
@@ -1537,23 +1553,23 @@ def whereStructInstRule : LineBreakRule :=
   }
 
 def rawDefinitionBreaks (_context : RuleContext) (segment : Segment) : List BreakPoint :=
-  if childStartsWithSuffixKeywordToken segment 3 then
-    []
-  else
-    match boundaryBreak? segment 3 1 with
-    | some breakPoint => [breakPoint]
-    | none => []
+  let valueBreak :=
+    if childStartsWithSuffixKeywordToken segment 3 then
+      []
+    else
+      [boundaryBreak? segment 3 1].filterMap id
+  let whereBreak := [declarationWhereSuffixBreak? segment].filterMap id
+  valueBreak ++ whereBreak
+
+def declarationEquationBreaks (segment : Segment) : List BreakPoint :=
+  match firstChildRawKind? segment `Lean.Parser.Command.declValEqns with
+  | some index => [boundaryBreak? segment index 1].filterMap id
+  | none => []
 
 def theoremBreaks (_context : RuleContext) (segment : Segment) : List BreakPoint :=
-  let valueBreak := [declarationValueBreak? segment].filterMap id
-  let equationBreak :=
-    if childIsRawKind segment 3 `Lean.Parser.Command.declValEqns then
-      match boundaryBreak? segment 3 1 with
-      | some breakPoint => [breakPoint]
-      | none => []
-    else
-      []
-  valueBreak ++ equationBreak
+  [declarationValueBreak? segment].filterMap id
+  ++ declarationEquationBreaks segment
+  ++ [declarationWhereSuffixBreak? segment].filterMap id
 
 def inductiveBreaks (context : RuleContext) (segment : Segment) : List BreakPoint :=
   let alternativeBreaks :=
@@ -2018,6 +2034,7 @@ def instanceRule : LineBreakRule :=
   {
     name := "instance"
     inheritBase := fun _ _ => true
+    breakPoints := fun _ segment => declarationEquationBreaks segment
   }
 
 def declarationValueRule : LineBreakRule :=
@@ -2363,6 +2380,24 @@ def lakeFromGitRule : LineBreakRule :=
     breakPoints := lakeFromGitBreaks
   }
 
+def registerLinterSetBreaks (_context : RuleContext) (segment : Segment)
+    : List BreakPoint :=
+  match contentIndexAfterLexeme? segment ":=" with
+  | some firstLinterIndex =>
+      segment.indexes.filterMap fun index =>
+        if firstLinterIndex <= index then
+          boundaryBreak? segment index 1
+        else
+          none
+  | none => []
+
+def registerLinterSetRule : LineBreakRule :=
+  {
+    name := "registerLinterSet"
+    mandatory := fun context segment => !(registerLinterSetBreaks context segment).isEmpty
+    breakPoints := registerLinterSetBreaks
+  }
+
 def matchAltsWhereDeclsRule : LineBreakRule :=
   {
     name := "matchAltsWhereDecls"
@@ -2489,6 +2524,8 @@ def ruleFor : SyntaxTree.Tree → Option LineBreakRule
   | .node (.raw `Lake.DSL.fromClause) _ => some lakeDslWrapperRule
   | .node (.raw `Lake.DSL.fromSource) _ => some lakeDslWrapperRule
   | .node (.raw `Lake.DSL.fromGit) _ => some lakeFromGitRule
+  | .node (.raw `Lean.Linter.«command_Register_linter_set_:=_») _ =>
+      some registerLinterSetRule
   | .node (.raw `lemma) _ => some theoremRule
   -- Transparent expression wrappers and atomic syntax.
   | .node (.raw `Lean.Parser.Term.paren) _ => some parenRule
@@ -2569,7 +2606,7 @@ def ruleFor : SyntaxTree.Tree → Option LineBreakRule
   | .node (.raw `Lean.Parser.Term.fromTerm) _ => some fromTermRule
   | .node (.raw `Lean.Parser.Term.byTactic) _ => some byTacticRule
   | .node (.raw `Lean.Parser.Term.byTactic') _ => some byTacticRule
-  | .node (.raw `Lean.Parser.Term.whereFinally) _ => some defaultRule
+  | .node (.raw `Lean.Parser.Term.whereFinally) _ => some whereFinallyRule
   | .node .proofBody _ => some defaultRule
   | .node (.raw `Lean.Parser.Tactic.tacticSeq) _ => some defaultRule
   | .node (.raw `Lean.Parser.Tactic.tacticSeq1Indented) _ => some defaultRule
@@ -2785,6 +2822,7 @@ def ruleFor : SyntaxTree.Tree → Option LineBreakRule
   | .node (.raw `Mathlib.Tactic.TermCongr.termCongr) _ => some defaultRule
   | .node (.raw `Mathlib.Util.«commandCompile_inductive%_») _ =>
       some defaultRule
+  | .node (.raw `commandUnsuppress_compilationIn_) _ => some commandInChainRule
   | .node (.raw `proof_wanted) _ => some defaultRule
   | .node (.raw `antiquotNestedExpr) _ => some defaultRule
   | .node (.raw `Lean.Parser.«command__Dsimproc__[_]_(_):=_») _ =>

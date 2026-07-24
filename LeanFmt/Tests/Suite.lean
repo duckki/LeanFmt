@@ -768,6 +768,26 @@ def assertWhereDeclarationAttributeBreaksBeforeDeclaration (env : Lean.Environme
       { lineWidth := 100 }
   assertEq "where declaration attribute breaks before declaration" expected formatted
 
+def assertEquationWhereUsesDeclarationBase (env : Lean.Environment) : IO Unit := do
+  let source :=
+    "def chooseResult : Nat → Nat\n"
+    ++ "  | 0 => computeResultWithManyArguments firstArgument secondArgument thirdArgument\n"
+    ++ "  | n => computeResultWithManyArguments firstArgument secondArgument n\n"
+    ++ "where\n"
+    ++ "  computeResultWithManyArguments firstArgument secondArgument thirdArgument := thirdArgument\n"
+    ++ "  secondLocalDeclaration value := value\n"
+  let expected :=
+    "def chooseResult : Nat → Nat\n"
+    ++ "  | 0 => computeResultWithManyArguments firstArgument secondArgument thirdArgument\n"
+    ++ "  | n => computeResultWithManyArguments firstArgument secondArgument n\n"
+    ++ "where\n"
+    ++ "  computeResultWithManyArguments firstArgument secondArgument thirdArgument :=\n"
+    ++ "    thirdArgument\n"
+    ++ "  secondLocalDeclaration value := value\n"
+  let formatted ←
+    Formatter.formatSourceWithEnv env source "equation-where-base.lean"
+  assertEq "equational declaration where uses command base" expected formatted
+
 def assertSingleLineOriginalAttributeSyntaxFitsInline (env : Lean.Environment)
     : IO Unit := do
   let source :=
@@ -1254,6 +1274,33 @@ def assertWhereFormattingKeepsSuffix (env : Lean.Environment) : IO Unit := do
   let formatted ← Formatter.formatSourceWithEnv env source "where-formatting.lean"
   assertEq "where formatting keeps suffix" expected formatted
 
+def assertWhereFinallyKeepsHeaderAndProofBody (env : Lean.Environment) : IO Unit := do
+  let source :=
+    "def fillHole : Nat :=\n"
+    ++ "  ?_\n"
+    ++ "where finally\n"
+    ++ "  exact 0\n"
+  let result ←
+    Formatter.formatSourceWithEnvDetailed env source "where-finally.lean"
+  assertTrue "where finally does not fall back" (!result.fellBack)
+  assertTextContains "where finally stays on one line"
+    result.formatted "where finally\n"
+  assertTextContains "where finally proof body remains intact"
+    result.formatted "finally\n  exact 0\n"
+  assertTrue "where finally preserves code"
+    (← codePreservedIgnoringWhitespace env source result.formatted)
+  let moduleTree ←
+    SyntaxTree.parseModuleStringWithEnv env result.formatted
+      "where-finally-formatted.lean"
+  assertTrue "where finally regroups its tactic as a proof body"
+    (moduleTree.tree.containsNodeKind .proofBody)
+  assertTrue "where finally has complete rule coverage"
+    (Formatter.Diagnostics.missingRuleOccurrencesForModule moduleTree).isEmpty
+  let formattedAgain ←
+    Formatter.formatSourceWithEnv env result.formatted
+      "where-finally-formatted-again.lean"
+  assertEq "where finally is idempotent" result.formatted formattedAgain
+
 def assertProofBodyUntouched (env : Lean.Environment) : IO Unit := do
   let source :=
     "theorem proofBodyUntouched : True := by\n" ++ "  exact\n" ++ "    True.intro\n"
@@ -1330,6 +1377,24 @@ def assertTheoremEquationProofBodyUntouched (env : Lean.Environment) : IO Unit :
   let formatted ←
     Formatter.formatSourceWithEnv env source "theorem-equation-proof-body-untouched.lean"
   assertEq "theorem equation proof body untouched" source formatted
+
+def assertInstanceEquationArmsUseDeclarationBase (env : Lean.Environment) : IO Unit := do
+  let source :=
+    "instance All.decidable {P : α → Prop} : (t : Ordnode α) → [DecidablePred P] → Decidable (All P t)\n"
+    ++ "  | nil => isTrue trivial\n"
+    ++ "  | node _ l m r =>\n"
+    ++ "    have : Decidable (All P l) := All.decidable l\n"
+    ++ "    inferInstanceAs <| Decidable (All P l ∧ P m)\n"
+  let expected :=
+    "instance All.decidable {P : α → Prop} : (t : Ordnode α) → [DecidablePred P] → Decidable (All P t)\n"
+    ++ "  | nil => isTrue trivial\n"
+    ++ "  | node _ l m r =>\n"
+    ++ "      have : Decidable (All P l) := All.decidable l\n"
+    ++ "      inferInstanceAs <| Decidable (All P l ∧ P m)\n"
+  let formatted ←
+    Formatter.formatSourceWithEnv env source "instance-equation-declaration-base.lean"
+      { lineWidth := 100 }
+  assertEq "instance equation arms use the declaration base" expected formatted
 
 def assertDefinitionContainingProofUntouched (env : Lean.Environment) : IO Unit := do
   let source :=
@@ -4995,6 +5060,23 @@ def assertFormatterArchitecture : IO Unit := do
   let regroupedWrappedTheorem := SyntaxTree.regroupTree wrappedExtendedTheorem
   assertTrue "extended declarations nested under command wrappers regroup annotations"
     (regroupedWrappedTheorem.containsNodeKind .annotatedDeclaration)
+  let unsuppressWrapper :=
+    SyntaxTree.Tree.node (.raw `commandUnsuppress_compilationIn_)
+      #[
+        .leaf (syntheticAtomToken "unsuppress_compilation"),
+        .node (.raw `null)
+          #[.leaf (syntheticAtomToken "in"), extendedTheorem]
+      ]
+  let regroupedUnsuppress := SyntaxTree.regroupTree unsuppressWrapper
+  let unsuppressSegment :=
+    Formatter.LineBreakRules.Segment.ofTree regroupedUnsuppress
+  let unsuppressRule :=
+    Formatter.LineBreakRules.formattingRuleFor regroupedUnsuppress
+  assertTrue "command in wrapper flattens its optional payload"
+    (unsuppressSegment.size == 3)
+  assertTrue "command in wrapper breaks after in"
+    (unsuppressRule.breakPoints context unsuppressSegment
+      |>.any fun breakPoint => breakPoint.index == 2)
   let annotatedTheorem := SyntaxTree.regroupTopLevelCommandAnnotations extendedTheorem
   let annotatedSegment := Formatter.LineBreakRules.Segment.ofTree annotatedTheorem
   let annotatedRule := Formatter.LineBreakRules.formattingRuleFor annotatedTheorem
@@ -5309,6 +5391,36 @@ def assertMathlibLowRiskSyntaxKindsHaveRules : IO Unit := do
     let tree := SyntaxTree.Tree.node (.raw kind) #[]
     assertTrue s!"mathlib low-risk syntax has rule: {kind}"
       (Formatter.LineBreakRules.ruleFor tree).isSome
+  let linterItems :=
+    SyntaxTree.Tree.node (.raw `null)
+      #[
+        .leaf (syntheticAtomToken "linter.one"),
+        .leaf (syntheticAtomToken "linter.two")
+      ]
+  let linterSetChildren :=
+    SyntaxTree.regroupRegisterLinterSetChildren
+      #[
+        .node (.raw `null) #[],
+        .leaf (syntheticAtomToken "register_linter_set"),
+        .leaf (syntheticAtomToken "linter.test"),
+        .leaf (syntheticAtomToken ":="),
+        linterItems
+      ]
+  assertTrue "register_linter_set list wrapper is flattened"
+    (linterSetChildren.size == 6)
+  let linterSetTree :=
+    SyntaxTree.Tree.node (.raw `Lean.Linter.«command_Register_linter_set_:=_»)
+      linterSetChildren
+  match Formatter.LineBreakRules.ruleFor linterSetTree with
+  | some rule =>
+      let segment := Formatter.LineBreakRules.Segment.ofTree linterSetTree
+      assertTrue "register_linter_set item breaks are mandatory"
+        (rule.mandatory {} segment)
+      assertTrue "register_linter_set breaks before every linter"
+        (rule.breakPoints {} segment
+          == [{ index := 4, indentLevels := 1 }, { index := 5, indentLevels := 1 }])
+  | none =>
+      throw <| IO.userError "register_linter_set has no rule"
   let vectorTree :=
     SyntaxTree.Tree.node (.raw `Matrix.vecNotation)
       #[
@@ -5685,6 +5797,7 @@ def runBasicFormattingTests (env : Lean.Environment) : IO Unit := do
   assertAttributeDeclarationPreservesSourceBreak env
   assertAttributesFlowBeforeDeclarations env
   assertWhereDeclarationAttributeBreaksBeforeDeclaration env
+  assertEquationWhereUsesDeclarationBase env
   assertSingleLineOriginalAttributeSyntaxFitsInline env
   assertCommandAttributeBracketPayloadStaysAttached env
   assertPrivateTheoremModifierStaysOnHeader env
@@ -5708,11 +5821,13 @@ def runBasicFormattingTests (env : Lean.Environment) : IO Unit := do
   assertAbbrevSourceBreakAfterAssign env
   assertMatchArmKeepsDoOnArrowLine env
   assertWhereFormattingKeepsSuffix env
+  assertWhereFinallyKeepsHeaderAndProofBody env
   assertProofBodyUntouched env
   assertMovedProofBodiesKeepRelativeIndentation env
   assertShowProofTermUntouched env
   assertTheoremTermProofBodyUntouched env
   assertTheoremEquationProofBodyUntouched env
+  assertInstanceEquationArmsUseDeclarationBase env
   assertDefinitionContainingProofUntouched env
   assertInstanceContainingProofUntouched env
   assertTerminationProofSuffixUntouched env

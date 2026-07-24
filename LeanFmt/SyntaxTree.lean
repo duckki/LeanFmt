@@ -516,6 +516,44 @@ def regroupDefinitionChildren (children : Array Tree) : Option (Array Tree) := d
           ++ childrenRange children 4 children.size
   | _ => none
 
+def unwrapSingleNullTree : Tree → Tree
+  | tree@(.node (.raw `null) children) =>
+      if children.size == 1 then children[0]?.getD tree else tree
+  | tree => tree
+
+def splitEquationWhereValue? : Tree → Option (Tree × Tree)
+  | .node (.raw `Lean.Parser.Command.declValEqns) valueChildren => do
+      let alternativesIndex ←
+        valueChildren.findIdx? fun child =>
+          rawKind? child == some `Lean.Parser.Term.matchAltsWhereDecls
+      let alternatives ← valueChildren[alternativesIndex]?
+      match alternatives with
+      | .node (.raw `Lean.Parser.Term.matchAltsWhereDecls) children => do
+          let whereIndex ←
+            children.findIdx? fun child =>
+              child.firstToken?.any fun token => token.lexeme == "where"
+          if !(childrenRange children 0 whereIndex).any
+                fun child => child.firstToken?.any fun token => token.lexeme == "|" then
+            none
+          let whereTree ← children[whereIndex]?
+          let alternatives :=
+            .node (.raw `Lean.Parser.Term.matchAltsWhereDecls)
+              (children.set! whereIndex .missing)
+          let value :=
+            .node (.raw `Lean.Parser.Command.declValEqns)
+              (valueChildren.set! alternativesIndex alternatives)
+          some (value, unwrapSingleNullTree whereTree)
+      | _ => none
+  | _ => none
+
+def regroupEquationWhereChildren (children : Array Tree) : Array Tree :=
+  match children[3]? >>= splitEquationWhereValue? with
+  | some (value, whereTree) =>
+      childrenRange children 0 3
+      ++ #[value, whereTree]
+      ++ childrenRange children 4 children.size
+  | none => children
+
 def declarationValueCommandKind (kind : SyntaxNodeKind) : Bool :=
   kind == `Lean.Parser.Command.theorem || kind == `lemma || kind == `group
 
@@ -567,6 +605,7 @@ def annotatedDeclarationTree (annotations modifiers declaration : Tree) : Tree :
 
 def regroupDeclarationValueCommand (kind : SyntaxNodeKind) (children : Array Tree)
     : Tree :=
+  let children := regroupEquationWhereChildren children
   let command :=
     match regroupDefinitionChildren children with
     | some declarationChildren => .node (.raw kind) declarationChildren
@@ -614,6 +653,12 @@ def regroupStructInstChildren (children : Array Tree) : Array Tree :=
         children
   | none => children
 
+def regroupRegisterLinterSetChildren (children : Array Tree) : Array Tree :=
+  match (children[4]? : Option Tree) with
+  | some (.node (.raw `null) items) =>
+      childrenRange children 0 4 ++ items ++ childrenRange children 5 children.size
+  | _ => children
+
 def isIfThenElseKind (kind : SyntaxNodeKind) : Bool :=
   kind == `termIfThenElse || kind == `boolIfThenElse
 
@@ -659,6 +704,37 @@ def regroupByTacticChildren (children : Array Tree) : Array Tree :=
   | some byKeyword =>
       #[byKeyword, .node .proofBody <| childrenRange children 1 children.size]
   | none => children
+
+def regroupWhereFinallyChildren (children : Array Tree) : Array Tree :=
+  match children[1]? with
+  | some tacticBody =>
+      children.set! 1 <| .node .proofBody #[tacticBody]
+  | none => children
+
+def regroupWhereDeclsChildren (children : Array Tree) : Array Tree :=
+  match children[0]?, children[1]?, children[2]? with
+  | some whereKeyword, some (Tree.node (.raw `null) declarations),
+      some (Tree.node (.raw `null) finallyWrapper) =>
+      let finallyChildren :=
+        match finallyWrapper[0]? with
+        | some (Tree.node (.raw `Lean.Parser.Term.whereFinally) children) =>
+            if finallyWrapper.size == 1 then children else finallyWrapper
+        | _ => finallyWrapper
+      #[whereKeyword] ++ declarations ++ finallyChildren
+  | _, _, _ => children
+
+def regroupCommandInWrapperChildren (children : Array Tree) : Array Tree :=
+  match children[1]? with
+  | some (Tree.node (.raw `null) wrapped) =>
+      match wrapped[0]? with
+      | some first =>
+          if first.firstToken?.any (·.lexeme == "in") then
+            childrenRange children 0 1 ++ wrapped
+              ++ childrenRange children 2 children.size
+          else
+            children
+      | none => children
+  | _ => children
 
 def regroupBinderTacticChildren (children : Array Tree) : Array Tree :=
   match children[0]?, children[1]? with
@@ -735,6 +811,10 @@ def regroupRawNode (kind : SyntaxNodeKind) (children : Array Tree) : Tree :=
     .node (.raw kind) (regroupLakeCommandChildren children)
   else if kind == `Lake.DSL.requireDecl then
     .node (.raw kind) (regroupLakeRequireChildren children)
+  else if kind == `Lean.Linter.«command_Register_linter_set_:=_» then
+    .node (.raw kind) (regroupRegisterLinterSetChildren children)
+  else if kind == `commandUnsuppress_compilationIn_ then
+    .node (.raw kind) (regroupCommandInWrapperChildren children)
   else if kind == `Lean.Parser.Term.binderTactic then
     .node (.infixChain kind) (regroupBinderTacticChildren children)
   else if isBinaryInfixRawNode kind children then
@@ -748,6 +828,7 @@ def regroupRawNode (kind : SyntaxNodeKind) (children : Array Tree) : Tree :=
         .node (.raw kind) children
   else if kind == `Lean.Parser.Command.definition
           || kind == `Lean.Parser.Command.abbrev then
+    let children := regroupEquationWhereChildren children
     match regroupDefinitionChildren children with
     | some definitionChildren => .node .definition definitionChildren
     | none => .node (.raw kind) children
@@ -819,6 +900,10 @@ def regroupRawNode (kind : SyntaxNodeKind) (children : Array Tree) : Tree :=
     | none => .node (.raw kind) children
   else if kind == `Lean.Parser.Term.byTactic || kind == `Lean.Parser.Term.byTactic' then
     .node (.raw kind) (regroupByTacticChildren children)
+  else if kind == `Lean.Parser.Term.whereFinally then
+    .node (.raw kind) (regroupWhereFinallyChildren children)
+  else if kind == `Lean.Parser.Term.whereDecls then
+    .node (.raw kind) (regroupWhereDeclsChildren children)
   else
     .node (.raw kind) children
 
