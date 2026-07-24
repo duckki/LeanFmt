@@ -517,17 +517,23 @@ def RenderState.hasBlankBoundaryBefore (state : RenderState) (tree : SyntaxTree.
       hasBlankLineStructure trivia
   | _, _ => false
 
+def isTerminationSuffixTree : SyntaxTree.Tree → Bool
+  | .node (.raw `Lean.Parser.Termination.suffix) _ => true
+  | _ => false
+
 def isProofTree (tree : SyntaxTree.Tree) : Bool :=
   match tree with
   | .node .proofBody _ => true
-  | .node (.raw `Lean.Parser.Termination.suffix) _ =>
-      (SyntaxTree.Tree.firstToken? tree).isSome
-  | _ => false
+  | tree =>
+      isTerminationSuffixTree tree && (SyntaxTree.Tree.firstToken? tree).isSome
 
 def isQuotationTree : SyntaxTree.Tree → Bool
   | .node (.raw `Lean.Parser.Term.quot) _ => true
   | .node (.raw `Lean.Parser.Term.precheckedQuot) _ => true
+  | .node (.raw `Lean.Parser.Command.quot) _ => true
   | .node (.raw `Lean.Parser.Tactic.quot) _ => true
+  | .node (.raw `Lean.Parser.Tactic.quotSeq) _ => true
+  | .node (.raw `token_antiquot) _ => true
   | .node (.raw `Qq.«termQ(__)») _ => true
   | .node kind _ =>
       let kindName := SyntaxTree.nodeKindName kind
@@ -554,11 +560,23 @@ def isQqSyntaxTree : SyntaxTree.Tree → Bool
   | .node (.infixChain `Qq.«term_=Q_») _ => true
   | _ => false
 
+def isProofWidgetsJsxSyntaxTree : SyntaxTree.Tree → Bool
+  | .node kind _ =>
+      (SyntaxTree.nodeKindName kind).startsWith "ProofWidgets.Jsx."
+  | _ => false
+
+def isLeanJsonSyntaxTree : SyntaxTree.Tree → Bool
+  | .node kind _ =>
+      (SyntaxTree.nodeKindName kind).startsWith "Lean.Json."
+  | _ => false
+
 def isLayoutSensitiveCommand : SyntaxTree.Tree → Bool
   | .node (.raw `Lean.Parser.Command.syntax) _ => true
   | .node (.raw `Lean.Parser.Command.syntaxAbbrev) _ => true
   | .node (.raw `Lean.Parser.Command.macro_rules) _ => true
+  | .node (.raw `Lean.Parser.Command.elab) _ => true
   | .node (.raw `Lean.Parser.«command_Simproc_decl_(_):=_») _ => true
+  | .node (.raw `Lean.Parser.«command__Simproc__[_]_(_):=_») _ => true
   | _ => false
 
 def isMathlibTacticSyntaxTree : SyntaxTree.Tree → Bool
@@ -690,6 +708,8 @@ def shouldEmitOriginalTree (tree : SyntaxTree.Tree) : Bool :=
   || isQuotationLayoutIsland tree
   || isQuotationTree tree
   || isQqSyntaxTree tree
+  || isProofWidgetsJsxSyntaxTree tree
+  || isLeanJsonSyntaxTree tree
   || isLayoutSensitiveCommand tree
   || isMathlibTacticSyntaxTree tree
   || isCustomBracedTermSyntaxTree tree
@@ -725,7 +745,10 @@ def RenderState.emitOriginalTree
     : RenderState :=
   match SyntaxTree.Tree.firstToken? tree, SyntaxTree.Tree.lastToken? tree with
   | some firstToken, some lastToken =>
-      let usesPendingIndent := respectPendingIndent && state.pendingIndent?.isSome
+      let usesPendingIndent :=
+        respectPendingIndent
+        && !isTerminationSuffixTree tree
+        && state.pendingIndent?.isSome
       let originalLeading :=
         match state.lastToken? with
         | some leftToken =>
@@ -736,27 +759,38 @@ def RenderState.emitOriginalTree
           state.defaultWhitespace firstToken true
         else
           originalLeading
+      let leadingColumn :=
+        lineWidth <| currentLineAfterAppend state.currentLine leading
       let sourceText :=
         SyntaxTree.sourceText state.source firstToken.span.start lastToken.span.stop
       let sourceColumn := originalColumnAt state.source firstToken.span.start
       let proofTargetColumn? :=
-        if !isProofTree tree then
+        if !isProofTree tree || isTerminationSuffixTree tree then
           none
         else if usesPendingIndent then
-          some
-          <| max sourceColumn
-              (lineWidth <| currentLineAfterAppend state.currentLine leading)
+          if SpaceRules.hasLineStructure originalLeading then
+            some <| max sourceColumn leadingColumn
+          else
+            some leadingColumn
         else if treeHasLineBreakTrivia tree then
-          some <| max sourceColumn ((state.segmentIndentation + 1) * indentationSpaces)
+          let layoutColumn :=
+            if SpaceRules.hasLineStructure originalLeading then
+              sourceColumn
+            else
+              leadingColumn
+          some
+          <| max layoutColumn ((state.segmentIndentation + 1) * indentationSpaces)
         else
           none
       let leading :=
         match proofTargetColumn? with
         | some targetColumn =>
-            if usesPendingIndent then
-              leading
+            if !usesPendingIndent || SpaceRules.hasLineStructure originalLeading then
+              rebaseOriginalTextIndent
+                (if usesPendingIndent then leadingColumn else sourceColumn)
+                targetColumn leading
             else
-              rebaseOriginalTextIndent sourceColumn targetColumn leading
+              leading
         | none => leading
       let sourceText :=
         match proofTargetColumn? with

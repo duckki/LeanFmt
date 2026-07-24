@@ -145,6 +145,26 @@ def assertTacticQuotationAntiquotationPreserved (env : Lean.Environment) : IO Un
     result.formatted "$(Lean.mkIdent `True.intro):term"
   assertTextLacks "tactic quotation antiquotation prefix is not split"
     result.formatted "$\n"
+  let elabRulesSource :=
+    "elab_rules : tactic\n"
+    ++ "  | `(tactic| quoted_tactic) => do\n"
+    ++ "    let goal := Lean.mkIdent `True.intro\n"
+    ++ "    evalTactic <| ← `(tactic|\n"
+    ++ "      refine And.intro ?_ ?_;\n"
+    ++ "      exact $goal)\n"
+  let elabRulesResult ←
+    Formatter.formatSourceWithEnvDetailed env elabRulesSource
+      "tactic-quotation-sequence.lean"
+  assertTrue "tactic quotation sequence does not fall back"
+    (!elabRulesResult.fellBack)
+  assertTextContains "tactic quotation sequence keeps its source layout"
+    elabRulesResult.formatted
+      "`(tactic|\n      refine And.intro ?_ ?_;\n      exact $goal)"
+  let elabRulesTree ←
+    SyntaxTree.parseModuleStringWithEnv env elabRulesResult.formatted
+      "tactic-quotation-sequence-formatted.lean"
+  assertTrue "tactic quotation sequence hides nested tactic rule details"
+    (Formatter.Diagnostics.missingRuleOccurrencesForModule elabRulesTree).isEmpty
 
 def assertOverlappingEmptySyntaxTokensRemoved (env : Lean.Environment) : IO Unit := do
   let source :=
@@ -1395,6 +1415,28 @@ def assertMovedProofBodiesKeepRelativeIndentation (env : Lean.Environment) : IO 
   assertEq "moved match alternative proof is idempotent"
     matchFormatted matchFormattedAgain
 
+def assertMovedInlineProofBodiesRemainParseable (env : Lean.Environment) : IO Unit := do
+  let source :=
+    "theorem nestedInlineProofs (left right : True) : True :=\n"
+    ++ "  And.left\n"
+    ++ "    (And.intro\n"
+    ++ "      (by exact left)\n"
+    ++ "      (And.intro\n"
+    ++ "        (by rw [show True = True from rfl]\n"
+    ++ "            exact left)\n"
+    ++ "        (by rw [show True = True from rfl]\n"
+    ++ "            exact right)))\n"
+  let result ←
+    Formatter.formatSourceWithEnvDetailed env source "moved-inline-proof-body.lean"
+      { lineWidth := 100 }
+  assertTrue "moved inline proof body does not fall back" (!result.fellBack)
+  assertTrue "moved inline proof body preserves code"
+    (← codePreservedIgnoringWhitespace env source result.formatted)
+  assertTextContains "first moved inline proof body remains present"
+    result.formatted "exact left"
+  assertTextContains "second moved inline proof body remains present"
+    result.formatted "exact right"
+
 def assertShowProofTermUntouched (env : Lean.Environment) : IO Unit := do
   let source := "#check (show True by\n" ++ "  trivial)\n"
   let formatted ← Formatter.formatSourceWithEnv env source "show-proof-term.lean"
@@ -1474,6 +1516,23 @@ def assertTerminationProofSuffixUntouched (env : Lean.Environment) : IO Unit := 
   let formatted ←
     Formatter.formatSourceWithEnv env source "termination-proof-suffix-untouched.lean"
   assertEq "termination proof suffix untouched" source formatted
+
+def assertTerminationProofSuffixDoesNotAccumulateIndent
+    (env : Lean.Environment) : IO Unit := do
+  let source :=
+    "def toTree (p : DyckWord) : BinaryTree Unit :=\n"
+    ++ "  if p = 0 then nil else p.insidePart.toTree △ p.outsidePart.toTree\n"
+    ++ "termination_by p.semilength\n"
+    ++ "decreasing_by exacts [semilength_insidePart_lt ‹_›, semilength_outsidePart_lt ‹_›]\n"
+  let formatted ←
+    Formatter.formatSourceWithEnv env source
+      "termination-proof-suffix-stable-indent.lean"
+  assertEq "termination proof suffix keeps its source indentation" source formatted
+  let formattedAgain ←
+    Formatter.formatSourceWithEnv env formatted
+      "termination-proof-suffix-stable-indent-formatted.lean"
+  assertEq "termination proof suffix indentation is idempotent"
+    formatted formattedAgain
 
 def assertBasicDeclarationBreak (env : Lean.Environment) : IO Unit := do
   let source :=
@@ -5103,6 +5162,11 @@ def assertFormatterArchitecture : IO Unit := do
   assertTrue "trace state starts disabled" (!trace.enabled)
   assertEq "internal normalization is shared" "a\nb\n"
     (Formatter.Internal.normalizeSource "a\r\nb\r")
+  let commandQuotation :=
+    SyntaxTree.Tree.node (.raw `Lean.Parser.Command.quot)
+      #[.leaf (syntheticAtomToken "`("), .leaf (syntheticAtomToken ")")]
+  assertTrue "command quotations preserve their original layout"
+    (Formatter.shouldEmitOriginalTree commandQuotation)
   let annotation :=
     SyntaxTree.Tree.node (.raw `Lean.Parser.Command.declModifiers)
       #[.leaf (syntheticAtomToken "@[")]
@@ -5554,6 +5618,22 @@ def assertMathlibLowRiskSyntaxKindsHaveRules : IO Unit := do
     SyntaxTree.Tree.node (.raw `Lean.Parser.«command_Simproc_decl_(_):=_») #[]
   assertTrue "simproc declarations keep original formatting"
     (Formatter.shouldEmitOriginalTree simprocTree)
+  let bracketedSimprocTree :=
+    SyntaxTree.Tree.node (.raw `Lean.Parser.«command__Simproc__[_]_(_):=_») #[]
+  assertTrue "bracketed simproc declarations keep original formatting"
+    (Formatter.shouldEmitOriginalTree bracketedSimprocTree)
+  let jsxTree :=
+    SyntaxTree.Tree.node
+      (.raw `ProofWidgets.Jsx.«proofWidgetsJsxElement<__>_</_>») #[]
+  assertTrue "ProofWidgets JSX keeps original formatting"
+    (Formatter.shouldEmitOriginalTree jsxTree)
+  assertTrue "ProofWidgets JSX is skipped by missing-rule reporting"
+    (Formatter.Diagnostics.missingRuleOccurrences "" none jsxTree).isEmpty
+  let jsonTree := SyntaxTree.Tree.node (.raw `Lean.Json.«json{_}») #[]
+  assertTrue "Lean JSON syntax keeps original formatting"
+    (Formatter.shouldEmitOriginalTree jsonTree)
+  assertTrue "Lean JSON syntax is skipped by missing-rule reporting"
+    (Formatter.Diagnostics.missingRuleOccurrences "" none jsonTree).isEmpty
 
 def assertMissingRuleCheckUsesDispatch
     (env : Lean.Environment) (cache : LeanFmt.Driver.EnvironmentCache)
@@ -5899,6 +5979,7 @@ def runBasicFormattingTests (env : Lean.Environment) : IO Unit := do
   assertWhereFinallyKeepsHeaderAndProofBody env
   assertProofBodyUntouched env
   assertMovedProofBodiesKeepRelativeIndentation env
+  assertMovedInlineProofBodiesRemainParseable env
   assertShowProofTermUntouched env
   assertTheoremTermProofBodyUntouched env
   assertTheoremEquationProofBodyUntouched env
@@ -5906,6 +5987,7 @@ def runBasicFormattingTests (env : Lean.Environment) : IO Unit := do
   assertDefinitionContainingProofUntouched env
   assertInstanceContainingProofUntouched env
   assertTerminationProofSuffixUntouched env
+  assertTerminationProofSuffixDoesNotAccumulateIndent env
   assertBasicDeclarationBreak env
   assertTopLevelAnnotationsBreakConsistently env
   assertDeclarationValueInfixBreaksAfterAssign env
