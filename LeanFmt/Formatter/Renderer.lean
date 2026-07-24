@@ -1304,7 +1304,7 @@ def hasSourceBreakBetweenTokens
     (source : String) (leftToken rightToken : SyntaxTree.Token)
     : Bool :=
   let trivia := SyntaxTree.sourceText source leftToken.span.stop rightToken.span.start
-  SpaceRules.hasLineStructure trivia && !hasBlankLineStructure trivia
+  SpaceRules.hasLineStructure trivia
 
 def sourceBreaksInSegment (source : String) (segment : LineBreakRules.Segment)
     : List SourceBreak :=
@@ -1395,7 +1395,7 @@ def sourceBreakBeforeSegmentStart? (state : RenderState)
   let left ← state.lastToken?
   let right ← segmentFirstToken? segment
   let trivia := SyntaxTree.sourceText state.source left.span.stop right.span.start
-  if SpaceRules.hasLineStructure trivia && !hasBlankLineStructure trivia then
+  if SpaceRules.hasLineStructure trivia then
     some { index := segment.start, indent := 0 }
   else
     none

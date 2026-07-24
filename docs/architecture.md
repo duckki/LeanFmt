@@ -473,6 +473,9 @@ for declarations, bindings, lambdas, and alternatives do not return break points
 `:=`, `←`, or `=>`; they return an RHS break after the separator instead. The renderer
 does not inspect separator spelling. Accepted source breaks and computed rule breaks both
 become `pendingIndent?`; later rendering does not distinguish their origin.
+Blank-line trivia at an accepted break point is a source break too: the renderer
+retains one blank line while rebasing the following token to the rule-computed
+indentation instead of preserving its old absolute column.
 
 For flow rules, accepted source breaks remain selectable opportunities. For non-flow
 rules, they are activation signals for the complete balanced rule layout. This is a

@@ -1047,6 +1047,29 @@ def assertNestedDoLetArrowFallbackKeepsBodyBase (env : Lean.Environment) : IO Un
   assertEq "nested do-let arrow fallback layout is idempotent"
     result.formatted formattedAgain
 
+def assertLambdaDoLetFallbackBlankContinuationKeepsBase (env : Lean.Environment)
+    : IO Unit := do
+  let source :=
+    "def lambdaDoLetFallback (value : Option Nat) : Option Nat := do\n"
+    ++ "  value.elim (pure 0) fun current => do\n"
+    ++ "    let some item := value | return none\n"
+    ++ "\n"
+    ++ "    return some (item + current)\n"
+  let result ←
+    Formatter.formatSourceWithEnvDetailed env source "lambda-do-let-fallback.lean"
+  assertTrue "lambda do-let fallback does not fall back" (!result.fellBack)
+  assertTrue "lambda do-let fallback preserves code"
+    (← codePreservedIgnoringWhitespace env source result.formatted)
+  assertTextContains "lambda do-let continuation stays inside the lambda"
+    result.formatted
+    ("        let some item := value | return none\n"
+      ++ "\n"
+      ++ "        return some (item + current)\n")
+  let formattedAgain ←
+    Formatter.formatSourceWithEnv env result.formatted
+      "lambda-do-let-fallback-formatted.lean"
+  assertEq "lambda do-let fallback layout is idempotent" result.formatted formattedAgain
+
 def assertDoLetExprFallbackBreaksBeforeContinuation (env : Lean.Environment)
     : IO Unit := do
   let source :=
@@ -1209,6 +1232,7 @@ def assertShowAndDoWrapperRules (env : Lean.Environment) : IO Unit := do
   assertDbgTraceBodyUsesTermBase env
   assertDoLetArrowFallbackBreaksBeforeContinuation env
   assertNestedDoLetArrowFallbackKeepsBodyBase env
+  assertLambdaDoLetFallbackBlankContinuationKeepsBase env
   assertDoLetExprFallbackBreaksBeforeContinuation env
   assertDoMatchExprAlternativesPreserveBranches env
   assertCommentedMatchExprAlternativesStayParseable env
