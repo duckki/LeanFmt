@@ -663,6 +663,9 @@ def parentIsBinderDefaultWrapper (context : RuleContext) : Bool :=
 def nullInheritBase (context : RuleContext) (segment : Segment) : Bool :=
   defaultInheritBase context segment
   || singletonArrayItemWrapper context segment
+  || (segment.singleChild?.any
+        fun (_, child) =>
+          treeIsRawKind child `Lean.Elab.ConfigEval.configEntries)
   || parentIsBinderDefaultWrapper context
   || quantifierBinderSequence context
   || parentIsRawKind context `Lean.Parser.Command.extends
@@ -1231,6 +1234,16 @@ def mutualCommandBreaks (context : RuleContext) (segment : Segment) : List Break
       else
         []
   | _ => []
+
+def configEntrySequenceBreaks (context : RuleContext) (segment : Segment)
+    : List BreakPoint :=
+  if parentIsRawKind context `Lean.Elab.ConfigEval.configEntries then
+    match nonemptyChildIndexes segment with
+    | [] | [_] => []
+    | _ :: rest =>
+        rest.filterMap fun index => boundaryBreak? segment index 0
+  else
+    []
 
 def exportBreaks (_context : RuleContext) (segment : Segment) : List BreakPoint :=
   let listBreak :=
@@ -2361,6 +2374,7 @@ def nullBreaks (context : RuleContext) (segment : Segment) : List BreakPoint :=
   ++ moduleImportBreaks context segment
   ++ moduleCommandBreaks context segment
   ++ mutualCommandBreaks context segment
+  ++ configEntrySequenceBreaks context segment
 
 def nullBreaksMandatory (context : RuleContext) (segment : Segment) : Bool :=
   !(structureFieldBreaks context segment).isEmpty
@@ -2375,6 +2389,7 @@ def nullBreaksMandatory (context : RuleContext) (segment : Segment) : Bool :=
   || !(moduleImportBreaks context segment).isEmpty
   || !(moduleCommandBreaks context segment).isEmpty
   || !(mutualCommandBreaks context segment).isEmpty
+  || !(configEntrySequenceBreaks context segment).isEmpty
 
 -----------------------------------------------------------------------------------------
 -- Rule values
@@ -2437,6 +2452,22 @@ def declarationValueRule : LineBreakRule :=
         || declarationValueHasNestedProofBody segment
     inheritBase := fun _ _ => true
     breakPoints := declarationValueBreaks
+  }
+
+def configEntriesRule : LineBreakRule :=
+  {
+    name := "configEntries"
+    mandatory := fun _ segment => (breakAfterLexeme? segment "where" 1).isSome
+    inheritBase := fun _ _ => true
+    breakPoints :=
+      fun _ segment => [breakAfterLexeme? segment "where" 1].filterMap id
+  }
+
+def configCommandRule : LineBreakRule :=
+  {
+    name := "configCommand"
+    inheritBase := fun _ _ => true
+    breakPoints := leadingAnnotationBreaks
   }
 
 def letRecDeclarationRule : LineBreakRule :=
@@ -3175,6 +3206,7 @@ def ruleFor : SyntaxTree.Tree → Option LineBreakRule
   | .node (.raw `Parser.Attr.enat_to_nat_coe) _ => some defaultRule
   | .node (.raw `Parser.Attr.pnat_to_nat_coe) _ => some defaultRule
   | .node (.raw `Parser.Attr.zify_simps) _ => some defaultRule
+  | .node (.raw `Lean.Parser.Attr.simpsConfigAttrItem) _ => some defaultRule
   | .node (.raw `attrContinuity) _ => some defaultRule
   | .node (.raw `Mathlib.Tactic.ToAdditive.to_additive) _ => some defaultRule
   | .node (.raw `Lean.Elab.Command.irredDefLemma) _ => some defaultRule
@@ -3301,12 +3333,23 @@ def ruleFor : SyntaxTree.Tree → Option LineBreakRule
   | .node (.raw `cfcTac) _ => some defaultRule
   | .node (.raw `adaptationNoteCmd) _ => some defaultRule
   | .node (.raw `Lean.Parser.discrTreeSimpKeyCmd) _ => some defaultRule
-  | .node (.raw `Lean.Elab.ConfigEval.declareTacticConfig) _ => some defaultRule
+  | .node (.raw `Lean.Elab.ConfigEval.defEvalConfigItemCmd) _ =>
+      some configCommandRule
+  | .node (.raw `Lean.Elab.ConfigEval.declareCoreConfigElab) _ =>
+      some configCommandRule
+  | .node (.raw `Lean.Elab.ConfigEval.declareTermConfigElab) _ =>
+      some configCommandRule
+  | .node (.raw `Lean.Elab.ConfigEval.declareTacticConfig) _ =>
+      some configCommandRule
+  | .node (.raw `Lean.Elab.ConfigEval.declareCommandConfig) _ =>
+      some configCommandRule
   | .node (.raw `Lean.Elab.ConfigEval.deriveEvalExprUsingMeta) _ =>
       some defaultRule
-  | .node (.raw `Lean.Elab.ConfigEval.configEntries) _ => some defaultRule
+  | .node (.raw `Lean.Elab.ConfigEval.configEntries) _ => some configEntriesRule
   | .node (.raw `Lean.Elab.ConfigEval.configEntry) _ => some defaultRule
-  | .node (.raw `Lean.Elab.ConfigEval.configEntryHandler) _ => some defaultRule
+  | .node (.raw `Lean.Elab.ConfigEval.configEntryOmit) _ => some defaultRule
+  | .node (.raw `Lean.Elab.ConfigEval.configEntryHandler) _ =>
+      some declarationValueRule
   | .node (.raw `Lean.Elab.ConfigEval.configEntryHandlerKey) _ =>
       some defaultRule
   | .node (.raw `Lean.Elab.ConfigEval.configEntryHandlerKeyPrefix) _ =>

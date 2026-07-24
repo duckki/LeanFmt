@@ -573,6 +573,29 @@ def assertHardWhitespaceFormatting (env : Lean.Environment) : IO Unit := do
   let formatted ← Formatter.formatSourceWithEnv env source "hard-whitespace.lean"
   assertEq "hard whitespace formatting" expected formatted
 
+def assertConfigEntriesStaySeparated (env : Lean.Environment) : IO Unit := do
+  let source :=
+    "import Lean.Elab.ConfigEval\n"
+    ++ "\n"
+    ++ "declare_core_config_elab elabExample Config where\n"
+    ++ "  omit foo\n"
+    ++ "  option foo := fun cfg _ => do\n"
+    ++ "    pure cfg\n"
+  let expected :=
+    "import Lean.Elab.ConfigEval\n"
+    ++ "\n"
+    ++ "declare_core_config_elab elabExample Config where\n"
+    ++ "  omit foo\n"
+    ++ "  option foo :=\n"
+    ++ "    fun cfg _ =>\n"
+    ++ "      do\n"
+    ++ "        pure cfg\n"
+  let formatted ← Formatter.formatSourceWithEnv env source "config-entry-separation.lean"
+  assertEq "configuration entries stay separated" expected formatted
+  let formattedAgain ←
+    Formatter.formatSourceWithEnv env formatted "config-entry-separation-formatted.lean"
+  assertEq "configuration entry formatting is idempotent" formatted formattedAgain
+
 def assertImportsStayOnSeparateLines (env : Lean.Environment) : IO Unit := do
   let source :=
     "import GraphQL.Execution\n"
@@ -7091,6 +7114,7 @@ def runBasicFormattingTests (env : Lean.Environment) : IO Unit := do
   assertLayoutSensitiveTermsRemainParseableAndIdempotent env
   assertLineWidthOptionAffectsFormatting env
   assertHardWhitespaceFormatting env
+  assertConfigEntriesStaySeparated env
   assertImportsStayOnSeparateLines env
   assertModuleHeaderGroupsUseBlankLines env
   assertMultilineTopLevelDeclarationsUseBlankLines env
