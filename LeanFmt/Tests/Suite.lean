@@ -3957,9 +3957,9 @@ def assertBangApplicationDiagnostics (env : Lean.Environment) : IO Unit := do
 def assertCliParsing : IO Unit := do
   assertTextContains "CLI help documents exception checks" LeanFmt.Cli.usage
     "--check-exception"
-  assertTextLacks "CLI help omits removed environment cache control"
+  assertTextContains "CLI help documents environment cache control"
     LeanFmt.Cli.usage "--env-cache-size"
-  assertTextLacks "CLI help omits removed import-first environment control"
+  assertTextContains "CLI help documents import-first environment control"
     LeanFmt.Cli.usage "--import-env-first"
   assertTextContains "CLI help documents hidden-path override"
     LeanFmt.Cli.usage "--include-hidden"
@@ -4031,9 +4031,12 @@ def assertLineWidthOptionAffectsFormatting (env : Lean.Environment) : IO Unit :=
   assertEq "wide line-width option keeps fitting source flat" source wide
   let _ ← SyntaxTree.parseModuleStringWithEnv env narrow "line-width-option.lean"
   match LeanFmt.Cli.parseArgs ["--env-cache-size", "0", "GraphQL.lean"] with
-  | .error "unknown option: --env-cache-size" => pure ()
+  | .run options =>
+      assertTrue "CLI environment cache size flag" (options.environmentCacheSize == 0)
   | result =>
-      throw <| IO.userError s!"CLI should reject removed --env-cache-size: {repr result}"
+      throw
+      <| IO.userError
+          s!"CLI parser should accept --env-cache-size and files: {repr result}"
   match LeanFmt.Cli.parseArgs ["--worker-batch-size", "0", "GraphQL.lean"] with
   | .error "invalid --worker-batch-size value: 0" => pure ()
   | result =>
@@ -4041,11 +4044,19 @@ def assertLineWidthOptionAffectsFormatting (env : Lean.Environment) : IO Unit :=
       <| IO.userError
           s!"CLI parser should reject invalid --worker-batch-size: {repr result}"
   match LeanFmt.Cli.parseArgs ["--import-env-first", "GraphQL.lean"] with
-  | .error "unknown option: --import-env-first" => pure ()
+  | .run options =>
+      assertTrue "CLI import environment first flag" options.importEnvFirst
   | result =>
       throw
-      <| IO.userError s!"CLI should reject removed --import-env-first: {repr result}"
-  for testOnlyOption in ["--profile", "--update-fixture", "--trace-renderer"] do
+      <| IO.userError
+          s!"CLI parser should accept --import-env-first and files: {repr result}"
+  match LeanFmt.Cli.parseArgs ["--profile", "GraphQL.lean"] with
+  | .run options =>
+      assertTrue "public CLI profile flag" options.profile
+      assertTrue "public CLI profile does not imply no-write check" (!options.check)
+  | result =>
+      throw <| IO.userError s!"public CLI should accept --profile, got: {repr result}"
+  for testOnlyOption in ["--update-fixture", "--trace-renderer"] do
     match LeanFmt.Cli.parseArgs [testOnlyOption, "GraphQL.lean"] with
     | .error message =>
         assertEq s!"public CLI rejects {testOnlyOption}"
@@ -4103,7 +4114,8 @@ def assertEnvironmentCacheBound (env : Lean.Environment) : IO Unit := do
       : String :=
     String.intercalate "," (entries.map Prod.fst)
   let entries ← IO.mkRef []
-  let cache : LeanFmt.Cli.EnvironmentCache := { default := env, maxEntries := 2, entries }
+  let cache : LeanFmt.Driver.EnvironmentCache :=
+    { default := env, maxEntries := 2, entries }
   cache.rememberEnvironment "first" env
   cache.rememberEnvironment "second" env
   cache.rememberEnvironment "third" env
@@ -4113,7 +4125,7 @@ def assertEnvironmentCacheBound (env : Lean.Environment) : IO Unit := do
   assertEq "environment cache refreshes remembered entry"
     "second,third" (keys (← entries.get))
   let disabledEntries ← IO.mkRef []
-  let disabledCache : LeanFmt.Cli.EnvironmentCache :=
+  let disabledCache : LeanFmt.Driver.EnvironmentCache :=
     { default := env, maxEntries := 0, entries := disabledEntries }
   disabledCache.rememberEnvironment "ignored" env
   assertTrue "disabled environment cache remains empty" (← disabledEntries.get).isEmpty
@@ -4123,7 +4135,7 @@ def assertDefaultEnvironmentPartition (env : Lean.Environment) : IO Unit := do
     fun root =>
       do
         let entries ← IO.mkRef []
-        let cache : LeanFmt.Cli.EnvironmentCache :=
+        let cache : LeanFmt.Driver.EnvironmentCache :=
           { default := env, maxEntries := 1, entries }
         let ordinary := root / "Ordinary.lean"
         let importedSyntax := root / "ImportedSyntax.lean"
@@ -4131,7 +4143,7 @@ def assertDefaultEnvironmentPartition (env : Lean.Environment) : IO Unit := do
         IO.FS.writeFile importedSyntax
           "import Missing.Module\n\ntheorem product : lhs ⬝ rhs := by trivial\n"
         let (defaultFiles, importFiles) ←
-          LeanFmt.Cli.partitionDefaultEnvironmentFiles cache [ordinary, importedSyntax]
+          LeanFmt.Driver.partitionDefaultEnvironmentFiles cache [ordinary, importedSyntax]
         assertEq "ordinary imported files use the default environment"
           (toString [ordinary]) (toString defaultFiles)
         assertEq "unknown imported syntax requires the import environment"
@@ -4152,15 +4164,30 @@ def assertWorkersUseInputLakeRoot : IO Unit := do
         let otherFile := nested / "Actions.lean"
         IO.FS.writeFile otherFile "def action : Nat := 0\n"
         let cwd? ←
-          LeanFmt.Cli.workerCwd?
+          LeanFmt.Driver.workerCwd?
             { recursive := true, files := [project / "QuantumComputing"] }
         assertEq "recursive worker uses containing Lake package root"
           (toString (some project)) (toString cwd?)
-        let explicitCwd? ← LeanFmt.Cli.workerCwd? { files := [file, otherFile] }
+        let relativeProject := FilePath.mk ".lake" / "leanfmt-relative-worker-root-test"
+        IO.FS.createDirAll (relativeProject / "QuantumComputing")
+        IO.FS.writeFile (relativeProject / "lakefile.toml")
+          "name = \"relative_worker_root_test\"\n"
+        let relativeCwd? ←
+          LeanFmt.Driver.workerCwd?
+            {
+              recursive := true,
+              files :=
+                [relativeProject / "QuantumComputing", relativeProject / "lakefile.toml"]
+            }
+        let currentDir ← IO.currentDir
+        assertEq "relative recursive worker inputs use containing Lake package root"
+          (toString (some (currentDir / relativeProject).normalize))
+          (toString (relativeCwd?.map (·.normalize)))
+        let explicitCwd? ← LeanFmt.Driver.workerCwd? { files := [file, otherFile] }
         assertEq "explicit files use their common Lake package root"
           (toString (some project)) (toString explicitCwd?)
         assertTrue "recursive external package uses worker even for one large batch"
-          (LeanFmt.Cli.shouldUseWorker
+          (LeanFmt.Driver.shouldUseWorker
             {
               recursive := true,
               workerBatchSize? := some 100,
@@ -4168,31 +4195,31 @@ def assertWorkersUseInputLakeRoot : IO Unit := do
             }
             cwd? 2)
         assertTrue "explicit multi-file package invocation uses workers"
-          (LeanFmt.Cli.shouldUseWorker { files := [file, otherFile] } explicitCwd? 2)
+          (LeanFmt.Driver.shouldUseWorker { files := [file, otherFile] } explicitCwd? 2)
         assertTrue "single-file package invocation stays in process"
-          (!LeanFmt.Cli.shouldUseWorker { files := [file] } explicitCwd? 1)
+          (!LeanFmt.Driver.shouldUseWorker { files := [file] } explicitCwd? 1)
         assertTrue "worker subprocess does not spawn nested workers"
-          (!LeanFmt.Cli.shouldUseWorker { worker := true } explicitCwd? 2)
+          (!LeanFmt.Driver.shouldUseWorker { worker := true } explicitCwd? 2)
         let otherProject := root / "other-project"
         IO.FS.createDirAll otherProject
         IO.FS.writeFile (otherProject / "lakefile.toml") "name = \"other_project\"\n"
         let otherProjectFile := otherProject / "Other.lean"
         IO.FS.writeFile otherProjectFile "def other : Nat := 0\n"
         let crossPackageCwd? ←
-          LeanFmt.Cli.workerCwd? { files := [file, otherProjectFile] }
+          LeanFmt.Driver.workerCwd? { files := [file, otherProjectFile] }
         assertTrue "files from different packages do not share a worker cwd"
           crossPackageCwd?.isNone
         assertTrue
           "invocation without a package root or explicit batch stays in process"
-          (!LeanFmt.Cli.shouldUseWorker { recursive := true } none 100)
+          (!LeanFmt.Driver.shouldUseWorker { recursive := true } none 100)
         assertTrue "explicit batch size enables workers without recursive traversal"
-          (LeanFmt.Cli.shouldUseWorker { workerBatchSize? := some 16 } none 100)
+          (LeanFmt.Driver.shouldUseWorker { workerBatchSize? := some 16 } none 100)
         assertTrue "external package starts with all remaining files"
-          ((← LeanFmt.Cli.initialWorkerBatchSize
+          ((← LeanFmt.Driver.initialWorkerBatchSize
                 { recursive := true, files := [project / "QuantumComputing"] }
                 cwd? [file, otherFile])
             == 2)
-        let workerPaths ← LeanFmt.Cli.pathsForWorkerCwd cwd? [file, otherFile]
+        let workerPaths ← LeanFmt.Driver.pathsForWorkerCwd cwd? [file, otherFile]
         assertEq "recursive external worker paths are relative to worker cwd"
           (toString
             [
@@ -4201,7 +4228,7 @@ def assertWorkersUseInputLakeRoot : IO Unit := do
             ])
           (toString workerPaths)
         assertTrue "explicit recursive external worker batch size overrides default"
-          ((← LeanFmt.Cli.initialWorkerBatchSize
+          ((← LeanFmt.Driver.initialWorkerBatchSize
                 {
                   recursive := true,
                   workerBatchSize? := some 4,
@@ -4212,7 +4239,7 @@ def assertWorkersUseInputLakeRoot : IO Unit := do
         IO.FS.writeFile (project / "lake-manifest.json")
           "{\"packages\":[{\"name\":\"other\"}],\"name\":\"external_project\"}\n"
         assertTrue "external package without Mathlib starts with all remaining files"
-          ((← LeanFmt.Cli.initialWorkerBatchSize
+          ((← LeanFmt.Driver.initialWorkerBatchSize
                 { recursive := true, files := [project / "QuantumComputing"] }
                 cwd? [file, otherFile])
             == 2)
@@ -4227,9 +4254,65 @@ def assertImportFilesGroupByHeader : IO Unit := do
         IO.FS.writeFile first "import Lean\n\ndef first : Nat := 0\n"
         IO.FS.writeFile second "import Init\n\ndef second : Nat := 0\n"
         IO.FS.writeFile third "import Lean\n\ndef third : Nat := 0\n"
-        let groups ← LeanFmt.Cli.importFileGroups [first, second, third]
+        let groups ← LeanFmt.Driver.importFileGroups none [first, second, third]
         assertEq "import-heavy files group by normalized import header"
-          (toString [[first, third], [second]]) (toString groups)
+          (toString [[first, third], [second]]) (toString (groups.map (·.files)))
+
+def assertImportFilesGroupByLakeSetupImportArtifacts : IO Unit := do
+  IO.FS.withTempDir
+    fun root =>
+      do
+        let project := root / "project"
+        let sourceDir := project / "QuantumComputing"
+        let setupDir := project / ".lake" / "build" / "ir" / "QuantumComputing"
+        IO.FS.createDirAll sourceDir
+        IO.FS.createDirAll setupDir
+        let first := sourceDir / "First.lean"
+        let second := sourceDir / "Second.lean"
+        let third := sourceDir / "Third.lean"
+        IO.FS.writeFile first "import QuantumComputing.Second\n\ndef first : Nat := 0\n"
+        IO.FS.writeFile second "import Mathlib\n\ndef second : Nat := 0\n"
+        IO.FS.writeFile third "import Lean\n\ndef third : Nat := 0\n"
+        IO.FS.writeFile (setupDir / "First.setup.json")
+          "{\"importArts\":{\"Mathlib\":{},\"QuantumComputing.Second\":{}}}\n"
+        IO.FS.writeFile (setupDir / "Second.setup.json")
+          "{\"importArts\":{\"Mathlib\":{}}}\n"
+        IO.FS.writeFile (setupDir / "Third.setup.json") "{\"importArts\":{\"Lean\":{}}}\n"
+        let groups ← LeanFmt.Driver.importFileGroups (some project) [first, second, third]
+        assertEq "Lake setup import artifacts group by covering environment"
+          (toString [[first, second], [third]]) (toString (groups.map (·.files)))
+        assertEq "Lake setup import artifacts choose superset environment file"
+          (toString [first, third]) (toString (groups.map (·.environmentFile)))
+
+def assertImportFilesUseDefaultAggregatorAsEnvironmentCandidate : IO Unit := do
+  IO.FS.withTempDir
+    fun root =>
+      do
+        let project := root / "project"
+        let sourceDir := project / "QuantumComputing"
+        let setupDir := project / ".lake" / "build" / "ir"
+        IO.FS.createDirAll sourceDir
+        IO.FS.createDirAll (setupDir / "QuantumComputing")
+        let aggregator := project / "QuantumComputing.lean"
+        let first := sourceDir / "First.lean"
+        let second := sourceDir / "Second.lean"
+        IO.FS.writeFile aggregator
+          "import QuantumComputing.First\nimport QuantumComputing.Second\n"
+        IO.FS.writeFile first "import Mathlib\n\ndef first : Nat := 0\n"
+        IO.FS.writeFile second "import Mathlib\n\ndef second : Nat := 0\n"
+        IO.FS.writeFile (setupDir / "QuantumComputing.setup.json")
+          "{\"importArts\":{\"Mathlib\":{},\"QuantumComputing.First\":{},\"QuantumComputing.Second\":{}}}\n"
+        IO.FS.writeFile (setupDir / "QuantumComputing" / "First.setup.json")
+          "{\"importArts\":{\"Mathlib\":{},\"QuantumComputing.First\":{}}}\n"
+        IO.FS.writeFile (setupDir / "QuantumComputing" / "Second.setup.json")
+          "{\"importArts\":{\"Mathlib\":{},\"QuantumComputing.Second\":{}}}\n"
+        let groups ←
+          LeanFmt.Driver.importFileGroupsWithEnvironmentCandidates
+            (some project) [aggregator, first, second] [first, second]
+        assertEq "default-parsing aggregator can cover imported files"
+          (toString [[first, second]]) (toString (groups.map (·.files)))
+        assertEq "default-parsing aggregator is selected as worker environment"
+          (toString [aggregator]) (toString (groups.map (·.environmentFile)))
 
 def assertRecursiveWorkerChecksTargetToolchain : IO Unit := do
   IO.FS.withTempDir
@@ -4237,14 +4320,14 @@ def assertRecursiveWorkerChecksTargetToolchain : IO Unit := do
       do
         let matching := root / "matching"
         IO.FS.createDirAll matching
-        IO.FS.writeFile (matching / "lean-toolchain") LeanFmt.Cli.expectedLeanToolchain
+        IO.FS.writeFile (matching / "lean-toolchain") LeanFmt.Driver.expectedLeanToolchain
         assertTrue "recursive worker accepts matching Lean toolchain"
-          (← LeanFmt.Cli.checkWorkerToolchain (some matching))
+          (← LeanFmt.Driver.checkWorkerToolchain (some matching))
         let mismatching := root / "mismatching"
         IO.FS.createDirAll mismatching
         IO.FS.writeFile (mismatching / "lean-toolchain") "leanprover/lean4:v4.29.1\n"
         assertTrue "recursive worker rejects mismatching Lean toolchain"
-          (!(← LeanFmt.Cli.checkWorkerToolchain (some mismatching)))
+          (!(← LeanFmt.Driver.checkWorkerToolchain (some mismatching)))
 
 def assertFormattingExceptionChecks (env : Lean.Environment) : IO Unit := do
   assertTrue "whitespace-only edits preserve code"
@@ -4367,7 +4450,7 @@ def assertFormattingExceptionChecks (env : Lean.Environment) : IO Unit := do
       "atomic-comma-overflow.lean"
   assertTrue "atomic tree and trailing comma overflow is exempt"
     (Formatter.Diagnostics.overflowOccurrences atomicCommaModule).isEmpty
-  let counts : LeanFmt.Cli.ExceptionCounts :=
+  let counts : LeanFmt.Driver.ExceptionCounts :=
     {
       codeChanged := 1,
       lineOverflow := 2,
@@ -4394,7 +4477,7 @@ def assertFormattingExceptionChecks (env : Lean.Environment) : IO Unit := do
     counts.summary
 
 def assertCliChecksStillFormatUnlessCheck
-    (env : Lean.Environment) (cache : LeanFmt.Cli.EnvironmentCache)
+    (env : Lean.Environment) (cache : LeanFmt.Driver.EnvironmentCache)
     : IO Unit := do
   let root : FilePath := ".lake/leanfmt-cli-test/checks"
   IO.FS.createDirAll root
@@ -4402,7 +4485,7 @@ def assertCliChecksStillFormatUnlessCheck
   let preservingSource := "def  preserving  : Nat := 0\n"
   IO.FS.writeFile preservingFile preservingSource
   let preservingExitCode ←
-    LeanFmt.Cli.runOptionsWithCache cache
+    LeanFmt.Driver.runOptionsWithCache cache
       { checkException := true, includeHidden := true, files := [preservingFile] }
   assertTrue "CLI exception check still formats" (preservingExitCode == 0)
   let preservingFormatted ←
@@ -4418,7 +4501,7 @@ def assertCliChecksStillFormatUnlessCheck
   let afterExceptionSource := "def  afterException  : Nat := 0\n"
   IO.FS.writeFile afterExceptionFile afterExceptionSource
   let overflowExitCode ←
-    LeanFmt.Cli.runOptionsWithCache cache
+    LeanFmt.Driver.runOptionsWithCache cache
       {
         checkException := true
         includeHidden := true
@@ -4435,7 +4518,7 @@ def assertCliChecksStillFormatUnlessCheck
     afterExceptionFormatted (← IO.FS.readFile afterExceptionFile)
   IO.FS.writeFile overflowFile overflowSource
   let checkedOverflowExitCode ←
-    LeanFmt.Cli.runOptionsWithCache cache
+    LeanFmt.Driver.runOptionsWithCache cache
       {
         check := true
         checkException := true
@@ -4450,7 +4533,7 @@ def assertCliChecksStillFormatUnlessCheck
   let idempotentSource := "def  idempotent  : Nat := 0\n"
   IO.FS.writeFile idempotentFile idempotentSource
   let idempotentExitCode ←
-    LeanFmt.Cli.runOptionsWithCache cache
+    LeanFmt.Driver.runOptionsWithCache cache
       { checkIdempotent := true, includeHidden := true, files := [idempotentFile] }
   assertTrue "CLI idempotence check still formats" (idempotentExitCode == 0)
   let idempotentFormatted ←
@@ -4462,7 +4545,7 @@ def assertCliChecksStillFormatUnlessCheck
   let checkedSource := "def  checked  : Nat := 0\n"
   IO.FS.writeFile checkedFile checkedSource
   let checkedExitCode ←
-    LeanFmt.Cli.runOptionsWithCache cache
+    LeanFmt.Driver.runOptionsWithCache cache
       {
         check := true
         checkException := true
@@ -4475,13 +4558,13 @@ def assertCliChecksStillFormatUnlessCheck
     checkedSource (← IO.FS.readFile checkedFile)
 
   let ordinaryCheckExitCode ←
-    LeanFmt.Cli.runOptionsWithCache cache
+    LeanFmt.Driver.runOptionsWithCache cache
       { check := true, includeHidden := true, files := [checkedFile] }
   assertTrue "CLI ordinary --check still fails on formatting changes"
     (ordinaryCheckExitCode == 1)
 
 def assertCliFormatsDirectory
-    (env : Lean.Environment) (cache : LeanFmt.Cli.EnvironmentCache)
+    (env : Lean.Environment) (cache : LeanFmt.Driver.EnvironmentCache)
     : IO Unit := do
   let root : FilePath := ".lake/leanfmt-cli-test/nonrecursive"
   let nested : FilePath := root / "nested"
@@ -4493,7 +4576,7 @@ def assertCliFormatsDirectory
   IO.FS.writeFile topFile topSource
   IO.FS.writeFile nestedFile nestedSource
   let exitCode ←
-    LeanFmt.Cli.runOptionsWithCache cache { includeHidden := true, files := [root] }
+    LeanFmt.Driver.runOptionsWithCache cache { includeHidden := true, files := [root] }
   assertTrue "CLI directory format succeeds" (exitCode == 0)
   let topFormatted ← Formatter.formatSourceWithEnv env topSource topFile.toString
   assertEq "CLI formats direct Lean files in directory" topFormatted
@@ -4502,7 +4585,7 @@ def assertCliFormatsDirectory
     nestedSource (← IO.FS.readFile nestedFile)
 
 def assertCliFormatsDirectoryRecursively
-    (env : Lean.Environment) (cache : LeanFmt.Cli.EnvironmentCache)
+    (env : Lean.Environment) (cache : LeanFmt.Driver.EnvironmentCache)
     : IO Unit := do
   let root : FilePath := ".lake/leanfmt-cli-test/recursive"
   let nested : FilePath := root / "nested"
@@ -4516,7 +4599,7 @@ def assertCliFormatsDirectoryRecursively
   match LeanFmt.Cli.parseArgs
           ["-r", "--include-hidden", "--worker-batch-size", "1", root.toString] with
   | .run options =>
-      let exitCode ← LeanFmt.Cli.runOptionsWithCache cache options
+      let exitCode ← LeanFmt.Driver.runOptionsWithCache cache options
       assertTrue "CLI recursive directory format succeeds" (exitCode == 0)
       let topFormatted ← Formatter.formatSourceWithEnv env topSource topFile.toString
       let nestedFormatted ←
@@ -4545,7 +4628,7 @@ def assertCliSkipsHiddenPathsByDefault : IO Unit :=
           IO.FS.writeFile file "def value : Nat := 0\n"
 
         let defaultFiles ←
-          LeanFmt.Cli.expandInputPaths { recursive := true, files := [root] }
+          LeanFmt.Driver.expandInputPaths { recursive := true, files := [root] }
         assertTrue "CLI discovers visible direct files"
           (defaultFiles.contains visibleFile)
         assertTrue "CLI discovers visible nested files"
@@ -4555,21 +4638,21 @@ def assertCliSkipsHiddenPathsByDefault : IO Unit :=
           (!defaultFiles.contains hiddenNestedFile)
 
         let explicitHiddenFile ←
-          LeanFmt.Cli.expandInputPaths { files := [hiddenNestedFile] }
+          LeanFmt.Driver.expandInputPaths { files := [hiddenNestedFile] }
         assertTrue "CLI processes an explicitly supplied file under a hidden directory"
           (explicitHiddenFile == [hiddenNestedFile])
 
         let hiddenChildFile := hiddenDir / ".Child.lean"
         IO.FS.writeFile hiddenChildFile "def child : Nat := 0\n"
         let explicitHiddenDirectory ←
-          LeanFmt.Cli.expandInputPaths { recursive := true, files := [hiddenDir] }
+          LeanFmt.Driver.expandInputPaths { recursive := true, files := [hiddenDir] }
         assertTrue "CLI enters an explicitly supplied hidden directory"
           (explicitHiddenDirectory.contains hiddenNestedFile)
         assertTrue "CLI still skips hidden entries inside an explicit hidden directory"
           (!explicitHiddenDirectory.contains hiddenChildFile)
 
         let includedFiles ←
-          LeanFmt.Cli.expandInputPaths
+          LeanFmt.Driver.expandInputPaths
             { recursive := true, includeHidden := true, files := [root] }
         for file
             in [
@@ -4582,14 +4665,14 @@ def assertCliSkipsHiddenPathsByDefault : IO Unit :=
           assertTrue s!"CLI --include-hidden discovers {file}"
             (includedFiles.contains file)
 
-def assertCliLoadsImportedSyntax (cache : LeanFmt.Cli.EnvironmentCache) : IO Unit := do
+def assertCliLoadsImportedSyntax (cache : LeanFmt.Driver.EnvironmentCache) : IO Unit := do
   let root : FilePath := ".lake/leanfmt-cli-test/project-env"
   IO.FS.createDirAll root
   let file := root / "ImportedSyntax.lean"
   let source := "import LeanFmt.Tests.ProjectSyntax\n\n#check project_syntax\n"
   IO.FS.writeFile file source
   let exitCode ←
-    LeanFmt.Cli.runOptionsWithCache cache { includeHidden := true, files := [file] }
+    LeanFmt.Driver.runOptionsWithCache cache { includeHidden := true, files := [file] }
   assertTrue "CLI loads syntax from imported modules" (exitCode == 0)
   assertEq "CLI preserves imported syntax source" source (← IO.FS.readFile file)
 
@@ -5024,7 +5107,7 @@ def assertMathlibLowRiskSyntaxKindsHaveRules : IO Unit := do
     (Formatter.shouldEmitOriginalTree simprocTree)
 
 def assertMissingRuleCheckUsesDispatch
-    (env : Lean.Environment) (cache : LeanFmt.Cli.EnvironmentCache)
+    (env : Lean.Environment) (cache : LeanFmt.Driver.EnvironmentCache)
     : IO Unit := do
   let unknownTree :=
     SyntaxTree.Tree.node
@@ -5089,7 +5172,7 @@ def assertMissingRuleCheckUsesDispatch
         (some `Lean.Parser.Term.syntheticUnknownForTest)
       == .unavailable)
   let projectImports ←
-    LeanFmt.Cli.importsForSource
+    LeanFmt.Driver.importsForSource
       "import LeanFmt.Tests.ProjectSyntax\n" "project-syntax-import.lean"
   let projectEnv ← cache.environmentForImports projectImports
   assertTrue "parser description fallback is identified"
@@ -5495,12 +5578,15 @@ def runCollectionAndDeclarationTests (env : Lean.Environment) : IO Unit := do
 def runCliAndArchitectureTests (env : Lean.Environment) : IO Unit := do
   Lean.initSearchPath (← Lean.findSysroot)
   let entries ← IO.mkRef []
-  let cache : LeanFmt.Cli.EnvironmentCache := { default := env, maxEntries := 1, entries }
+  let cache : LeanFmt.Driver.EnvironmentCache :=
+    { default := env, maxEntries := 1, entries }
   assertCliParsing
   assertEnvironmentCacheBound env
   assertDefaultEnvironmentPartition env
   assertWorkersUseInputLakeRoot
   assertImportFilesGroupByHeader
+  assertImportFilesGroupByLakeSetupImportArtifacts
+  assertImportFilesUseDefaultAggregatorAsEnvironmentCandidate
   assertRecursiveWorkerChecksTargetToolchain
   assertFormattingExceptionChecks env
   assertCliChecksStillFormatUnlessCheck env cache
