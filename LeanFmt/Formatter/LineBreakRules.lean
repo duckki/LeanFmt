@@ -638,6 +638,13 @@ def commandAttributeIdentifierList (context : RuleContext) : Bool :=
       parent.rawKind? == some `Lean.Parser.Command.attribute && parent.childIndex == 4
   | _ => false
 
+def assertNotExistsIdentifierList (context : RuleContext) : Bool :=
+  match context.ancestors with
+  | parent :: _ =>
+      parent.rawKind? == some `Lean.Parser.Command.assertNotExists
+      && parent.childIndex == 1
+  | _ => false
+
 def parentIsBinderDefaultWrapper (context : RuleContext) : Bool :=
   match context.ancestors with
   | parent :: _ =>
@@ -655,6 +662,7 @@ def nullInheritBase (context : RuleContext) (segment : Segment) : Bool :=
   || parentIsRawKind context `Lean.Parser.Term.structInstFields
   || parentIsRawKind context `Lean.Parser.Term.letRecDecls
   || parentIsRawKind context `Lean.Parser.Term.letRecDecl
+  || assertNotExistsIdentifierList context
   || wrappedByDoLetElseFallbackSequence context
 
 def attachedBodyStart (segment : Segment) (index : Nat) : Bool :=
@@ -1107,6 +1115,13 @@ def commandAttributeIdentifierBreaks (context : RuleContext) (segment : Segment)
   else
     []
 
+def assertNotExistsIdentifierBreaks (context : RuleContext) (segment : Segment)
+    : List BreakPoint :=
+  if assertNotExistsIdentifierList context then
+    childBoundaryBreaks segment 0
+  else
+    []
+
 def matchPatternBreaks (_context : RuleContext) (segment : Segment) : List BreakPoint :=
   segment.indexes.filterMap
     fun index =>
@@ -1141,6 +1156,10 @@ def exportItemBreaks (context : RuleContext) (segment : Segment) : List BreakPoi
     | _ :: rest => rest.filterMap fun index => boundaryBreak? segment index 0
   else
     []
+
+def assertNotExistsBreaks (_context : RuleContext) (segment : Segment)
+    : List BreakPoint :=
+  [breakAfterLexeme? segment "assert_not_exists" 1].filterMap id
 
 def moduleImportBreaks (context : RuleContext) (segment : Segment) : List BreakPoint :=
   if parentIsRawKind context `Lean.Parser.Module.header then
@@ -1809,6 +1828,13 @@ def exportRule : LineBreakRule :=
     breakPoints := exportBreaks
   }
 
+def assertNotExistsRule : LineBreakRule :=
+  {
+    name := "assertNotExists"
+    useExistingBreaks := fun _ _ => true
+    breakPoints := assertNotExistsBreaks
+  }
+
 def definitionRule : LineBreakRule :=
   {
     name := "definition"
@@ -2195,6 +2221,7 @@ def nullBreaks (context : RuleContext) (segment : Segment) : List BreakPoint :=
   ++ commandBinderBreaks context segment
   ++ openIdentifierBreaks context segment
   ++ commandAttributeIdentifierBreaks context segment
+  ++ assertNotExistsIdentifierBreaks context segment
   ++ exportItemBreaks context segment
   ++ doSeqItemBreaks context segment
   ++ doLetArrowFallbackTailBreaks context segment
@@ -2235,6 +2262,7 @@ def nullRule : LineBreakRule :=
         || !(commandBinderBreaks context segment).isEmpty
         || !(openIdentifierBreaks context segment).isEmpty
         || !(commandAttributeIdentifierBreaks context segment).isEmpty
+        || !(assertNotExistsIdentifierBreaks context segment).isEmpty
         || !(exportItemBreaks context segment).isEmpty
     inheritBase := nullInheritBase
     breakPoints := nullBreaks
@@ -2733,7 +2761,7 @@ def ruleFor : SyntaxTree.Tree → Option LineBreakRule
   | .node (.raw `Lean.Parser.Command.attribute) _ => some commandAttributeRule
   | .node (.raw `Lean.Parser.Command.deprecated_module) _ => some defaultRule
   | .node (.raw `Lean.Parser.Command.assertNotImported) _ => some defaultRule
-  | .node (.raw `Lean.Parser.Command.assertNotExists) _ => some defaultRule
+  | .node (.raw `Lean.Parser.Command.assertNotExists) _ => some assertNotExistsRule
   | .node (.raw `Lean.Parser.Command.namedPrio) _ => some defaultRule
   | .node (.raw `Lean.Parser.Command.abbrev) _ => some defaultRule
   | .node (.raw `Lean.Parser.Command.classAbbrev) _ => some defaultRule

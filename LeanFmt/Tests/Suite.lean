@@ -2342,6 +2342,26 @@ def assertGeneratedPostfixMarkersStayAttached (env : Lean.Environment) : IO Unit
   assertEq "generated postfix marker formatting is idempotent"
     result.formatted formattedAgain
 
+def assertNotExistsIdentifiersFlow (env : Lean.Environment) : IO Unit := do
+  let source :=
+    "assert_not_exists FirstLongDeclarationName SecondLongDeclarationName ThirdLongDeclarationName FourthLongDeclarationName FifthLongDeclarationName\n"
+  let result ←
+    Formatter.formatSourceWithEnvDetailed env source "assert-not-exists-identifiers.lean"
+      { lineWidth := 100 }
+  assertTrue "assert_not_exists formatting does not fall back" (!result.fellBack)
+  assertTextContains "assert_not_exists identifiers start on a continuation line"
+    result.formatted "assert_not_exists\n  FirstLongDeclarationName"
+  let moduleTree ←
+    SyntaxTree.parseModuleStringWithEnv env result.formatted
+      "assert-not-exists-identifiers-formatted.lean"
+  assertTrue "assert_not_exists identifiers fit the configured width"
+    (Formatter.Diagnostics.overflowOccurrences moduleTree { lineWidth := 100 }).isEmpty
+  let formattedAgain ←
+    Formatter.formatSourceWithEnv env result.formatted
+      "assert-not-exists-identifiers-formatted.lean" { lineWidth := 100 }
+  assertEq "assert_not_exists identifier formatting is idempotent"
+    result.formatted formattedAgain
+
 def assertSignatureParametersUseLeadingSourceBreakAfterFlatFails (env : Lean.Environment)
     : IO Unit := do
   let source :=
@@ -6708,6 +6728,7 @@ def runBasicFormattingTests (env : Lean.Environment) : IO Unit := do
   assertAbsoluteValueDelimitersStayAttached env
   assertSymmetricDelimitersStayAttachedAcrossPasses env
   assertGeneratedPostfixMarkersStayAttached env
+  assertNotExistsIdentifiersFlow env
   assertSignatureParametersUseLeadingSourceBreakAfterFlatFails env
   assertDefinitionSourceBreakAfterAssignOverridesFlat env
 

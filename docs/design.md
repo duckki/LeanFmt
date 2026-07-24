@@ -343,6 +343,15 @@ import Very.Long.Module.Name.ThatRemainsOneImportCommand
 syntax "widget" : term
 ```
 
+Long `assert_not_exists` commands put their identifier list on continuation
+lines and fill each line up to the configured width:
+
+```lean
+assert_not_exists
+  FirstForbiddenDeclaration SecondForbiddenDeclaration ThirdForbiddenDeclaration
+  FourthForbiddenDeclaration
+```
+
 Lake package commands keep `where` on the header and indent configuration fields one
 level. A multiline Git dependency breaks after `git`, and its revision separator keeps
 ordinary source spacing:
