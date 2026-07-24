@@ -140,10 +140,13 @@ def RuleContext.parentStructureHasExtends (context : RuleContext) : Bool :=
       && treeContainsLexemeForContext "extends" parent.segment.parent
   | _ => false
 
-def RuleContext.parentIsVariableBinderList (context : RuleContext) : Bool :=
+def RuleContext.parentIsCommandBinderList (context : RuleContext) : Bool :=
   match context.ancestors with
   | parent :: _ =>
-      parent.rawKind? == some `Lean.Parser.Command.variable && parent.childIndex == 1
+      (parent.rawKind? == some `Lean.Parser.Command.variable
+          || parent.rawKind? == some `Lean.Parser.Command.omit
+          || parent.rawKind? == some `Lean.Parser.Command.include)
+        && parent.childIndex == 1
   | _ => false
 
 def RuleContext.parentIsStructureFieldDefaultValue (context : RuleContext) : Bool :=
@@ -170,7 +173,7 @@ def defaultInheritBase (context : RuleContext) (segment : Segment) : Bool :=
   context.parentIsAnnotatedDeclaration
   || context.parentIsSingletonArrayItemWrapper
   || segment.rawKind? == some `Lean.Parser.Term.letDecl
-  || (segment.rawKind? == some `null && context.parentIsVariableBinderList)
+  || (segment.rawKind? == some `null && context.parentIsCommandBinderList)
   || (segment.rawKind? == some `null && context.parentIsStructureFieldDefaultValue)
   || (segment.rawKind? == some `Lean.Parser.Term.binderDefault
       && context.parentWrapsStructureFieldDefaultValue)
@@ -605,8 +608,8 @@ def quantifierIdentifierSequence (context : RuleContext) : Bool :=
 def binderIdentifierSequence (context : RuleContext) : Bool :=
   groupedBinderIdentifierSequence context || quantifierIdentifierSequence context
 
-def variableBinderSequence (context : RuleContext) : Bool :=
-  context.parentIsVariableBinderList
+def commandBinderSequence (context : RuleContext) : Bool :=
+  context.parentIsCommandBinderList
 
 def exportIdentifierList (context : RuleContext) : Bool :=
   match context.ancestors with
@@ -1029,8 +1032,8 @@ def binderIdentifierBreaks (context : RuleContext) (segment : Segment)
   else
     []
 
-def variableBinderBreaks (context : RuleContext) (segment : Segment) : List BreakPoint :=
-  if variableBinderSequence context then
+def commandBinderBreaks (context : RuleContext) (segment : Segment) : List BreakPoint :=
+  if commandBinderSequence context then
     match nonemptyChildIndexes segment with
     | [] => []
     | [_] => []
@@ -2037,7 +2040,7 @@ def nullBreaks (context : RuleContext) (segment : Segment) : List BreakPoint :=
   ++ inductiveAlternativeBreaks context segment
   ++ quantifierBinderBreaks context segment
   ++ binderIdentifierBreaks context segment
-  ++ variableBinderBreaks context segment
+  ++ commandBinderBreaks context segment
   ++ openIdentifierBreaks context segment
   ++ commandAttributeIdentifierBreaks context segment
   ++ exportItemBreaks context segment
@@ -2076,7 +2079,7 @@ def nullRule : LineBreakRule :=
       fun context segment =>
         !(quantifierBinderBreaks context segment).isEmpty
         || !(binderIdentifierBreaks context segment).isEmpty
-        || !(variableBinderBreaks context segment).isEmpty
+        || !(commandBinderBreaks context segment).isEmpty
         || !(openIdentifierBreaks context segment).isEmpty
         || !(commandAttributeIdentifierBreaks context segment).isEmpty
         || !(exportItemBreaks context segment).isEmpty

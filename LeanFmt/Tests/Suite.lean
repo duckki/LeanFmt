@@ -2931,6 +2931,27 @@ def assertVariableInstanceBinderAvoidsBracketOnlyLines (env : Lean.Environment)
   assertTextLacks "variable instance binder avoids newline before closing bracket"
     formatted "\n]"
 
+def assertCommandBinderSequencesFlow (env : Lean.Environment) : IO Unit := do
+  let source :=
+    "variable {C : Type} [Add C] [Sub C] [Mul C] [Div C] [Pow C Nat]\n"
+    ++ "omit [Add C] [Sub C] [Mul C] [Div C] [Pow C Nat] [LT C] [LE C] [BEq C] [Hashable C] [Inhabited C] [EmptyCollection C] in\n"
+    ++ "theorem value : True := by trivial\n"
+    ++ "include firstVeryLongVariableName secondVeryLongVariableName thirdVeryLongVariableName fourthVeryLongVariableName fifthVeryLongVariableName in\n"
+    ++ "theorem includedValue : True := by trivial\n"
+  let expected :=
+    "variable {C : Type} [Add C] [Sub C] [Mul C] [Div C] [Pow C Nat]\n"
+    ++ "omit\n"
+    ++ "  [Add C] [Sub C] [Mul C] [Div C] [Pow C Nat] [LT C] [LE C] [BEq C] [Hashable C]\n"
+    ++ "    [Inhabited C] [EmptyCollection C] in\n"
+    ++ "theorem value : True := by trivial\n"
+    ++ "include\n"
+    ++ "  firstVeryLongVariableName secondVeryLongVariableName thirdVeryLongVariableName\n"
+    ++ "    fourthVeryLongVariableName fifthVeryLongVariableName in\n"
+    ++ "theorem includedValue : True := by trivial\n"
+  let formatted ←
+    Formatter.formatSourceWithEnv env source "command-binder-flow.lean"
+  assertEq "command binder sequences flow between binders" expected formatted
+
 def assertMutualEquationArmIndent (env : Lean.Environment) : IO Unit := do
   let source :=
     "mutual\n"
@@ -6184,6 +6205,7 @@ def runExpressionAndRendererTests (env : Lean.Environment) : IO Unit := do
   assertSignatureParameterSourceBreakFallback env
   assertVariableBinderSequenceFlows env
   assertVariableInstanceBinderAvoidsBracketOnlyLines env
+  assertCommandBinderSequencesFlow env
   assertMutualEquationArmIndent env
   assertMutualSingleLineParameterReturnIndent env
   assertReturnTypeInfixIndent env
