@@ -6023,6 +6023,7 @@ def assertMathlibLowRiskSyntaxKindsHaveRules : IO Unit := do
       `Parser.Attr.nontriviality,
       `Parser.Attr.mfld_simps,
       `Parser.Attr.rclike_simps,
+      `Parser.Attr.mon_tauto,
       `Mathlib.Tactic.ToAdditive.to_additive,
       `Mathlib.Tactic.MkIff.mkIff,
       `Mathlib.Tactic.Translate.attrArgs,
