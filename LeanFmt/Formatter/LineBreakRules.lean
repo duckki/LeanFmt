@@ -3377,12 +3377,16 @@ def ruleFor : SyntaxTree.Tree → Option LineBreakRule
       some defaultRule
   | .node (.raw `SimplexCategory.Truncated.mkNotation) _ => some defaultRule
   | .node (.raw `TopCat.Presheaf.attrSheaf_restrict) _ => some defaultRule
+  | .node (.raw `aliasIn) _ => some defaultRule
   | .node (.raw `Mathlib.Tactic.TermCongr.termCongr) _ => some defaultRule
   | .node (.raw `Mathlib.Meta.FunProp.funPropTacStx) _ => some defaultRule
   | .node (.raw `Lean.Parser.Command.registerTryTactic) _ => some defaultRule
   | .node (.raw `Mathlib.PPWithUniv.ppWithUnivAttr) _ => some defaultRule
   | .node (.raw `Mathlib.Util.«commandCompile_inductive%_») _ =>
       some defaultRule
+  | .node (.raw `Mathlib.Util.«commandCompile_def%_») _ => some defaultRule
+  | .node (.raw `Mathlib.GuardExceptions.parseCmd) _ => some defaultRule
+  | .node (.raw `transImportsStx) _ => some defaultRule
   | .node (.raw `commandUnsuppress_compilationIn_) _ => some commandInChainRule
   | .node (.raw `proof_wanted) _ => some defaultRule
   | .node (.raw `antiquotNestedExpr) _ => some defaultRule
