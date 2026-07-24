@@ -2929,6 +2929,7 @@ def ruleFor : SyntaxTree.Tree → Option LineBreakRule
   | .node (.raw `Lean.Parser.Term.liftMethod) _ => some transparentRule
   | .node (.raw `Lean.Parser.Term.dotIdent) _ => some dotIdentRule
   | .node (.raw `termS!_) _ => some interpolatedStringRule
+  | .node (.raw `Lean.termM!_) _ => some interpolatedStringRule
   | .node (.raw `interpolatedStrKind) _ => some interpolatedStringRule
   | .node (.raw `interpolatedStrLitKind) _ => some interpolatedStringRule
   | .node (.raw `Lean.Parser.Term.doSeqIndent) _ => some doSeqIndentRule

@@ -342,10 +342,17 @@ partial def preservedOriginalSpans : SyntaxTree.Tree → List SyntaxTree.Span
 def tokenIntersects (start stop : String.Pos.Raw) (token : SyntaxTree.Token) : Bool :=
   token.span.start < stop && start < token.span.stop
 
+def isInterpolatedStringTree : SyntaxTree.Tree → Bool
+  | .node (.raw `termS!_) _ => true
+  | .node (.raw `Lean.termM!_) _ => true
+  | .node (.raw `interpolatedStrKind) _ => true
+  | .node (.raw `interpolatedStrLitKind) _ => true
+  | _ => false
+
 def atomicTreeSpan? (tree : SyntaxTree.Tree) : Option SyntaxTree.Span :=
-  match tree with
-  | .node (.raw `termS!_) _ => treeSpan? tree
-  | _ =>
+  if isInterpolatedStringTree tree then
+    treeSpan? tree
+  else
       match tree.tokens.toList.filter fun token => !token.lexeme.isEmpty with
       | [token] => some token.span
       | _ => none
@@ -367,9 +374,9 @@ def atomicWithCommaSpans : List SyntaxTree.Tree → List SyntaxTree.Span
 
 partial def indivisibleOverflowSpans : SyntaxTree.Tree → List SyntaxTree.Span
   | .missing | .leaf _ => []
-  | tree@(.node kind children) =>
+  | tree@(.node _ children) =>
       let current :=
-        if kind == .raw `termS!_ then
+        if isInterpolatedStringTree tree then
           treeSpan? tree |>.toList
         else
           []

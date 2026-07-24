@@ -4779,6 +4779,15 @@ def assertFormattingExceptionChecks (env : Lean.Environment) : IO Unit := do
       "interpolated-string-overflow.lean"
   assertTrue "interpolated-string tree overflow is exempt"
     (Formatter.Diagnostics.overflowOccurrences interpolatedStringModule).isEmpty
+  let bareInterpolatedStringOverflow :=
+    "def message := \""
+    ++ String.ofList (List.replicate Formatter.maxLineWidth 'x')
+    ++ "{value}\"\n"
+  let bareInterpolatedStringModule ←
+    SyntaxTree.parseModuleStringWithEnv env bareInterpolatedStringOverflow
+      "bare-interpolated-string-overflow.lean"
+  assertTrue "bare interpolated-string tree overflow is exempt"
+    (Formatter.Diagnostics.overflowOccurrences bareInterpolatedStringModule).isEmpty
   let stringCommaOverflow :=
     "def messages := [\n  \""
     ++ String.ofList (List.replicate Formatter.maxLineWidth 'x')
