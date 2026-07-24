@@ -778,7 +778,7 @@ Mathlib/Combinatorics/SimpleGraph/Triangle/Removal.lean:198:64:
 failed to prove positivity/nonnegativity/nonzeroness
 ```
 
-The architecture response is to give `do` let-arrow fallbacks an explicit syntax rule.
+The architecture response is to give `do` let fallbacks explicit syntax rules.
 When a `doIdDecl` or `doPatDecl` contains a fallback tail, the declaration may break
 after `←` and before the `|` fallback arm. The wrapper that owns `| fallback` plus the
 following `do` continuation forces a break before that continuation. This keeps
@@ -788,6 +788,12 @@ source text after the fallback expression. If the fallback is itself a multiline
 the pipe; the later continuation still returns to the declaration base. The post-format
 build remains the guardrail for preservation classes that syntax diagnostics cannot
 prove.
+
+A refutable `let pattern := value | fallback` receives the same treatment when
+the fallback contains multiple direct `do` statements: the fallback breaks after
+`|`, its statements share the one-level-deeper base, and the successful
+continuation returns to the declaration base. A single fallback expression may
+remain on the pipe line.
 
 Overflow analysis uses the formatted module's lossless token spans. It ignores comment
 overflow, which occupies trivia rather than syntax tokens, and unavoidable overflow where

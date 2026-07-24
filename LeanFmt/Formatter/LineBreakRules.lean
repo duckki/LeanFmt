@@ -1564,10 +1564,31 @@ def doLetElseContinuationBreak? (segment : Segment) : Option BreakPoint := do
     (nonemptyChildIndexes segment).find? fun index => fallbackIndex < index
   boundaryBreak? segment continuationIndex 0
 
+partial def directDoSequenceItemCount : SyntaxTree.Tree → Nat
+  | .node (.raw `Lean.Parser.Term.doSeqItem) _ => 1
+  | .node (.raw kind) children =>
+      if kind == `Lean.Parser.Term.doSeqIndent || kind == `null then
+        children.foldl (fun count child => count + directDoSequenceItemCount child) 0
+      else
+        0
+  | .node _ _ => 0
+  | .missing | .leaf _ => 0
+
+def doLetElseFallbackBreak? (segment : Segment) : Option BreakPoint := do
+  let pipeIndex ←
+    segment.indexes.find? fun index => childStartsWithLexeme segment index "|"
+  let fallbackIndex ← (nonemptyChildIndexes segment).find? fun index => pipeIndex < index
+  let fallback ← segment.child? fallbackIndex
+  if 1 < directDoSequenceItemCount fallback then
+    boundaryBreak? segment fallbackIndex 1
+  else
+    none
+
 def doLetElseBreaks (_context : RuleContext) (segment : Segment) : List BreakPoint :=
   [
     breakAfterLexeme? segment ":=" 1,
     breakBeforeLexeme? segment "|" 0,
+    doLetElseFallbackBreak? segment,
     doLetElseContinuationBreak? segment
   ].filterMap
     id

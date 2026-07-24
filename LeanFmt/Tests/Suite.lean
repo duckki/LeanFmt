@@ -997,6 +997,34 @@ def assertDoLetElseBreaks (env : Lean.Environment) : IO Unit := do
       "multiline-do-let-fallback.lean"
   assertEq "multiline do-let fallback keeps continuation at body base"
     multilineFallbackSource multilineFallbackFormatted
+  let multiStatementFallbackSource :=
+    "def multiStatementFallback (candidate : Option Nat) : Option Nat := do\n"
+    ++ "  let some value := candidate |\n"
+    ++ "    if candidate.isNone then reportFailure; return none\n"
+    ++ "    throwError \"candidate was rejected\"\n"
+    ++ "  return value\n"
+  let multiStatementFallbackExpected :=
+    "def multiStatementFallback (candidate : Option Nat) : Option Nat := do\n"
+    ++ "  let some value := candidate |\n"
+    ++ "    if candidate.isNone then\n"
+    ++ "      reportFailure; return none\n"
+    ++ "    throwError \"candidate was rejected\"\n"
+    ++ "  return value\n"
+  let multiStatementFallbackResult ←
+    Formatter.formatSourceWithEnvDetailed env multiStatementFallbackSource
+      "multi-statement-do-let-fallback.lean"
+  assertTrue "multi-statement do-let fallback does not fall back"
+    (!multiStatementFallbackResult.fellBack)
+  assertTrue "multi-statement do-let fallback preserves code"
+    (← codePreservedIgnoringWhitespace env multiStatementFallbackSource
+        multiStatementFallbackResult.formatted)
+  assertEq "multi-statement do-let fallback stays beneath the pipe"
+    multiStatementFallbackExpected multiStatementFallbackResult.formatted
+  let multiStatementFallbackAgain ←
+    Formatter.formatSourceWithEnv env multiStatementFallbackResult.formatted
+      "multi-statement-do-let-fallback-formatted.lean"
+  assertEq "multi-statement do-let fallback is idempotent"
+    multiStatementFallbackResult.formatted multiStatementFallbackAgain
 
 def assertDbgTraceBodyUsesTermBase (env : Lean.Environment) : IO Unit := do
   let source :=

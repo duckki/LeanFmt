@@ -1209,13 +1209,21 @@ consume value
 The successful continuation also aligns with `let`. Formatting inside the
 value and fallback remains the responsibility of their own expression rules.
 When the fallback is a multiline `do` sequence, its statements begin one level
-beneath `|`, while the successful continuation returns to the `let` column:
+beneath `|`, while the successful continuation returns to the `let` column. This
+applies to both `←` and `:=` fallback declarations:
 
 ```lean
 let some value ← candidate
 | -- Recover locally.
   let fallback ← recover
   return fallback
+consume value
+```
+
+```lean
+let some value := candidate |
+  reportFailure
+  return none
 consume value
 ```
 
