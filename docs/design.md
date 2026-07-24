@@ -506,7 +506,9 @@ where
 
 Termination clauses follow the same ownership rule. `termination_by` and
 `decreasing_by` return to the base column of the declaration they modify. A
-termination measure may wrap one level beneath its keyword. The tactic after
+termination measure may wrap one level beneath its keyword. When a mutual
+termination measure names its parameters before `=>`, the names flow across
+lines and `=>` remains attached to the final parameter. The tactic after
 `decreasing_by` retains its source layout, rebased beneath the formatted clause.
 
 ```lean
@@ -520,6 +522,13 @@ where
   termination_by n
   decreasing_by
     exact helperProof
+```
+
+```lean
+termination_by
+  _schema _variableDefinitions fragments _parentType selection _field _hvalid _hbodies
+    _hfield =>
+  (fragments.length, sizeOf selection, 0)
 ```
 
 ### Theorems and proofs

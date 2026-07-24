@@ -1748,6 +1748,58 @@ def assertTerminationClausesUseDeclarationBase (env : Lean.Environment) : IO Uni
   assertEq "equation termination clause alignment is idempotent"
     equationResult.formatted equationFormattedAgain
 
+  let parameterSource :=
+    "def recurse : Nat := recurse\n"
+    ++ "termination_by\n"
+    ++ "  _schema _variableDefinitions fragments _parentType selection _field _hvalid _hbodies _hfield =>\n"
+    ++ "  (fragments.length, sizeOf selection, 0)\n"
+    ++ "decreasing_by exact proof\n"
+  let parameterExpected :=
+    "def recurse : Nat :=\n"
+    ++ "  recurse\n"
+    ++ "termination_by\n"
+    ++ "  _schema _variableDefinitions fragments _parentType selection _field _hvalid _hbodies\n"
+    ++ "    _hfield =>\n"
+    ++ "  (fragments.length, sizeOf selection, 0)\n"
+    ++ "decreasing_by exact proof\n"
+  let parameterResult ←
+    Formatter.formatSourceWithEnvDetailed env parameterSource
+      "termination-clause-parameters.lean"
+  assertTrue "termination clause parameters do not fall back" (!parameterResult.fellBack)
+  assertEq "termination clause parameters wrap before the final parameter"
+    parameterExpected parameterResult.formatted
+  assertTrue "termination clause parameter wrapping preserves code"
+    (← codePreservedIgnoringWhitespace env parameterSource parameterResult.formatted)
+  let parameterModule ←
+    SyntaxTree.parseModuleStringWithEnv env parameterResult.formatted
+      "termination-clause-parameters-formatted.lean"
+  assertTrue "termination clause parameter wrapping has no overflow"
+    (Formatter.Diagnostics.overflowOccurrences parameterModule).isEmpty
+  assertTrue "termination clause parameters have complete rule coverage"
+    (Formatter.Diagnostics.missingRuleOccurrencesForModule parameterModule).isEmpty
+  let parametersFormattedAgain ←
+    Formatter.formatSourceWithEnv env parameterResult.formatted
+      "termination-clause-parameters-formatted-again.lean"
+  assertEq "termination clause parameter wrapping is idempotent"
+    parameterResult.formatted parametersFormattedAgain
+
+  let shortParameterSource :=
+    "def shortRecurse : Nat := shortRecurse\n"
+    ++ "termination_by _boolCase selectionSet =>\n"
+    ++ "  SelectionSet.size selectionSet\n"
+    ++ "decreasing_by exact proof\n"
+  let shortParameterExpected :=
+    "def shortRecurse : Nat :=\n"
+    ++ "  shortRecurse\n"
+    ++ "termination_by _boolCase selectionSet =>\n"
+    ++ "  SelectionSet.size selectionSet\n"
+    ++ "decreasing_by exact proof\n"
+  let shortParameterFormatted ←
+    Formatter.formatSourceWithEnv env shortParameterSource
+      "short-termination-clause-parameters.lean"
+  assertEq "short termination clause parameters remain after the keyword"
+    shortParameterExpected shortParameterFormatted
+
   let letRecSource :=
     "def localCountdown (n : Nat) : Nat :=\n"
     ++ "  let rec go (n : Nat) : Nat :=\n"

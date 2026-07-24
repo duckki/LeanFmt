@@ -753,6 +753,39 @@ def regroupDecreasingByChildren (children : Array Tree) : Array Tree :=
       #[decreasingByKeyword, .node .proofBody <| childrenRange children 1 children.size]
   | none => children
 
+def regroupTerminationByParameters (parameters arrow : Tree) : Tree :=
+  match parameters with
+  | .node (.raw `null) parameterChildren =>
+      match parameterChildren.back? with
+      | some finalParameter =>
+          .node .signatureParameters
+          <| childrenRange parameterChildren 0 (parameterChildren.size - 1)
+              ++ #[.node (.raw `null) #[finalParameter, arrow]]
+      | none => .node .signatureParameters #[arrow]
+  | _ =>
+      .node .signatureParameters #[.node (.raw `null) #[parameters, arrow]]
+
+def regroupTerminationByChildren (children : Array Tree) : Array Tree :=
+  match children.findIdx?
+          fun child =>
+            match child with
+            | .node (.raw `null) parts =>
+                parts.size == 2
+                && parts[1]?.any
+                    fun arrow => arrow.firstToken?.any fun token => token.lexeme == "=>"
+            | _ => false with
+  | some parameterArrowIndex =>
+      match children[parameterArrowIndex]? with
+      | some (.node (.raw `null) parameterArrowParts) =>
+          match parameterArrowParts[0]?, parameterArrowParts[1]? with
+          | some parameters, some arrow =>
+              childrenRange children 0 parameterArrowIndex
+              ++ #[regroupTerminationByParameters parameters arrow]
+              ++ childrenRange children (parameterArrowIndex + 1) children.size
+          | _, _ => children
+      | _ => children
+  | none => children
+
 def regroupTerminationSuffixChildren (children : Array Tree) : Array Tree :=
   children.foldl
     (fun clauses child =>
@@ -994,6 +1027,8 @@ def regroupRawNode (kind : SyntaxNodeKind) (children : Array Tree) : Tree :=
     .node (.raw kind) (regroupByTacticChildren children)
   else if kind == `Lean.Parser.Termination.decreasingBy then
     .node (.raw kind) (regroupDecreasingByChildren children)
+  else if kind == `Lean.Parser.Termination.terminationBy then
+    .node (.raw kind) (regroupTerminationByChildren children)
   else if kind == `Lean.Parser.Termination.suffix then
     .node (.raw kind) (regroupTerminationSuffixChildren children)
   else if kind == `Lean.Parser.Term.whereFinally then

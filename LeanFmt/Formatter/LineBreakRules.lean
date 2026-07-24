@@ -1202,14 +1202,21 @@ def patternAliasParenBreaks (context : RuleContext) (segment : Segment)
 
 def signatureParameterBreaks (context : RuleContext) (segment : Segment)
     : List BreakPoint :=
+  let terminationByParameters :=
+    parentIsRawKind context `Lean.Parser.Termination.terminationBy
   let indentLevels :=
     if (parentIsRawKind context `Lean.Parser.Command.optDeclSig
           && grandparentIsRawKind context `Lean.Parser.Command.ctor)
-        || parentIsRawKind context `Lean.«command__Unif_hint____Where_|_-⊢__» then
+        || parentIsRawKind context `Lean.«command__Unif_hint____Where_|_-⊢__»
+        || terminationByParameters then
       1
     else
       2
-  segment.indexes.filterMap fun index => leadingBreak? segment index indentLevels
+  segment.indexes.filterMap
+    fun index =>
+      let indentLevels :=
+        if terminationByParameters && index == segment.start then 0 else indentLevels
+      leadingBreak? segment index indentLevels
 
 def signatureBreaks (context : RuleContext) (segment : Segment) : List BreakPoint :=
   let indentLevels :=
@@ -1637,10 +1644,15 @@ def terminationSuffixBreaks (_context : RuleContext) (segment : Segment)
   baseAlignedTrailingClauseBreaks segment
 
 def terminationByBreaks (_context : RuleContext) (segment : Segment) : List BreakPoint :=
-  match (nonemptyChildIndexes segment).reverse with
-  | measureIndex :: _ =>
-      [boundaryBreak? segment measureIndex 1].filterMap id
-  | [] => []
+  let parameterBreak :=
+    segment.indexes.find?
+      fun index =>
+        match segment.child? index with
+        | some (.node .signatureParameters _) => true
+        | _ => false
+  let measureBreak := (nonemptyChildIndexes segment).getLast?
+  [parameterBreak, measureBreak].filterMap id
+  |>.filterMap fun index => boundaryBreak? segment index 1
 
 def decreasingByBreaks (_context : RuleContext) (segment : Segment) : List BreakPoint :=
   [boundaryBreak? segment 1 1].filterMap id
@@ -1687,6 +1699,7 @@ def terminationByRule : LineBreakRule :=
   {
     name := "terminationBy"
     useExistingBreaks := fun _ _ => true
+    flow := fun _ _ => true
     inheritBase := fun _ _ => true
     breakPoints := terminationByBreaks
   }
