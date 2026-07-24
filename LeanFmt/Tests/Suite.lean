@@ -1308,6 +1308,22 @@ def assertStructureBreaksTopLevelFields (env : Lean.Environment) : IO Unit := do
     Formatter.formatSourceWithEnv env source "structure-top-level-fields.lean"
   assertEq "structure breaks top-level fields" expected formatted
 
+def assertPrivateStructureFieldsUseCommandBase (env : Lean.Environment) : IO Unit := do
+  let source :=
+    "private structure BadChar (N : Nat) where\n"
+    ++ "  /-- The primary field. -/\n"
+    ++ "  value : Nat\n"
+    ++ "  firstProof : value = value\n"
+    ++ "  secondProof : value = value\n"
+  let formatted ←
+    Formatter.formatSourceWithEnv env source "private-structure-field-base.lean"
+  assertEq "private structure fields use the command base" source formatted
+  let formattedAgain ←
+    Formatter.formatSourceWithEnv env formatted
+      "private-structure-field-base-formatted.lean"
+  assertEq "private structure field formatting is idempotent"
+    formatted formattedAgain
+
 def assertStructureFieldProofBreaksAfterAssignment (env : Lean.Environment)
     : IO Unit := do
   let source :=
@@ -1321,6 +1337,52 @@ def assertStructureFieldProofBreaksAfterAssignment (env : Lean.Environment)
   let formatted ←
     Formatter.formatSourceWithEnv env source "structure-field-proof-break.lean"
   assertEq "structure field proof breaks after assignment" expected formatted
+
+def assertStructureInstanceMethodBindersFlow (env : Lean.Environment) : IO Unit := do
+  let source :=
+    "class LongMethod (F : Type) where\n"
+    ++ "  method (a : F) (ι : Type) [Inhabited ι] (c : ι → F) (hc : c = c)\n"
+    ++ "    (u : ι → F) (v : F) (h : a = a) : F\n"
+    ++ "\n"
+    ++ "instance {F : Type} [Inhabited F] : LongMethod F where\n"
+    ++ "  method (a : F) (ι : Type) [Inhabited ι] (c : ι → F) (hc : c = c) (u : ι → F) (v : F) (h : a = a) := a\n"
+  let formatted ←
+    Formatter.formatSourceWithEnv env source "structure-instance-method-binders.lean"
+      { lineWidth := 100 }
+  assertTrue "structure instance method binder formatting preserves code"
+    (← codePreservedIgnoringWhitespace env source formatted)
+  assertTextContains "structure instance method binders flow before deep terms"
+    formatted "\n      (h : a = a)"
+  let moduleTree ←
+    SyntaxTree.parseModuleStringWithEnv env formatted
+      "structure-instance-method-binders-formatted.lean"
+  assertTrue "structure instance method formatting avoids overflow"
+    (Formatter.Diagnostics.overflowOccurrences moduleTree { lineWidth := 100 }).isEmpty
+  let formattedAgain ←
+    Formatter.formatSourceWithEnv env formatted
+      "structure-instance-method-binders-formatted.lean" { lineWidth := 100 }
+  assertEq "structure instance method binder formatting is idempotent"
+    formatted formattedAgain
+
+def assertBinderDefaultValueUsesBinderBase (env : Lean.Environment) : IO Unit := do
+  let source :=
+    "def withDefault (H : ∀ {a b c d : Nat}, a = b → b = c → c = d → Nat := fun {_ _ _ _} h₁ h₂ h₃ => veryLongFunctionNameForDefaultBinder h₁ h₂ h₃) : Nat := 0\n"
+  let formatted ←
+    Formatter.formatSourceWithEnv env source "binder-default-value-base.lean"
+      { lineWidth := 100 }
+  assertTrue "binder default value formatting preserves code"
+    (← codePreservedIgnoringWhitespace env source formatted)
+  assertTextContains "binder default value breaks from the binder base"
+    formatted " :=\n        fun {_ _ _ _}"
+  let moduleTree ←
+    SyntaxTree.parseModuleStringWithEnv env formatted
+      "binder-default-value-base-formatted.lean"
+  assertTrue "binder default value formatting avoids overflow"
+    (Formatter.Diagnostics.overflowOccurrences moduleTree { lineWidth := 100 }).isEmpty
+  let formattedAgain ←
+    Formatter.formatSourceWithEnv env formatted
+      "binder-default-value-base-formatted.lean" { lineWidth := 100 }
+  assertEq "binder default value formatting is idempotent" formatted formattedAgain
 
 def assertParenthesizedStructureDefaultUsesFieldBase (env : Lean.Environment)
     : IO Unit := do
@@ -4087,6 +4149,21 @@ def assertShortStructureExtendsHeaderStaysFlat (env : Lean.Environment) : IO Uni
     Formatter.formatSourceWithEnv env source "short-structure-extends-header.lean"
   assertEq "short structure extends header stays flat" source formatted
 
+def assertStructureExtendsDoesNotIndentFollowingCommand
+    (env : Lean.Environment) : IO Unit := do
+  let source :=
+    "structure Child\n"
+    ++ "    extends Parent where\n"
+    ++ "  field : Nat\n"
+    ++ "\n"
+    ++ "/-- The following command remains at the command base. -/\n"
+    ++ "#check Nat\n"
+  let formatted ←
+    Formatter.formatSourceWithEnv env source
+      "structure-extends-following-command.lean"
+  assertEq "structure extends does not indent the following command"
+    source formatted
+
 def assertInductiveAlternativesBreakMandatory (env : Lean.Environment) : IO Unit := do
   let source := "inductive Color where | red | green | blue\n"
   let expected :=
@@ -6040,7 +6117,10 @@ def runBasicFormattingTests (env : Lean.Environment) : IO Unit := do
   assertLongDerivingInstanceFlowsClasses env
   assertMatchMotiveUsesTransparentRule env
   assertStructureBreaksTopLevelFields env
+  assertPrivateStructureFieldsUseCommandBase env
   assertStructureFieldProofBreaksAfterAssignment env
+  assertStructureInstanceMethodBindersFlow env
+  assertBinderDefaultValueUsesBinderBase env
   assertParenthesizedStructureDefaultUsesFieldBase env
   assertAbbrevSourceBreakAfterAssign env
   assertMatchArmKeepsDoOnArrowLine env
@@ -6171,6 +6251,7 @@ def runCollectionAndDeclarationTests (env : Lean.Environment) : IO Unit := do
   assertStructureFieldTypeBreakIndentation env
   assertStructureExtendsBreaksBeforeWhereFields env
   assertShortStructureExtendsHeaderStaysFlat env
+  assertStructureExtendsDoesNotIndentFollowingCommand env
   assertInductiveAlternativesBreakMandatory env
   assertStructInstanceFieldsBreakMandatory env
   assertStructInstanceFieldsBreakMandatoryBetweenFields env

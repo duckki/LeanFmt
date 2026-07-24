@@ -626,9 +626,18 @@ def commandAttributeIdentifierList (context : RuleContext) : Bool :=
       parent.rawKind? == some `Lean.Parser.Command.attribute && parent.childIndex == 4
   | _ => false
 
+def parentIsBinderDefaultWrapper (context : RuleContext) : Bool :=
+  match context.ancestors with
+  | parent :: _ =>
+      (parent.rawKind? == some `Lean.Parser.Term.explicitBinder
+        || parent.rawKind? == some `Lean.Parser.Term.implicitBinder)
+      && parent.childIndex == 3
+  | _ => false
+
 def nullInheritBase (context : RuleContext) (segment : Segment) : Bool :=
   defaultInheritBase context segment
   || singletonArrayItemWrapper context segment
+  || parentIsBinderDefaultWrapper context
   || quantifierBinderSequence context
   || parentIsRawKind context `Lean.Parser.Term.structInstFields
   || parentIsRawKind context `Lean.Parser.Term.letRecDecls
@@ -1190,6 +1199,10 @@ def signatureBreaks (context : RuleContext) (segment : Segment) : List BreakPoin
 def binderBreaks (_context : RuleContext) (segment : Segment) : List BreakPoint :=
   [breakBeforeLexeme? segment ":" 1].filterMap id
 
+def binderDefaultBreaks (_context : RuleContext) (segment : Segment)
+    : List BreakPoint :=
+  [boundaryBreak? segment 1 1].filterMap id
+
 /-! ### Application, signature, and binder rule values -/
 
 def applicationRule : LineBreakRule :=
@@ -1228,6 +1241,13 @@ def binderRule : LineBreakRule :=
     name := "binder"
     inheritBase := fun context _ => parentIsSignatureParameters context
     breakPoints := binderBreaks
+  }
+
+def binderDefaultRule : LineBreakRule :=
+  {
+    name := "binderDefault"
+    inheritBase := fun _ _ => true
+    breakPoints := binderDefaultBreaks
   }
 
 /-! ### Bindings and `do` syntax -/
@@ -1666,6 +1686,13 @@ def structureRule : LineBreakRule :=
     name := "structure"
     useExistingBreaks := fun _ _ => true
     flow := fun context segment => !(structureBreaks context segment).isEmpty
+    inheritBase :=
+      fun context _ =>
+        match context.ancestors with
+        | parent :: _ =>
+            (List.range parent.childIndex).any
+              fun index => parent.segment.parentChild? index |>.any treeHasContent
+        | [] => false
     breakPoints := structureBreaks
   }
 
@@ -2636,7 +2663,7 @@ def ruleFor : SyntaxTree.Tree → Option LineBreakRule
   | .node (.raw `Lean.Parser.Term.matchExprAlt) _ => some matchExprAltRule
   | .node (.raw `Lean.Parser.Term.matchExprElseAlt) _ => some matchExprAltRule
   | .node (.raw `Lean.Parser.Term.matchExprPat) _ => some defaultRule
-  | .node (.raw `Lean.Parser.Term.binderDefault) _ => some defaultRule
+  | .node (.raw `Lean.Parser.Term.binderDefault) _ => some binderDefaultRule
   | .node (.raw `Lean.Parser.Term.namedArgument) _ => some defaultRule
   | .node (.raw `Lean.Parser.Term.strictImplicitBinder) _ => some defaultRule
   | .node (.raw `Lean.Parser.Term.anonymousCtor) _ => some anonymousCtorRule
