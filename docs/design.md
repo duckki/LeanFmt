@@ -272,6 +272,16 @@ distinction safe:
 { data := .null }
 ```
 
+When a brace-delimited term contains multiple comma-separated items and does not
+fit, it uses the same balanced layout as other collections:
+
+```lean
+{
+  first,
+  second
+}
+```
+
 LeanFmt does not infer that whitespace before a dot is always removable. In
 Lean, a dot after an expression can also begin an anonymous constructor, so the
 syntax tree and original adjacency are respected.

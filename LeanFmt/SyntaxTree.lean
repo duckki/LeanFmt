@@ -876,6 +876,7 @@ def regroupDerivingCommandChildren (children : Array Tree) : Array Tree :=
 def isDelimitedCollectionKind (kind : SyntaxNodeKind) : Bool :=
   kind == `Lean.Parser.Term.tuple
   || kind == `Lean.Parser.Term.anonymousCtor
+  || kind == `«term{_}»
   || kind == `«term[_]»
   || kind == `«term#[_,]»
   || kind == `Matrix.vecNotation

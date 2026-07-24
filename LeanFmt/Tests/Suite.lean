@@ -167,10 +167,19 @@ def assertTacticQuotationAntiquotationPreserved (env : Lean.Environment) : IO Un
 
 def assertFullyQualifiedQuotedNamesStayTight (env : Lean.Environment) : IO Unit := do
   let source :=
-    "def quotedNames : List Name :=\n"
-    ++ "  [``Lean.Parser.Tactic.tacticSorry, ``Lean.Parser.Tactic.tacticRepeat_,\n"
+    "def quotedNames : Std.HashSet Name :=\n"
+    ++ "  { ``Lean.Parser.Tactic.tacticSorry, ``Lean.Parser.Tactic.tacticRepeat_,\n"
     ++ "    -- A comment between quoted names must not split either prefix.\n"
-    ++ "    ``Lean.Parser.Tactic.tacticSeq1Indented, ``Lean.Parser.Term.byTactic]\n"
+    ++ "    ``Lean.Parser.Tactic.tacticSeq1Indented, ``Lean.Parser.Term.byTactic }\n"
+  let expected :=
+    "def quotedNames : Std.HashSet Name :=\n"
+    ++ "  {\n"
+    ++ "    ``Lean.Parser.Tactic.tacticSorry,\n"
+    ++ "    ``Lean.Parser.Tactic.tacticRepeat_,\n"
+    ++ "    -- A comment between quoted names must not split either prefix.\n"
+    ++ "    ``Lean.Parser.Tactic.tacticSeq1Indented,\n"
+    ++ "    ``Lean.Parser.Term.byTactic\n"
+    ++ "  }\n"
   let result ←
     Formatter.formatSourceWithEnvDetailed env source "quoted-names.lean"
       { lineWidth := 60 }
@@ -181,6 +190,8 @@ def assertFullyQualifiedQuotedNamesStayTight (env : Lean.Environment) : IO Unit 
     result.formatted "` `"
   assertTextLacks "fully qualified quoted name prefix does not gain a line break"
     result.formatted "`\n`"
+  assertEq "comma-separated braced terms use balanced collection layout"
+    expected result.formatted
   let formattedAgain ←
     Formatter.formatSourceWithEnv env result.formatted "quoted-names-formatted.lean"
       { lineWidth := 60 }

@@ -1908,6 +1908,21 @@ def structInstRule : LineBreakRule :=
     breakPoints := structInstBreaks
   }
 
+def bracedTermBreaks (context : RuleContext) (segment : Segment) : List BreakPoint :=
+  let structureBreaks := structInstBreaks context segment
+  if structureBreaks.isEmpty then delimitedCollectionBreaks segment else structureBreaks
+
+def bracedTermRule : LineBreakRule :=
+  {
+    name := "bracedTerm"
+    inheritBase := fun _ segment => 1 < delimitedItemCount segment
+    liftsTailIndentation :=
+      fun _ segment =>
+        structInstHasWith segment && !structInstHasMultipleUpdateSources segment
+    roundUpBaseIndentation := true
+    breakPoints := bracedTermBreaks
+  }
+
 def structureUpdateRule : LineBreakRule :=
   {
     name := "structureUpdate"
@@ -3232,7 +3247,7 @@ def ruleFor : SyntaxTree.Tree → Option LineBreakRule
   | .node (.raw `antiquotNestedExpr) _ => some defaultRule
   | .node (.raw `Lean.Parser.«command__Dsimproc__[_]_(_):=_») _ =>
       some defaultRule
-  | .node (.raw `«term{_}») _ => some structInstRule
+  | .node (.raw `«term{_}») _ => some bracedTermRule
   | .node (.raw `«term[_]») _ => some arrayRule
   | .node (.raw `«term#[_,]») _ => some arrayRule
   | .node (.raw `Matrix.vecNotation) _ => some arrayRule
