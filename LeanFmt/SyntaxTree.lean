@@ -803,6 +803,7 @@ def isDelimitedCollectionKind (kind : SyntaxNodeKind) : Bool :=
   || kind == `«term[_]»
   || kind == `«term#[_,]»
   || kind == `Matrix.vecNotation
+  || kind == `Matrix.matrixNotation
 
 partial def flattenDelimitedCollectionChildren (children : Array Tree) : Array Tree :=
   match children.findIdx? fun child => rawKind? child == some `null with

@@ -873,7 +873,11 @@ def delimitedItemIndexes (segment : Segment) : List Nat :=
   match nonemptyChildIndexes segment with
   | [] | [_] => []
   | _open :: rest =>
-      rest.dropLast.filter fun index => !childStartsWithLexeme segment index ","
+      rest.dropLast.filter
+        fun index =>
+          !childStartsWithLexeme segment index ","
+          && !(segment.rawKind? == some `Matrix.matrixNotation
+            && childStartsWithLexeme segment index ";")
 
 def delimitedItemCount (segment : Segment) : Nat :=
   (delimitedItemIndexes segment).length
@@ -916,6 +920,16 @@ def arrayItemCount (segment : Segment) : Nat :=
 
 def arrayBreaks (_context : RuleContext) (segment : Segment) : List BreakPoint :=
   delimitedCollectionBreaks segment
+
+def matrixNotationRule : LineBreakRule :=
+  {
+    name := "matrixNotation"
+    useExistingBreaks := fun _ _ => true
+    flow := fun _ _ => true
+    inheritBase := fun _ segment => 1 < delimitedItemCount segment
+    roundUpBaseIndentation := true
+    breakPoints := fun _ segment => delimitedCollectionBreaks segment
+  }
 
 def structInstFieldsMandatory (context : RuleContext) (segment : Segment) : Bool :=
   parentIsRawKind context `Lean.Parser.Term.structInstFields
@@ -2866,6 +2880,7 @@ def ruleFor : SyntaxTree.Tree → Option LineBreakRule
   | .node (.raw `«term[_]») _ => some arrayRule
   | .node (.raw `«term#[_,]») _ => some arrayRule
   | .node (.raw `Matrix.vecNotation) _ => some arrayRule
+  | .node (.raw `Matrix.matrixNotation) _ => some matrixNotationRule
   | .node (.raw `«term__[_]_?») _ => some transparentRule
   -- Syntax with specialized formatting rules.
   | .node (.raw `Lean.Parser.Command.declaration) _ => some declarationRule

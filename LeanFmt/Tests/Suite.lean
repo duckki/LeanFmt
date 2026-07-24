@@ -5608,6 +5608,46 @@ def assertMathlibLowRiskSyntaxKindsHaveRules : IO Unit := do
             { index := 4, indentLevels := 0 }
           ])
   | none => throw <| IO.userError "matrix vector notation has no rule"
+  let matrixTree :=
+    SyntaxTree.regroupTree
+    <| SyntaxTree.Tree.node (.raw `Matrix.matrixNotation)
+      #[
+        .leaf (syntheticAtomToken "!!["),
+        .node (.raw `null)
+          #[
+            .node (.raw `null)
+              #[
+                .leaf (syntheticAtomToken "a"),
+                .leaf (syntheticAtomToken ","),
+                .leaf (syntheticAtomToken "b")
+              ],
+            .leaf (syntheticAtomToken ";"),
+            .node (.raw `null)
+              #[
+                .leaf (syntheticAtomToken "c"),
+                .leaf (syntheticAtomToken ","),
+                .leaf (syntheticAtomToken "d")
+              ]
+          ],
+        .leaf (syntheticAtomToken "]")
+      ]
+  match matrixTree, Formatter.LineBreakRules.ruleFor matrixTree with
+  | .node _ children, some rule =>
+      assertTrue "matrix notation rows and columns are flattened for layout"
+        (children.size == 9)
+      assertEq "matrix notation uses its flowing collection rule"
+        "matrixNotation" rule.name
+      let matrixSegment := Formatter.LineBreakRules.Segment.ofTree matrixTree
+      assertTrue "matrix notation breaks before entries and the close delimiter"
+        (rule.breakPoints {} matrixSegment
+          == [
+            { index := 1, indentLevels := 1 },
+            { index := 3, indentLevels := 1 },
+            { index := 5, indentLevels := 1 },
+            { index := 7, indentLevels := 1 },
+            { index := 8, indentLevels := 0 }
+          ])
+  | _, _ => throw <| IO.userError "matrix notation has no regrouped rule"
   let ignoredKindNames :=
     [
       "token.«←»",
