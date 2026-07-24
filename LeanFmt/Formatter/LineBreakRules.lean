@@ -2920,6 +2920,7 @@ def ruleFor : SyntaxTree.Tree → Option LineBreakRule
   | .node (.raw `Lean.Parser.Term.letIdDeclNoBinders) _ => some letIdDeclRule
   | .node (.raw `Lean.Parser.Term.matchDiscr) _ => some transparentRule
   | .node (.raw `Lean.Parser.Term.doMatchExpr) _ => some matchExpressionRule
+  | .node (.raw `Lean.Parser.Term.doAssert) _ => some defaultRule
   | .node (.raw `Lean.Parser.Term.matchExprAlts) _ => some matchAltsRule
   | .node (.raw `Lean.Parser.Term.matchExprAlt) _ => some matchExprAltRule
   | .node (.raw `Lean.Parser.Term.matchExprElseAlt) _ => some matchExprAltRule
@@ -2963,6 +2964,9 @@ def ruleFor : SyntaxTree.Tree → Option LineBreakRule
   | .node (.raw `Lean.Parser.Tactic.tacticRfl) _ => some defaultRule
   | .node (.raw `Lean.Parser.Tactic.grind) _ => some defaultRule
   | .node (.raw `Lean.Parser.Tactic.optConfig) _ => some defaultRule
+  | .node (.raw `Lean.Parser.Tactic.posConfigItem) _ => some defaultRule
+  | .node (.raw `Lean.Parser.Tactic.negConfigItem) _ => some defaultRule
+  | .node (.raw `Lean.Parser.Tactic.valConfigItem) _ => some defaultRule
   | .node (.raw `Lean.Parser.Term.doNested) _ => some doRule
   | .node (.raw `Lean.Parser.Term.doSeqBracketed) _ => some defaultRule
   -- Known leaf-like parser nodes handled by generic spacing and layout.
@@ -2974,6 +2978,7 @@ def ruleFor : SyntaxTree.Tree → Option LineBreakRule
   | .node (.raw `scientific) _ => some defaultRule
   | .node (.raw `str) _ => some defaultRule
   | .node (.raw `name) _ => some defaultRule
+  | .node (.raw `Lean.Parser.Term.declName) _ => some defaultRule
   | .node (.raw `char) _ => some defaultRule
   | .node (.raw `fieldIdx) _ => some defaultRule
   | .node (.raw `patternIgnore) _ => some defaultRule
@@ -3177,6 +3182,15 @@ def ruleFor : SyntaxTree.Tree → Option LineBreakRule
   | .node (.raw `adaptationNoteCmd) _ => some defaultRule
   | .node (.raw `Lean.Parser.discrTreeSimpKeyCmd) _ => some defaultRule
   | .node (.raw `Lean.Elab.ConfigEval.declareTacticConfig) _ => some defaultRule
+  | .node (.raw `Lean.Elab.ConfigEval.deriveEvalExprUsingMeta) _ =>
+      some defaultRule
+  | .node (.raw `Lean.Elab.ConfigEval.configEntries) _ => some defaultRule
+  | .node (.raw `Lean.Elab.ConfigEval.configEntry) _ => some defaultRule
+  | .node (.raw `Lean.Elab.ConfigEval.configEntryHandler) _ => some defaultRule
+  | .node (.raw `Lean.Elab.ConfigEval.configEntryHandlerKey) _ =>
+      some defaultRule
+  | .node (.raw `Lean.Elab.ConfigEval.configEntryHandlerKeyPrefix) _ =>
+      some defaultRule
   | .node (.raw `adaptationNoteTermStx) _ => some defaultRule
   | .node (.raw `commandSuppress_compilation) _ => some defaultRule
   | .node (.raw `notation_class) _ => some defaultRule
