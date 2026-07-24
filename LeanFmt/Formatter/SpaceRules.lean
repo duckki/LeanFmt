@@ -44,8 +44,55 @@ def collapseNewlineRunsAux : List Char → Nat → List Char → List Char
 def collapseNewlineRuns (text : String) : String :=
   String.ofList <| collapseNewlineRunsAux text.toList 0 []
 
-def cleanTrivia (text : String) : String :=
+def cleanWhitespaceTrivia (text : String) : String :=
   collapseNewlineRuns <| stripWhitespaceBeforeNewlines text
+
+partial def takeLineCommentTriviaAux (reversed : List Char)
+    : List Char → List Char × List Char
+  | [] => (reversed.reverse, [])
+  | chars@('\n' :: _) => (reversed.reverse, chars)
+  | char :: rest => takeLineCommentTriviaAux (char :: reversed) rest
+
+partial def takeBlockCommentTriviaAux (depth : Nat) (reversed : List Char)
+    : List Char → List Char × List Char
+  | [] => (reversed.reverse, [])
+  | '/' :: '-' :: rest =>
+      takeBlockCommentTriviaAux (depth + 1) ('-' :: '/' :: reversed) rest
+  | '-' :: '/' :: rest =>
+      let reversed := '/' :: '-' :: reversed
+      if depth == 1 then
+        (reversed.reverse, rest)
+      else
+        takeBlockCommentTriviaAux (depth - 1) reversed rest
+  | char :: rest => takeBlockCommentTriviaAux depth (char :: reversed) rest
+
+def pushNonemptyString (text : String) (pieces : List String) : List String :=
+  if text.isEmpty then pieces else text :: pieces
+
+partial def cleanTriviaAux (outsideReversed : List Char)
+    (piecesReversed : List String) : List Char → List String
+  | [] =>
+      (pushNonemptyString
+        (cleanWhitespaceTrivia <| String.ofList outsideReversed.reverse)
+        piecesReversed).reverse
+  | '-' :: '-' :: rest =>
+      let outside := cleanWhitespaceTrivia <| String.ofList outsideReversed.reverse
+      let (comment, rest) := takeLineCommentTriviaAux ['-', '-'] rest
+      let piecesReversed :=
+        pushNonemptyString (String.ofList comment)
+        <| pushNonemptyString outside piecesReversed
+      cleanTriviaAux [] piecesReversed rest
+  | '/' :: '-' :: rest =>
+      let outside := cleanWhitespaceTrivia <| String.ofList outsideReversed.reverse
+      let (comment, rest) := takeBlockCommentTriviaAux 1 ['-', '/'] rest
+      let piecesReversed :=
+        pushNonemptyString (String.ofList comment)
+        <| pushNonemptyString outside piecesReversed
+      cleanTriviaAux [] piecesReversed rest
+  | char :: rest => cleanTriviaAux (char :: outsideReversed) piecesReversed rest
+
+def cleanTrivia (text : String) : String :=
+  String.join <| cleanTriviaAux [] [] (normalizeLineEndings text).toList
 
 def stripLeadingHorizontalWhitespace (line : String) : String :=
   (line.dropWhile isHorizontalWhitespace).toString
@@ -53,37 +100,48 @@ def stripLeadingHorizontalWhitespace (line : String) : String :=
 def containsSubstring (text needle : String) : Bool :=
   text.contains needle
 
+partial def blockCommentDepthAfterChars : Nat → List Char → Nat
+  | depth, '/' :: '-' :: rest =>
+      blockCommentDepthAfterChars (depth + 1) rest
+  | depth, '-' :: '/' :: rest =>
+      blockCommentDepthAfterChars (depth - 1) rest
+  | depth, _ :: rest => blockCommentDepthAfterChars depth rest
+  | depth, [] => depth
+
+def blockCommentDepthAfterLine (depth : Nat) (line : String) : Nat :=
+  if depth == 0 then
+    let stripped := stripLeadingHorizontalWhitespace line
+    if stripped.startsWith "/-" then
+      blockCommentDepthAfterChars 0 stripped.toList
+    else
+      0
+  else
+    blockCommentDepthAfterChars depth line.toList
+
 def lineOpensBlockComment (line : String) : Bool :=
-  let stripped := stripLeadingHorizontalWhitespace line
-  stripped.startsWith "/-" && !containsSubstring stripped "-/"
+  0 < blockCommentDepthAfterLine 0 line
 
-def lineClosesBlockComment (line : String) : Bool :=
-  containsSubstring line "-/"
-
-def reindentCommentLine (insideBlock : Bool) (line indent : String) : String :=
-  if insideBlock then
+def reindentCommentLine (blockCommentDepth : Nat) (line indent : String) : String :=
+  if 0 < blockCommentDepth then
     line
   else
     let stripped := stripLeadingHorizontalWhitespace line
     if stripped.isEmpty then indent else indent ++ stripped
 
-def reindentCommentLines (indent : String) : Bool → List String → List String
+def reindentCommentLines (indent : String) : Nat → List String → List String
   | _, [] => []
-  | insideBlock, line :: rest =>
-      let adjusted := reindentCommentLine insideBlock line indent
-      let insideBlock :=
-        if insideBlock then
-          !lineClosesBlockComment line
-        else
-          lineOpensBlockComment line
-      adjusted :: reindentCommentLines indent insideBlock rest
+  | blockCommentDepth, line :: rest =>
+      let adjusted := reindentCommentLine blockCommentDepth line indent
+      let blockCommentDepth := blockCommentDepthAfterLine blockCommentDepth line
+      adjusted :: reindentCommentLines indent blockCommentDepth rest
 
 def reindentCommentTrivia (text indent : String) : String :=
   match (cleanTrivia text).splitOn "\n" with
   | [] => ""
   | firstLine :: rest =>
       String.intercalate "\n"
-      <| firstLine :: reindentCommentLines indent (lineOpensBlockComment firstLine) rest
+      <| firstLine
+          :: reindentCommentLines indent (blockCommentDepthAfterLine 0 firstLine) rest
 
 def commentTriviaForBreak (text indent : String) : String :=
   let adjusted := reindentCommentTrivia text indent
@@ -96,7 +154,7 @@ def commentTriviaForBreak (text indent : String) : String :=
   | [] => "\n" ++ indent
 
 def cleanFinalTrivia (text : String) : String :=
-  collapseNewlineRuns <| stripTrailingWhitespace text
+  cleanTrivia text
 
 def isFinalWhitespace : Char → Bool
   | '\n' => true

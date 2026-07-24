@@ -162,7 +162,7 @@ def assertPostfixSuperscriptSpacingPreservesParse (env : Lean.Environment) : IO 
 
 def assertBlockCommentInternalWhitespacePreservedByFormatting (env : Lean.Environment)
     : IO Unit := do
-  let comment := "/-\n" ++ "Copyright line\n"
+  let comment := "/-\n" ++ "Copyright line\n\n\n"
   let comment := comment ++ "  Indented author line keeps spacing\n" ++ "-/\n"
   let source := comment ++ "def commentAfterHeader := 0\n"
   let formatted ← Formatter.formatSourceWithEnv env source "block-comment-spacing.lean"
@@ -170,6 +170,19 @@ def assertBlockCommentInternalWhitespacePreservedByFormatting (env : Lean.Enviro
     (← codePreservedIgnoringWhitespace env source formatted)
   assertTextContains "block comment indentation is preserved" formatted
     "  Indented author line keeps spacing"
+  assertTextContains "block comment internal blank lines are preserved"
+    formatted "Copyright line\n\n\n  Indented author line"
+  let nestedSource :=
+    "/-\n"
+    ++ "Outer comment.\n"
+    ++ "/-- Nested documentation comment. -/\n"
+    ++ "  Indentation after the nested comment stays unchanged.\n"
+    ++ "-/\n"
+    ++ "def nestedCommentAfterHeader := 0\n"
+  let nestedFormatted ←
+    Formatter.formatSourceWithEnv env nestedSource "nested-block-comment-spacing.lean"
+  assertEq "nested block comment whitespace is preserved"
+    nestedSource nestedFormatted
 
 def assertModuleDocInternalBlankLinesPreservedByFormatting (env : Lean.Environment)
     : IO Unit := do
