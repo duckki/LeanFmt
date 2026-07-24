@@ -595,6 +595,25 @@ def splitDeclarationAnnotations? : Tree → Option (Tree × Tree)
       some (annotations, .node kind (children.set! modifierIndex remainingModifiers))
   | _ => none
 
+partial def isDocCommentContainer : Tree → Bool
+  | .node (.raw `Lean.Parser.Command.docComment) _ => true
+  | .node (.raw `null) children =>
+      let presentChildren := children.filter fun child => child.firstToken?.isSome
+      !presentChildren.isEmpty && presentChildren.all isDocCommentContainer
+  | _ => false
+
+def splitDirectCommandDocComment? : Tree → Option (Tree × Tree)
+  | .node kind children => do
+      let annotationIndex ←
+        children.findIdx? fun child =>
+          child.firstToken?.isSome
+      let annotation ← children[annotationIndex]?
+      if isDocCommentContainer annotation then
+        some (annotation, .node kind (children.set! annotationIndex .missing))
+      else
+        none
+  | _ => none
+
 def annotatedDeclarationTree (annotations modifiers declaration : Tree) : Tree :=
   let children :=
     if modifiers.firstToken?.isSome then
@@ -922,7 +941,11 @@ def regroupTopLevelCommandAnnotations (tree : Tree) : Tree :=
   match splitDeclarationAnnotations? tree with
   | some (annotations, command) =>
       annotatedDeclarationTree annotations .missing command
-  | none => tree
+  | none =>
+      match splitDirectCommandDocComment? tree with
+      | some (annotations, command) =>
+          annotatedDeclarationTree annotations .missing command
+      | none => tree
 
 def regroupTopLevelAnnotations : Tree → Tree
   | .node (.raw `Lean.Parser.Module.module) children =>

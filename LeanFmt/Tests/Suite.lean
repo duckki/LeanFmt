@@ -5083,6 +5083,27 @@ def assertFormatterArchitecture : IO Unit := do
   assertTrue "extended top-level commands break after leading annotations"
     (annotatedRule.breakPoints context annotatedSegment
       |>.any fun breakPoint => breakPoint.index == 1)
+  let docComment :=
+    SyntaxTree.Tree.node (.raw `Lean.Parser.Command.docComment)
+      #[.leaf (syntheticAtomToken "/-- Documented custom command. -/")]
+  let documentedCustomCommand :=
+    SyntaxTree.Tree.node (.raw `documentedCustomCommand)
+      #[
+        .node (.raw `null) #[docComment],
+        .missing,
+        .leaf (syntheticAtomToken "documented_custom_command")
+      ]
+  let annotatedCustomCommand :=
+    SyntaxTree.regroupTopLevelCommandAnnotations documentedCustomCommand
+  let customCommandSegment :=
+    Formatter.LineBreakRules.Segment.ofTree annotatedCustomCommand
+  let customCommandRule :=
+    Formatter.LineBreakRules.formattingRuleFor annotatedCustomCommand
+  assertTrue "top-level custom command doc comments regroup as annotations"
+    (annotatedCustomCommand.containsNodeKind .annotatedDeclaration)
+  assertTrue "top-level custom commands break after doc comments"
+    (customCommandRule.breakPoints context customCommandSegment
+      |>.any fun breakPoint => breakPoint.index == 1)
 
 def assertDeclarationRuleTransparent : IO Unit := do
   let tree :=

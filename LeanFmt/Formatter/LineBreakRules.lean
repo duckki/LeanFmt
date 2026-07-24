@@ -723,7 +723,8 @@ def leadingAnnotationBreak? (segment : Segment) : Option BreakPoint := do
   let firstIndex ← (nonemptyChildIndexes segment).head?
   let firstChild ← segment.child? firstIndex
   if !(childStartsWithLexeme segment firstIndex "@["
-        || treeContainsLexeme "@[" firstChild) then
+        || treeContainsLexeme "@[" firstChild
+        || SyntaxTree.isDocCommentContainer firstChild) then
     none
   else
     let commandIndex ←
