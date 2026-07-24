@@ -2585,8 +2585,16 @@ def ruleFor : SyntaxTree.Tree → Option LineBreakRule
   | .node (.raw `Lean.Parser.Command.example) _ => some defaultRule
   | .node (.raw `Lean.Parser.Command.universe) _ => some defaultRule
   | .node (.raw `Lean.Parser.Command.syntax) _ => some defaultRule
+  | .node (.raw `Lean.Parser.Command.syntaxCat) _ => some defaultRule
   | .node (.raw `Lean.Parser.Command.macro) _ => some defaultRule
   | .node (.raw `Lean.Parser.Command.macro_rules) _ => some defaultRule
+  | .node (.raw `Lean.Parser.Command.elab) _ => some transparentRule
+  | .node (.raw `Lean.Parser.Command.elabTail) _ => some transparentRule
+  | .node (.raw `Lean.Parser.Command.elab_rules) _ => some defaultRule
+  | .node (.raw `Lean.Parser.Command.initialize) _ => some defaultRule
+  | .node (.raw `Lean.Parser.Command.initializeKeyword) _ => some defaultRule
+  | .node (.raw `Lean.runCmd) _ => some transparentRule
+  | .node (.raw `Lean.Option.registerOption) _ => some transparentRule
   | .node (.raw `Lean.Parser.Command.namedName) _ => some defaultRule
   | .node (.raw `Lean.Parser.Command.macroArg) _ => some defaultRule
   | .node (.raw `Lean.Parser.Command.macroTail) _ => some defaultRule
@@ -2628,8 +2636,14 @@ def ruleFor : SyntaxTree.Tree → Option LineBreakRule
   | .node (.raw `Lean.Parser.Command.classInductive) _ => some defaultRule
   | .node (.raw `Lean.Parser.commandUnseal__) _ => some defaultRule
   | .node (.raw `Lean.Parser.Command.recommended_spelling) _ => some defaultRule
+  | .node (.raw `Lean.guardMsgsCmd) _ => some commandInChainRule
   | .node (.raw `Topology.nhdsGT) _ => some transparentRule
   | .node (.raw `Topology.nhdsLT) _ => some transparentRule
+  | .node (.raw `Topology.nhdsNE) _ => some transparentRule
+  | .node (.raw `Topology.nhdsLE) _ => some transparentRule
+  | .node (.raw `Topology.nhdsGE) _ => some transparentRule
+  | .node (.raw `Topology.IsOpen_of) _ => some defaultRule
+  | .node (.raw `Topology.Continuous_of) _ => some defaultRule
   | .node (.raw `Lean.«command__Unif_hint____Where_|_-⊢__») _ =>
       some defaultRule
   | .node (.raw `Lean.unifConstraintElem) _ => some defaultRule
@@ -2684,6 +2698,11 @@ def ruleFor : SyntaxTree.Tree → Option LineBreakRule
   | .node (.raw `Lean.Parser.Term.open) _ => some defaultRule
   | .node (.raw `Lean.Parser.Term.termReturn) _ =>
       some <| prefixedTermRule "termReturn"
+  | .node (.raw `Lean.Parser.Term.panic) _ => some defaultRule
+  | .node (.raw `Lean.Parser.Term.sorry) _ => some defaultRule
+  | .node (.raw `Lean.Parser.Term.stateRefT) _ => some defaultRule
+  | .node (.raw `Lean.Parser.Term.unreachable) _ => some defaultRule
+  | .node (.raw `Lean.Parser.Term.typeOf) _ => some defaultRule
   | .node (.raw `Lean.Parser.Term.dynamicQuot) _ => some defaultRule
   | .node (.raw `Lean.Parser.Term.sort) _ => some defaultRule
   | .node (.raw `Lean.Parser.Term.letConfig) _ => some defaultRule
@@ -2696,6 +2715,7 @@ def ruleFor : SyntaxTree.Tree → Option LineBreakRule
   | .node (.raw `Lean.Parser.Term.doIfLetBind) _ => some defaultRule
   | .node (.raw `Lean.Parser.Term.doHave) _ => some defaultRule
   | .node (.raw `Lean.Parser.Term.inferInstanceAs) _ => some defaultRule
+  | .node (.raw `Lean.Parser.Term.noindex) _ => some defaultRule
   | .node (.raw `Lean.Parser.Term.configItem) _ => some defaultRule
   | .node (.raw `Lean.Parser.Term.negConfigItem) _ => some defaultRule
   | .node (.raw `Lean.Parser.Term.letRecDecls) _ => some letRecDeclarationRule
@@ -2781,12 +2801,17 @@ def ruleFor : SyntaxTree.Tree → Option LineBreakRule
       some defaultRule
   | .node (.raw `Mathlib.Meta.SetNotationForOrder.«binderPred⊂_») _ =>
       some defaultRule
+  | .node (.raw `Mathlib.Meta.SetNotationForOrder.«binderPred⊇_») _ =>
+      some defaultRule
   | .node (.raw `termDepIfThenElse) _ => some defaultRule
   | .node (.raw `BigOperators.bigsum) _ => some defaultRule
   | .node (.raw `BigOperators.bigprod) _ => some defaultRule
   | .node (.raw `BigOperators.bigexpect) _ => some defaultRule
   | .node (.raw `BigOperators.bigOpBinders) _ => some defaultRule
   | .node (.raw `BigOperators.bigOpBinder) _ => some defaultRule
+  | .node (.raw `BigOperators.bigOpBinderCollection) _ => some defaultRule
+  | .node (.raw `BigOperators.bigOpBinderParenthesized) _ => some defaultRule
+  | .node (.raw `ArithmeticFunction.bigproddvd) _ => some defaultRule
   | .node (.raw `Algebra.subalgebra_adjoin) _ => some defaultRule
   | .node (.raw `Std.termF!_) _ => some defaultRule
   | .node (.raw `Batteries.ExtendedBinder.extBinders) _ => some defaultRule
@@ -2815,6 +2840,7 @@ def ruleFor : SyntaxTree.Tree → Option LineBreakRule
   | .node (.raw `Lean.Parser.Attr.grindLR) _ => some defaultRule
   | .node (.raw `Lean.Parser.Attr.grindFwd) _ => some defaultRule
   | .node (.raw `Lean.Parser.Attr.grindBwd) _ => some defaultRule
+  | .node (.raw `Lean.Parser.Attr.grindCases) _ => some defaultRule
   | .node (.raw `Lean.Parser.Attr.simple) _ => some defaultRule
   | .node (.raw `Lean.Parser.Attr.simps) _ => some defaultRule
   | .node (.raw `Lean.Parser.Attr.attrSimps!_) _ => some defaultRule
@@ -2836,6 +2862,9 @@ def ruleFor : SyntaxTree.Tree → Option LineBreakRule
   | .node (.raw `Lean.Elab.Command.irredDefLemma) _ => some defaultRule
   | .node (.raw `Mathlib.Tactic.MkIff.mkIff) _ => some defaultRule
   | .node (.raw `Mathlib.Tactic.Translate.attrArgs) _ => some defaultRule
+  | .node (.raw `ArithmeticFunction.attrArith_mult) _ => some defaultRule
+  | .node (.raw `Parser.Attr.coassoc_simps) _ => some defaultRule
+  | .node (.raw `Parser.Attr.ghost_simps) _ => some defaultRule
   | .node (.raw `Mathlib.Tactic.Translate.bracketedOption) _ => some defaultRule
   | .node (.raw `Mathlib.Tactic.Translate.translationHint) _ => some defaultRule
   | .node (.raw `«term{}») _ => some defaultRule
@@ -2860,6 +2889,7 @@ def ruleFor : SyntaxTree.Tree → Option LineBreakRule
   | .node (.raw `PiNotation.piNotation) _ => some defaultRule
   | .node (.raw `coeFunNotation) _ => some defaultRule
   | .node (.raw `Mathlib.Meta.setBuilder) _ => some defaultRule
+  | .node (.raw `Set.Mathlib.Meta.setBuilder) _ => some defaultRule
   | .node
       (.raw
         `Ideal.Submodule.Module.Submodule.Module.Module.Submodule.Submodule.Module.Module.Submodule.Submodule.QuotientTorsion.Ideal.Quotient.AddMonoid.AddSubgroup.torsionByStx)
@@ -2868,9 +2898,13 @@ def ruleFor : SyntaxTree.Tree → Option LineBreakRule
   | .node (.raw `Mathlib.Notation3.notation3) _ => some defaultRule
   | .node (.raw `Mathlib.Notation3.notation3Item) _ => some defaultRule
   | .node (.raw `Mathlib.Notation3.identOptScoped) _ => some defaultRule
+  | .node (.raw `Mathlib.Notation3.prettyPrintOpt) _ => some defaultRule
+  | .node (.raw `Mathlib.Notation3.foldAction) _ => some defaultRule
+  | .node (.raw `Mathlib.Notation3.foldKind) _ => some defaultRule
   | .node (.raw `LinearAlgebra.Projectivization.termℙ) _ => some defaultRule
   | .node (.raw `Qq.matcher) _ => some defaultRule
   | .node (.raw `Qq.doElemAssertInstancesCommute) _ => some defaultRule
+  | .node (.raw `Lean.«doElemTrace[_]__») _ => some defaultRule
   | .node (.raw `term.pseudo.antiquot) _ => some defaultRule
   | .node (.raw `Lean.termThrowError__) _ => some defaultRule
   | .node (.raw `Mathlib.Elab.FastInstance.fastInstance) _ => some defaultRule
@@ -2879,8 +2913,14 @@ def ruleFor : SyntaxTree.Tree → Option LineBreakRule
   | .node (.raw `Mathlib.Tactic.GCongr.gcongrAttr) _ => some defaultRule
   | .node (.raw `Mathlib.Tactic.Monotonicity.Attr.mono) _ => some defaultRule
   | .node (.raw `Mathlib.CrossRef.wikidataTag) _ => some defaultRule
+  | .node (.raw `Mathlib.CrossRef.stacksTag) _ => some defaultRule
+  | .node (.raw `Mathlib.CrossRef.stacksTagDBStacks) _ => some defaultRule
+  | .node (.raw `Mathlib.CrossRef.stacksTagDBKerodon) _ => some defaultRule
+  | .node (.raw `Mathlib.CrossRef.lmfdbTag) _ => some defaultRule
+  | .node (.raw `stacksTag) _ => some defaultRule
   | .node (.raw `Parser.Attr.parity_simps) _ => some defaultRule
   | .node (.raw `Parser.Attr.nontriviality) _ => some defaultRule
+  | .node (.raw `Parser.Attr.mfld_simps) _ => some defaultRule
   | .node (.raw `Batteries.Tactic.Alias.alias) _ => some defaultRule
   | .node (.raw `Batteries.Tactic.Alias.aliasLR) _ => some defaultRule
   | .node (.raw `Batteries.Tactic.Lint.nolint) _ => some defaultRule
@@ -2903,23 +2943,34 @@ def ruleFor : SyntaxTree.Tree → Option LineBreakRule
   | .node (.raw `Aesop.Frontend.Parser.feature_) _ => some defaultRule
   | .node (.raw `Aesop.Frontend.Parser.feature__1) _ => some defaultRule
   | .node (.raw `Aesop.Frontend.Parser.feature__2) _ => some defaultRule
+  | .node (.raw `Aesop.Frontend.Parser.feature__3) _ => some defaultRule
   | .node (.raw `Aesop.Frontend.Parser.feature__4) _ => some defaultRule
+  | .node (.raw `Aesop.Frontend.Parser.«feature(_)») _ => some defaultRule
   | .node (.raw `Aesop.Frontend.Parser.phaseSafe) _ => some defaultRule
   | .node (.raw `Aesop.Frontend.Parser.phaseNorm) _ => some defaultRule
   | .node (.raw `Aesop.Frontend.Parser.phaseUnsafe) _ => some defaultRule
   | .node (.raw `Aesop.Frontend.Parser.builder_nameApply) _ => some defaultRule
   | .node (.raw `Aesop.Frontend.Parser.builder_nameCases) _ => some defaultRule
   | .node (.raw `Aesop.Frontend.Parser.builder_nameForward) _ => some defaultRule
+  | .node (.raw `Aesop.Frontend.Parser.builder_nameTactic) _ => some defaultRule
+  | .node (.raw `Aesop.Frontend.Parser.builder_nameUnfold) _ => some defaultRule
+  | .node (.raw `Aesop.Frontend.Parser.«builder_option(Index:=[_])») _ =>
+    some defaultRule
+  | .node (.raw `Aesop.Frontend.Parser.indexing_modeTarget_) _ => some defaultRule
   | .node (.raw `Aesop.Frontend.Parser.«priority_%») _ => some defaultRule
   | .node (.raw `Aesop.Frontend.Parser.«priority-_») _ => some defaultRule
+  | .node (.raw `measurability) _ => some defaultRule
   | .node (.raw `prioLow) _ => some defaultRule
   | .node (.raw `prioMid) _ => some defaultRule
   | .node (.raw `prioHigh) _ => some defaultRule
+  | .node (.raw `prioDefault) _ => some defaultRule
   | .node (.raw `Lean.Parser.precedence) _ => some defaultRule
   | .node (.raw `precArg) _ => some defaultRule
   | .node (.raw `precMax) _ => some defaultRule
   | .node (.raw `cfcTac) _ => some defaultRule
   | .node (.raw `adaptationNoteCmd) _ => some defaultRule
+  | .node (.raw `Lean.Parser.discrTreeSimpKeyCmd) _ => some defaultRule
+  | .node (.raw `Lean.Elab.ConfigEval.declareTacticConfig) _ => some defaultRule
   | .node (.raw `adaptationNoteTermStx) _ => some defaultRule
   | .node (.raw `commandSuppress_compilation) _ => some defaultRule
   | .node (.raw `notation_class) _ => some defaultRule
@@ -2938,6 +2989,9 @@ def ruleFor : SyntaxTree.Tree → Option LineBreakRule
       some defaultRule
   | .node (.raw `SimplexCategory.Truncated.mkNotation) _ => some defaultRule
   | .node (.raw `Mathlib.Tactic.TermCongr.termCongr) _ => some defaultRule
+  | .node (.raw `Mathlib.Meta.FunProp.funPropTacStx) _ => some defaultRule
+  | .node (.raw `Lean.Parser.Command.registerTryTactic) _ => some defaultRule
+  | .node (.raw `Mathlib.PPWithUniv.ppWithUnivAttr) _ => some defaultRule
   | .node (.raw `Mathlib.Util.«commandCompile_inductive%_») _ =>
       some defaultRule
   | .node (.raw `commandUnsuppress_compilationIn_) _ => some commandInChainRule
@@ -2964,6 +3018,7 @@ def ruleFor : SyntaxTree.Tree → Option LineBreakRule
   | .node (.raw `Lean.Parser.Term.structInstFields) _ => some structInstFieldsRule
   | .node (.raw `Lean.Parser.Command.structFields) _ => some structFieldsRule
   | .node (.raw `Lean.Parser.Command.inductive) _ => some inductiveRule
+  | .node (.raw `Lean.Parser.Command.coinductive) _ => some inductiveRule
   | .node .application _ => some applicationRule
   | .node .signatureParameters _ => some signatureParametersRule
   | .node .matchPatterns _ => some matchPatternsRule

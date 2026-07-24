@@ -4055,6 +4055,24 @@ def assertCheckCommandHasRule (env : Lean.Environment) : IO Unit := do
     ++ "completeNormalizeOperation_uniqueUpToReorderingWithAdditionalLayoutText\n"
   assertEq "overflowing check command breaks after check" expected overflowingFormatted
 
+def assertGuardMsgsCommandUsesCommandInLayout (env : Lean.Environment) : IO Unit := do
+  let source :=
+    "/-- info: value : Nat -/\n"
+    ++ "#guard_msgs in\n"
+    ++ "#check (sorry : Nat)\n"
+  let formatted ←
+    Formatter.formatSourceWithEnv env source "guard-msgs-command.lean"
+  assertEq "guard messages command uses command in layout" source formatted
+  let moduleTree ←
+    SyntaxTree.parseModuleStringWithEnv env formatted
+      "guard-msgs-command-formatted.lean"
+  assertTrue "guard messages command has complete rule coverage"
+    (Formatter.Diagnostics.missingRuleOccurrencesForModule moduleTree).isEmpty
+  let formattedAgain ←
+    Formatter.formatSourceWithEnv env formatted
+      "guard-msgs-command-formatted-again.lean"
+  assertEq "guard messages command is idempotent" formatted formattedAgain
+
 def assertBinderTacticProofBodyHasNoMissingRules (env : Lean.Environment) : IO Unit := do
   let source := "def binderTacticDefault (h : True := by simp) : Nat := 0\n"
   let moduleTree ←
@@ -5535,6 +5553,12 @@ def assertMathlibLowRiskSyntaxKindsHaveRules : IO Unit := do
       `Lean.Parser.Command.postfix,
       `Lean.Parser.Command.identPrec,
       `Lean.Parser.Command.grindPattern,
+      `Lean.Parser.Command.initialize,
+      `Lean.Parser.Command.initializeKeyword,
+      `Lean.guardMsgsCmd,
+      `Lean.Parser.Command.elab_rules,
+      `Lean.Linter.«command_Register_linter_set_:=_»,
+      `Lean.Option.registerOption,
       `Lean.Parser.Command.omit,
       `Lean.Parser.Command.include,
       `Lean.Parser.Command.structParent,
@@ -5556,6 +5580,11 @@ def assertMathlibLowRiskSyntaxKindsHaveRules : IO Unit := do
       `Lean.Parser.Command.recommended_spelling,
       `Topology.nhdsGT,
       `Topology.nhdsLT,
+      `Topology.nhdsNE,
+      `Topology.nhdsLE,
+      `Topology.nhdsGE,
+      `Topology.IsOpen_of,
+      `Topology.Continuous_of,
       `Lean.«command__Unif_hint____Where_|_-⊢__»,
       `Lean.unifConstraintElem,
       `Lake.DSL.packageCommand,
@@ -5571,6 +5600,7 @@ def assertMathlibLowRiskSyntaxKindsHaveRules : IO Unit := do
       `Lake.DSL.fromGit,
       `lemma,
       `Lean.Parser.Term.explicit,
+      `Lean.Parser.Term.noindex,
       `Lean.Parser.Term.explicitUniv,
       `Lean.Parser.Term.have,
       `Lean.Parser.Term.haveI,
@@ -5578,6 +5608,11 @@ def assertMathlibLowRiskSyntaxKindsHaveRules : IO Unit := do
       `Lean.Parser.Term.sufficesDecl,
       `Lean.Parser.Term.open,
       `Lean.Parser.Term.termReturn,
+      `Lean.Parser.Term.panic,
+      `Lean.Parser.Term.sorry,
+      `Lean.Parser.Term.stateRefT,
+      `Lean.Parser.Term.unreachable,
+      `Lean.Parser.Term.typeOf,
       `Lean.Parser.Term.dynamicQuot,
       `Lean.Parser.Term.structInstFieldEqns,
       `Lean.Parser.Term.sort,
@@ -5589,6 +5624,9 @@ def assertMathlibLowRiskSyntaxKindsHaveRules : IO Unit := do
       `Lean.Parser.Term.doLetRec,
       `Lean.Parser.Term.doIfLetBind,
       `Lean.Parser.Term.doHave,
+      `Lean.Parser.Term.doContinue,
+      `Lean.Parser.Term.doFinally,
+      `Lean.Parser.Term.doWhile,
       `Lean.Parser.Term.inferInstanceAs,
       `Lean.Parser.Term.configItem,
       `Lean.Parser.Term.negConfigItem,
@@ -5635,15 +5673,20 @@ def assertMathlibLowRiskSyntaxKindsHaveRules : IO Unit := do
       `Lean.«binderPred≠_»,
       `Lean.«binderPred∉_»,
       `Mathlib.Meta.SetNotationForOrder.«binderPred⊆_»,
+      `Mathlib.Meta.SetNotationForOrder.«binderPred⊇_»,
       `termDepIfThenElse,
       `boolIfThenElse,
       `BigOperators.bigsum,
       `BigOperators.bigprod,
       `BigOperators.bigOpBinders,
       `BigOperators.bigOpBinder,
+      `BigOperators.bigOpBinderCollection,
+      `BigOperators.bigOpBinderParenthesized,
+      `ArithmeticFunction.bigproddvd,
       `Algebra.subalgebra_adjoin,
       `«AddActionHomLocal≺»,
       `«MulSemiringActionHomIdLocal≺»,
+      `GeneratedNamespace.«GeneratedActionHomLocal≺»,
       `Batteries.ExtendedBinder.extBinders,
       `Batteries.ExtendedBinder.extBinder,
       `Batteries.ExtendedBinder.extBinderCollection,
@@ -5666,6 +5709,7 @@ def assertMathlibLowRiskSyntaxKindsHaveRules : IO Unit := do
       `Lean.Parser.Attr.higherOrder,
       `Lean.Parser.Attr.grindFwd,
       `Lean.Parser.Attr.grindBwd,
+      `Lean.Parser.Attr.grindCases,
       `Lean.Parser.Attr.grindEqBoth,
       `Lean.Attr.coe,
       `Lean.Parser.Attr.instance,
@@ -5676,9 +5720,13 @@ def assertMathlibLowRiskSyntaxKindsHaveRules : IO Unit := do
       `Parser.Attr.parity_simps,
       `Parser.Attr.fin_omega,
       `Parser.Attr.nontriviality,
+      `Parser.Attr.mfld_simps,
       `Mathlib.Tactic.ToAdditive.to_additive,
       `Mathlib.Tactic.MkIff.mkIff,
       `Mathlib.Tactic.Translate.attrArgs,
+      `ArithmeticFunction.attrArith_mult,
+      `Parser.Attr.coassoc_simps,
+      `Parser.Attr.ghost_simps,
       `Mathlib.Tactic.Translate.bracketedOption,
       `Mathlib.Tactic.Translate.translationHint,
       `Mathlib.Tactic.scopedNS,
@@ -5686,23 +5734,33 @@ def assertMathlibLowRiskSyntaxKindsHaveRules : IO Unit := do
       `Mathlib.Tactic.GCongr.gcongrAttr,
       `Mathlib.Tactic.Monotonicity.Attr.mono,
       `Mathlib.Tactic.TermCongr.termCongr,
+      `Mathlib.PPWithUniv.ppWithUnivAttr,
       `Mathlib.Elab.FastInstance.fastInstance,
       `Mathlib.Util.«commandCompile_inductive%_»,
+      `commandUnsuppress_compilationIn_,
       `Mathlib.Util.TermReduce.deltaStx,
       `Mathlib.Meta.setBuilder,
+      `Set.Mathlib.Meta.setBuilder,
       `Ideal.Submodule.Module.Submodule.Module.Module.Submodule.Submodule.Module.Module.Submodule.Submodule.QuotientTorsion.Ideal.Quotient.AddMonoid.AddSubgroup.torsionByStx,
       `Mathlib.Meta.macroPattSetBuilder,
       `Mathlib.Meta.SetNotationForOrder.«binderPred⊂_»,
       `Mathlib.Notation3.notation3,
       `Mathlib.Notation3.notation3Item,
       `Mathlib.Notation3.identOptScoped,
+      `Mathlib.Notation3.prettyPrintOpt,
+      `Mathlib.Notation3.foldAction,
+      `Mathlib.Notation3.foldKind,
       `LinearAlgebra.Projectivization.termℙ,
       `Qq.matcher,
       `Qq.doElemAssertInstancesCommute,
+      `Lean.«doElemTrace[_]__»,
       `term.pseudo.antiquot,
       `Lean.termThrowError__,
       `Lean.Parser.«command__Dsimproc__[_]_(_):=_»,
       `Mathlib.CrossRef.wikidataTag,
+      `Mathlib.CrossRef.stacksTag,
+      `Mathlib.CrossRef.stacksTagDBStacks,
+      `stacksTag,
       `Finsupp.Internal.stxSingle₀,
       `Finsupp.Internal.stxUpdate₀,
       `Finsupp.fun₀,
@@ -5718,15 +5776,22 @@ def assertMathlibLowRiskSyntaxKindsHaveRules : IO Unit := do
       `Aesop.Frontend.Parser.feature_,
       `Aesop.Frontend.Parser.feature__1,
       `Aesop.Frontend.Parser.feature__2,
+      `Aesop.Frontend.Parser.feature__3,
       `Aesop.Frontend.Parser.feature__4,
+      `Aesop.Frontend.Parser.«feature(_)»,
       `Aesop.Frontend.Parser.phaseSafe,
       `Aesop.Frontend.Parser.phaseNorm,
       `Aesop.Frontend.Parser.phaseUnsafe,
       `Aesop.Frontend.Parser.builder_nameApply,
       `Aesop.Frontend.Parser.builder_nameCases,
       `Aesop.Frontend.Parser.builder_nameForward,
+      `Aesop.Frontend.Parser.builder_nameTactic,
+      `Aesop.Frontend.Parser.builder_nameUnfold,
+      `Aesop.Frontend.Parser.«builder_option(Index:=[_])»,
+      `Aesop.Frontend.Parser.indexing_modeTarget_,
       `Aesop.Frontend.Parser.«priority_%»,
       `Aesop.Frontend.Parser.«priority-_»,
+      `measurability,
       `Lean.Parser.Level.hole,
       `Lean.Parser.Level.paren,
       `Lean.Parser.Level.max,
@@ -5735,10 +5800,13 @@ def assertMathlibLowRiskSyntaxKindsHaveRules : IO Unit := do
       `prioLow,
       `prioMid,
       `prioHigh,
+      `prioDefault,
       `Lean.Parser.precedence,
       `precMax,
       `cfcTac,
       `adaptationNoteCmd,
+      `Lean.Parser.discrTreeSimpKeyCmd,
+      `Lean.Elab.ConfigEval.declareTacticConfig,
       `adaptationNoteTermStx,
       `commandSuppress_compilation,
       `notation_class,
@@ -5760,7 +5828,20 @@ def assertMathlibLowRiskSyntaxKindsHaveRules : IO Unit := do
       `Std.termF!_,
       `antiquotNestedExpr,
       `precArg,
-      `Matrix.vecNotation
+      `Matrix.vecNotation,
+      `Matrix.matrixNotation,
+      `Lean.Parser.Command.syntaxCat,
+      `Lean.Parser.Command.coinductive,
+      `Lean.Parser.Command.registerTryTactic,
+      `Lean.Parser.Term.doRepeat,
+      `Lean.Parser.Term.doBreak,
+      `Lean.Parser.Term.doDbgTrace,
+      `Lean.Parser.Term.doIdbg,
+      `Lean.Parser.Term.doCatchMatch,
+      `Lean.termM!_,
+      `Mathlib.Meta.FunProp.funPropTacStx,
+      `Mathlib.CrossRef.stacksTagDBKerodon,
+      `Mathlib.CrossRef.lmfdbTag
     ]
   for kind in kinds do
     let tree := SyntaxTree.Tree.node (.raw kind) #[]
@@ -5995,6 +6076,97 @@ def assertSyntaxDeclarationsHaveRules (env : Lean.Environment) : IO Unit := do
     (Formatter.Diagnostics.missingRuleOccurrencesForModule moduleTree).isEmpty
   let formatted ← Formatter.formatSourceWithEnv env source "syntax-declaration-rules.lean"
   assertTextContains "syntax separator stays tight" formatted "term,*"
+
+def assertElaborationSyntaxHasRules (env : Lean.Environment) : IO Unit := do
+  let source :=
+    "open Lean Parser Term\n"
+    ++ "\n"
+    ++ "meta def parserExample : Parser :=\n"
+    ++ "  leading_parser withPosition <| ident\n"
+    ++ "\n"
+    ++ "elab \"identity% \" t:term : term => do\n"
+    ++ "  let declarationName := ``Nat.succ\n"
+    ++ "  return t\n"
+    ++ "\n"
+    ++ "initialize registerTraceClass `LeanFmt.Tests\n"
+    ++ "\n"
+    ++ "run_cmd Lean.Elab.Command.liftTermElabM do\n"
+    ++ "  pure ()\n"
+  let formatted ←
+    Formatter.formatSourceWithEnv env source "elaboration-syntax-rules.lean"
+  assertTrue "elaboration syntax formatting preserves code"
+    (← codePreservedIgnoringWhitespace env source formatted)
+  assertTextContains "elaborator declarations keep their source layout"
+    formatted
+      ("elab \"identity% \" t:term : term => do\n"
+        ++ "  let declarationName := ``Nat.succ\n"
+        ++ "  return t\n")
+  let moduleTree ←
+    SyntaxTree.parseModuleStringWithEnv env formatted
+      "elaboration-syntax-rules-formatted.lean"
+  assertTrue "elaboration syntax has complete rule coverage"
+    (Formatter.Diagnostics.missingRuleOccurrencesForModule moduleTree).isEmpty
+  let formattedAgain ←
+    Formatter.formatSourceWithEnv env formatted
+      "elaboration-syntax-rules-idempotent.lean"
+  assertEq "elaboration syntax formatting is idempotent" formatted formattedAgain
+
+def assertMatchExprAlternativesStartOnNewLines (env : Lean.Environment) : IO Unit := do
+  let source :=
+    "def inspectExpr (e : Lean.Expr) : Lean.Meta.MetaM Lean.Expr := do\n"
+    ++ "  match_expr e with\n"
+    ++ "  | Nat.succ n =>\n"
+    ++ "    if true then\n"
+    ++ "      return n\n"
+    ++ "    else return e\n"
+    ++ "  | Nat.zero =>\n"
+    ++ "    return e\n"
+    ++ "  | _ => return e\n"
+  let formatted ←
+    Formatter.formatSourceWithEnv env source "match-expr-alternative-breaks.lean"
+  assertTextContains "match_expr alternatives keep a leading line break"
+    formatted "\n  | Nat.zero =>"
+  assertTextLacks "match_expr alternatives do not join the previous return"
+    formatted "return e | Nat.zero"
+  let formattedAgain ←
+    Formatter.formatSourceWithEnv env formatted
+      "match-expr-alternative-breaks-idempotent.lean"
+  assertEq "match_expr alternative formatting is idempotent"
+    formatted formattedAgain
+  let attachedDoSource :=
+    "def inspectAttachedDo (e : Lean.Expr) : Lean.Meta.MetaM Lean.Expr := do\n"
+    ++ "  match e with\n"
+    ++ "  | .app f _ => do\n"
+    ++ "    if true then\n"
+    ++ "      return f\n"
+    ++ "    else return e\n"
+    ++ "  | _ => return e\n"
+  let attachedDoFormatted ←
+    Formatter.formatSourceWithEnv env attachedDoSource
+      "match-attached-do-base.lean"
+  assertTextContains "attached do keeps the match-arm base"
+    attachedDoFormatted
+      ("  | .app f _ => do\n"
+        ++ "      if true then\n"
+        ++ "        return f\n"
+        ++ "      else\n"
+        ++ "        return e\n")
+  assertTextLacks "attached do body does not inherit the pattern end column"
+    attachedDoFormatted "\n                  if true then"
+
+def assertApplicationFitCountsFromSuffix (env : Lean.Environment) : IO Unit := do
+  let source :=
+    "theorem showLongApplication : True :=\n"
+    ++ "  show ExtremelyLongPredicateNameForApplicationFit firstArgumentWithLength\n"
+    ++ "    (fun y => veryLongTransformName (anotherLongTransformName y) (thirdLongArgumentName y)) s x from\n"
+    ++ "  proofTerm\n"
+  let formatted ←
+    Formatter.formatSourceWithEnv env source "show-application-from-suffix.lean"
+      { lineWidth := 100 }
+  assertTrue "show application counts from suffix in line fit"
+    (Formatter.linesFit formatted 100)
+  assertTextContains "show application breaks before overflowing final argument"
+    formatted "\n        x from"
 
 def assertParserStateUpdatesAfterSyntaxCommands (env : Lean.Environment) : IO Unit := do
   let source :=
@@ -6428,10 +6600,14 @@ def runCliAndArchitectureTests (env : Lean.Environment) : IO Unit := do
   assertMathlibLowRiskSyntaxKindsHaveRules
   assertMissingRuleCheckUsesDispatch env cache
   assertCheckCommandHasRule env
+  assertGuardMsgsCommandUsesCommandInLayout env
   assertBinderTacticProofBodyHasNoMissingRules env
   assertInstanceValueInheritsDeclarationBase env
   assertSufficesBodyBreaksAfterFromProof env
   assertSyntaxDeclarationsHaveRules env
+  assertElaborationSyntaxHasRules env
+  assertMatchExprAlternativesStartOnNewLines env
+  assertApplicationFitCountsFromSuffix env
   assertParserStateUpdatesAfterSyntaxCommands env
   assertSyntaxAuthoringDefinitionPreservesCode env
   assertCustomBracedTermSyntaxKeepsNestedSourceLayout env
