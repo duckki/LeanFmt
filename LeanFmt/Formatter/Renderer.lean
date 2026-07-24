@@ -771,6 +771,7 @@ def RenderState.emitOriginalTree
       let usesPendingIndent :=
         (respectPendingIndent
           || isProofWidgetsJsxSyntaxTree tree
+          || isQuotationTree tree
           || isSyntaxCommentTree tree)
         && state.pendingIndent?.isSome
       let originalLeading :=
@@ -808,7 +809,7 @@ def RenderState.emitOriginalTree
         shiftColumnByAnchor state.sourceLayoutBaseColumn
           state.outputLayoutBaseColumn sourceColumn
       let originalLayoutTargetColumn? :=
-        if !isProofWidgetsJsxSyntaxTree tree then
+        if !(isProofWidgetsJsxSyntaxTree tree || isQuotationTree tree) then
           none
         else if usesPendingIndent then
           some leadingColumn

@@ -164,6 +164,27 @@ def assertTacticQuotationAntiquotationPreserved (env : Lean.Environment) : IO Un
       "tactic-quotation-sequence-formatted.lean"
   assertTrue "tactic quotation sequence hides nested tactic rule details"
     (Formatter.Diagnostics.missingRuleOccurrencesForModule elabRulesTree).isEmpty
+  let movedCommandQuotation :=
+    "macro \"emit_two_local_attributes_with_a_long_name\" : command => do\n"
+    ++ "  let firstKind := mkIdent `first\n"
+    ++ "  let secondKind := mkIdent `second\n"
+    ++ "  `(\n"
+    ++ "  attribute [local $firstKind] First.declaration\n"
+    ++ "  attribute [local $secondKind] Second.declaration\n"
+    ++ "  )\n"
+  let movedResult ←
+    Formatter.formatSourceWithEnvDetailed env movedCommandQuotation
+      "moved-command-quotation.lean" { lineWidth := 60 }
+  assertTrue "moved command quotation does not fall back" (!movedResult.fellBack)
+  assertTrue "moved command quotation preserves code"
+    (← codePreservedIgnoringWhitespace env movedCommandQuotation movedResult.formatted)
+  assertTextContains "moved command quotation follows its do body"
+    movedResult.formatted
+    "      `(\n"
+  let movedAgain ←
+    Formatter.formatSourceWithEnv env movedResult.formatted
+      "moved-command-quotation-formatted.lean" { lineWidth := 60 }
+  assertEq "moved command quotation is idempotent" movedResult.formatted movedAgain
 
 def assertFullyQualifiedQuotedNamesStayTight (env : Lean.Environment) : IO Unit := do
   let source :=
