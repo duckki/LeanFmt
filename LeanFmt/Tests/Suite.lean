@@ -6104,6 +6104,7 @@ def assertMathlibLowRiskSyntaxKindsHaveRules : IO Unit := do
       `precArg,
       `Matrix.vecNotation,
       `Matrix.matrixNotation,
+      `PiLp.vecNotation,
       `Lean.Parser.Command.syntaxCat,
       `Lean.Parser.Command.coinductive,
       `Lean.Parser.Command.registerTryTactic,

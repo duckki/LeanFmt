@@ -3170,6 +3170,7 @@ def ruleFor : SyntaxTree.Tree → Option LineBreakRule
   | .node (.raw `«term#[_,]») _ => some arrayRule
   | .node (.raw `Matrix.vecNotation) _ => some arrayRule
   | .node (.raw `Matrix.matrixNotation) _ => some matrixNotationRule
+  | .node (.raw `PiLp.vecNotation) _ => some transparentRule
   | .node (.raw `«term__[_]_?») _ => some transparentRule
   -- Syntax with specialized formatting rules.
   | .node (.raw `Lean.Parser.Command.declaration) _ => some declarationRule
