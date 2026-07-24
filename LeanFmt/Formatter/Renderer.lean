@@ -136,6 +136,19 @@ def rebaseOriginalTextIndent (sourceColumn targetColumn : Nat) (text : String) :
           :: rebaseOriginalLines sourceColumn targetColumn
               (SpaceRules.blockCommentDepthAfterLine 0 first) rest
 
+def originalContinuationIndent? (text : String) : Option Nat :=
+  (SpaceRules.normalizeLineEndings text).splitOn "\n" |>.drop 1
+  |>.foldl
+      (fun minimum? line =>
+        let indentation := (leadingWhitespace line).length
+        if indentation == line.length then
+          minimum?
+        else
+          match minimum? with
+          | some minimum => some (min minimum indentation)
+          | none => some indentation)
+      none
+
 structure SourceBreak where
   index : Nat
   indent : Nat
@@ -770,6 +783,23 @@ def RenderState.emitOriginalTree
       let sourceText :=
         SyntaxTree.sourceText state.source firstToken.span.start lastToken.span.stop
       let sourceColumn := originalColumnAt state.source firstToken.span.start
+      let inlineMultilineProof :=
+        isProofTree tree
+        && treeHasLineBreakTrivia tree
+        && !SpaceRules.hasLineStructure originalLeading
+      let inlineProofContinuationColumns? :=
+        if !inlineMultilineProof then
+          none
+        else
+          match originalContinuationIndent? sourceText, state.lastToken? with
+          | some sourceIndent, some leftToken =>
+              let sourceAnchor := originalColumnAt state.source leftToken.span.start
+              let outputAnchor := lineWidth state.currentLine - leftToken.lexeme.length
+              let movedIndent :=
+                shiftColumnByAnchor sourceAnchor outputAnchor sourceIndent
+              let structuralIndent := (state.segmentIndentation + 1) * indentationSpaces
+              some (sourceIndent, max movedIndent structuralIndent)
+          | _, _ => none
       let sourceColumnRebasedFromLayoutBase :=
         shiftColumnByAnchor state.sourceLayoutBaseColumn
           state.outputLayoutBaseColumn sourceColumn
@@ -800,7 +830,10 @@ def RenderState.emitOriginalTree
       let sourceText :=
         match proofTargetColumn? with
         | some targetColumn =>
-            rebaseOriginalTextIndent sourceColumn targetColumn sourceText
+            match inlineProofContinuationColumns? with
+            | some (sourceIndent, targetIndent) =>
+                rebaseOriginalTextIndent sourceIndent targetIndent sourceText
+            | none => rebaseOriginalTextIndent sourceColumn targetColumn sourceText
         | none => sourceText
       {
         state.appendOutput <| leading ++ sourceText with

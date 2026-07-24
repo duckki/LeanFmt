@@ -1582,6 +1582,27 @@ def assertMovedInlineProofBodiesRemainParseable (env : Lean.Environment) : IO Un
     result.formatted "exact left"
   assertTextContains "second moved inline proof body remains present"
     result.formatted "exact right"
+  let declarationSource :=
+    "theorem inlineMultilineProofWithEnoughHeaderCharactersToRequireWrapping (h : True) : True := by classical\n"
+    ++ "  exact h\n"
+  let declarationExpected :=
+    "theorem inlineMultilineProofWithEnoughHeaderCharactersToRequireWrapping (h : True)\n"
+    ++ "    : True := by classical\n"
+    ++ "  exact h\n"
+  let declarationResult ←
+    Formatter.formatSourceWithEnvDetailed env declarationSource
+      "inline-multiline-declaration-proof.lean"
+  assertTrue "inline multiline declaration proof does not fall back"
+    (!declarationResult.fellBack)
+  assertEq "inline multiline declaration proof keeps continuation indentation"
+    declarationExpected declarationResult.formatted
+  assertTrue "inline multiline declaration proof preserves code"
+    (← codePreservedIgnoringWhitespace env declarationSource declarationResult.formatted)
+  let declarationAgain ←
+    Formatter.formatSourceWithEnv env declarationResult.formatted
+      "inline-multiline-declaration-proof-formatted.lean"
+  assertEq "inline multiline declaration proof is idempotent"
+    declarationResult.formatted declarationAgain
 
 def assertShowProofTermUntouched (env : Lean.Environment) : IO Unit := do
   let source := "#check (show True by\n" ++ "  trivial)\n"

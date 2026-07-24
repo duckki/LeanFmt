@@ -651,7 +651,9 @@ Proof subtrees and extensible attribute payloads are not reformatted. When the r
 emits the original source slice, adjusted only for indentation when needed. A protected
 subtree that begins on a new source line inherits the source-to-output layout-base
 translation established by its enclosing formatted segment; every line moves by the same
-delta. Module and
+delta. When a multiline proof begins inline after `by`, its later source lines use that
+introducer's source-to-output movement, clamped to the structural proof indentation,
+rather than treating the far-right first tactic as an indentation anchor. Module and
 declaration documentation comments are also emitted from their original source slices so
 their internal whitespace cannot be changed. This protects tactic scripts, term proof
 layout, and comment text while declarations around them can still be formatted. When an
