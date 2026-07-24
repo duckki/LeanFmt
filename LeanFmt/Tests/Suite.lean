@@ -3116,6 +3116,45 @@ def assertNestedApplicationHonorsSourceBreaks (env : Lean.Environment) : IO Unit
     Formatter.formatSourceWithEnv env source "nested-application-source-breaks.lean"
   assertEq "nested application source breaks" expected formatted
 
+def assertApplicationCommentBreakRebasesWithOuterLayout (env : Lean.Environment)
+    : IO Unit := do
+  let source :=
+    "def sourceBrokenCommentArgument :=\n"
+    ++ "  wrapper fun cmd => do\n"
+    ++ "    unless condition do\n"
+    ++ "      return\n"
+    ++ "    cmd.apply\n"
+    ++ "      /- Keep this explanation with the named argument. -/\n"
+    ++ "      (option := value)\n"
+    ++ "      predicate\n"
+    ++ "      fun x => do\n"
+    ++ "        consume x\n"
+  let expected :=
+    "def sourceBrokenCommentArgument :=\n"
+    ++ "  wrapper\n"
+    ++ "    fun cmd =>\n"
+    ++ "      do\n"
+    ++ "        unless condition do\n"
+    ++ "          return\n"
+    ++ "        cmd.apply\n"
+    ++ "          /- Keep this explanation with the named argument. -/\n"
+    ++ "          (option := value) predicate\n"
+    ++ "          fun x =>\n"
+    ++ "            do\n"
+    ++ "              consume x\n"
+  let formatted ←
+    Formatter.formatSourceWithEnv env source
+      "application-comment-source-break.lean" { lineWidth := 60 }
+  assertEq "application comment source break follows shifted application"
+    expected formatted
+  assertTrue "shifted application comment source break preserves code"
+    (← codePreservedIgnoringWhitespace env source formatted)
+  let formattedAgain ←
+    Formatter.formatSourceWithEnv env formatted
+      "application-comment-source-break-formatted.lean" { lineWidth := 60 }
+  assertEq "shifted application comment source break is idempotent"
+    formatted formattedAgain
+
 def assertApplicationArgumentUsesHeadAnchorAfterTypeBreak (env : Lean.Environment)
     : IO Unit := do
   let source :=
@@ -7081,6 +7120,7 @@ def runExpressionAndRendererTests (env : Lean.Environment) : IO Unit := do
   assertApplicationFlow env
   assertApplicationFitsBeforeSourceBreaks env
   assertNestedApplicationHonorsSourceBreaks env
+  assertApplicationCommentBreakRebasesWithOuterLayout env
   assertApplicationArgumentUsesHeadAnchorAfterTypeBreak env
   assertLetExpressionKeepsBodyBreak env
   assertLetIExpressionKeepsBodyBreak env

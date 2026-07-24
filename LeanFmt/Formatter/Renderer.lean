@@ -1390,6 +1390,17 @@ def sourceBreaksAllowedByBreakPoints
     fun sourceBreak =>
       breakPoints.any fun breakPoint => breakPoint.index == sourceBreak.index
 
+def formattedWhitespaceKeepsSourceBreakAt
+    (source : String) (segment : LineBreakRules.Segment) (index : Nat)
+    : Bool :=
+  match tokenBoundaryAt? segment index with
+  | some (left, right) =>
+      let originalTrivia := SyntaxTree.sourceText source left.span.stop right.span.start
+      SpaceRules.hasCommentStart originalTrivia
+      && SpaceRules.hasLineStructure originalTrivia
+      && SpaceRules.hasLineStructure (SpaceRules.interTokenWhitespace source left right)
+  | none => false
+
 def sourceBreakBeforeSegmentStart? (state : RenderState)
     (segment : LineBreakRules.Segment)
     : Option SourceBreak := do
@@ -1754,6 +1765,7 @@ def FlowRenderContext.stateForForcedNestedChild?
               (state.currentIndent + breakPoint.indentLevels * indentationSpaces)
       else if breakAfterPreviousChild
               || !childFit.fits
+              || formattedWhitespaceKeepsSourceBreakAt state.source flow.segment index
               || (breakPoint.indentLevels == 0 && !pieceFit.flat)
               || !pieceFit.fits then
         some <| flow.withBreak state breakPoint
@@ -1899,7 +1911,12 @@ mutual
       renderUsingExistingBreaks state segment rule breakPoints isFlow
     else
       let probe := measureLayout state segment false
-      if probe.acceptedForRule isFlow breakPoints then
+      let hasRetainedFlowSourceBreak :=
+        isFlow
+        && breakPoints.any
+            fun breakPoint =>
+              formattedWhitespaceKeepsSourceBreakAt state.source segment breakPoint.index
+      if probe.acceptedForRule isFlow breakPoints && !hasRetainedFlowSourceBreak then
         state.commitLayoutProbe probe
       else
         renderAfterFlatFailure state segment rule breakPoints isFlow
