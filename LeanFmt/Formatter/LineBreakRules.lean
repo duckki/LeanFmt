@@ -1792,6 +1792,9 @@ def isVerticalBarDelimitedTermKind (kind : Lean.SyntaxNodeKind) : Bool :=
   let name := toString kind
   name.startsWith "«term|" && name.endsWith "|»"
 
+def isGeneratedLocalNotationKind (kind : Lean.SyntaxNodeKind) : Bool :=
+  (toString kind).endsWith "Local≺»"
+
 def structInstFieldsRule : LineBreakRule :=
   {
     name := "structInstFields"
@@ -2785,10 +2788,6 @@ def ruleFor : SyntaxTree.Tree → Option LineBreakRule
   | .node (.raw `BigOperators.bigOpBinders) _ => some defaultRule
   | .node (.raw `BigOperators.bigOpBinder) _ => some defaultRule
   | .node (.raw `Algebra.subalgebra_adjoin) _ => some defaultRule
-  | .node (.raw `«AddActionHomLocal≺») _ => some defaultRule
-  | .node (.raw `«DistribMulActionHomLocal≺») _ => some defaultRule
-  | .node (.raw `«DistribMulActionHomIdLocal≺») _ => some defaultRule
-  | .node (.raw `«MulSemiringActionHomIdLocal≺») _ => some defaultRule
   | .node (.raw `Std.termF!_) _ => some defaultRule
   | .node (.raw `Batteries.ExtendedBinder.extBinders) _ => some defaultRule
   | .node (.raw `Batteries.ExtendedBinder.extBinder) _ => some defaultRule
@@ -3043,7 +3042,12 @@ def ruleFor : SyntaxTree.Tree → Option LineBreakRule
   | .node (.raw `Lean.Parser.Term.matchAltsWhereDecls) _ => some matchAltsWhereDeclsRule
   | .node (.raw `Lean.Parser.Term.matchAlts) _ => some matchAltsRule
   | .node (.raw kind) _ =>
-      if isVerticalBarDelimitedTermKind kind then some transparentRule else none
+      if isVerticalBarDelimitedTermKind kind then
+        some transparentRule
+      else if isGeneratedLocalNotationKind kind then
+        some defaultRule
+      else
+        none
 
 def formattingRuleFor (tree : SyntaxTree.Tree) : LineBreakRule :=
   match ruleFor tree with
