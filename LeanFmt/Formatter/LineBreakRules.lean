@@ -276,6 +276,13 @@ partial def treeContainsLexeme (lexeme : String) : SyntaxTree.Tree → Bool
   | .leaf token => token.lexeme == lexeme
   | .node _ children => children.any (treeContainsLexeme lexeme)
 
+partial def treeContainsRawKind (kind : Lean.SyntaxNodeKind) : SyntaxTree.Tree → Bool
+  | .missing
+  | .leaf _ => false
+  | .node (.raw treeKind) children =>
+      treeKind == kind || children.any (treeContainsRawKind kind)
+  | .node _ children => children.any (treeContainsRawKind kind)
+
 def childStartsWithLexeme (segment : Segment) (index : Nat) (lexeme : String) : Bool :=
   match segment.child? index with
   | some child => treeFirstLexeme? child == some lexeme
@@ -1147,6 +1154,16 @@ def matchDiscriminantBreaks (_context : RuleContext) (segment : Segment)
           else
             none
       | none => none
+
+def matchDiscriminantsFollowMotive (context : RuleContext) : Bool :=
+  match context.ancestors with
+  | parent :: _ =>
+      parent.rawKind? == some `Lean.Parser.Term.match
+      && (List.range parent.childIndex).any
+          fun index =>
+            parent.segment.parentChild? index
+            |>.any (treeContainsRawKind `Lean.Parser.Term.motive)
+  | _ => false
 
 def exportItemBreaks (context : RuleContext) (segment : Segment) : List BreakPoint :=
   if exportIdentifierList context then
@@ -2477,6 +2494,7 @@ def matchDiscriminantsRule : LineBreakRule :=
     name := "matchDiscriminants"
     useExistingBreaks := fun _ _ => true
     flow := fun _ _ => true
+    inheritBase := fun context _ => matchDiscriminantsFollowMotive context
     breakPoints := matchDiscriminantBreaks
   }
 

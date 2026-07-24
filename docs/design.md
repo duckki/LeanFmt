@@ -1086,6 +1086,15 @@ match defaultPresentChildIndexBefore? segment index,
   some around => result
 ```
 
+When an explicit motive precedes the discriminants, a wrapped discriminant uses
+the `match` base instead of inheriting the motive's ending column:
+
+```lean
+match (motive := (x : Input) → Property x → Result) x,
+  proofOfProperty x with
+| value, proof => result
+```
+
 Multiple patterns in one arm are balanced peers. If a pattern boundary breaks,
 all comma-separated pattern boundaries break together. A long right-hand side
 breaks after `=>` and is indented two levels from the arm start:

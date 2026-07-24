@@ -4158,9 +4158,21 @@ def assertMatchDiscriminantsFlowAfterCommas (env : Lean.Environment) : IO Unit :
     ++ "        | Sum.inl (some a), _ => fun i => fastGrowing a i\n"
     ++ "        | Sum.inr f, _ => fun i => fastGrowing (f i) i := by\n"
     ++ "  simp\n"
+  let longMotiveExpected :=
+    "theorem longMotive {o : ONote} {x} (e : fundamentalSequence o = x)\n"
+    ++ "    : fastGrowing o\n"
+    ++ "      = match (motive := (x : Option ONote ⊕ (Nat → ONote))\n"
+    ++ "                          → FundamentalSequenceProp o x → Nat → Nat) x,\n"
+    ++ "        e ▸ fundamentalSequence_has_prop o with\n"
+    ++ "        | Sum.inl none, _ => Nat.succ\n"
+    ++ "        | Sum.inl (some a), _ => fun i => fastGrowing a i\n"
+    ++ "        | Sum.inr f, _ => fun i => fastGrowing (f i) i := by\n"
+    ++ "  simp\n"
   let longMotiveFormatted ←
     Formatter.formatSourceWithEnv env longMotiveSource
       "long-match-motive-discriminants.lean" { lineWidth := 100 }
+  assertEq "match discriminants after a motive use the match base"
+    longMotiveExpected longMotiveFormatted
   let longMotiveModule ←
     SyntaxTree.parseModuleStringWithEnv env longMotiveFormatted
       "long-match-motive-discriminants-formatted.lean"
