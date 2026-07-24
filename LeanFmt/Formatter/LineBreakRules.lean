@@ -2971,6 +2971,7 @@ def ruleFor : SyntaxTree.Tree → Option LineBreakRule
   | .node (.raw `Topology.nhdsLE) _ => some transparentRule
   | .node (.raw `Topology.nhdsGE) _ => some transparentRule
   | .node (.raw `Topology.IsOpen_of) _ => some defaultRule
+  | .node (.raw `Topology.IsClosed_of) _ => some defaultRule
   | .node (.raw `Topology.Continuous_of) _ => some defaultRule
   | .node (.raw `Lean.«command__Unif_hint____Where_|_-⊢__») _ =>
       some defaultRule

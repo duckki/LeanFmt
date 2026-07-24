@@ -6306,6 +6306,7 @@ def assertMathlibLowRiskSyntaxKindsHaveRules : IO Unit := do
       `Topology.nhdsLE,
       `Topology.nhdsGE,
       `Topology.IsOpen_of,
+      `Topology.IsClosed_of,
       `Topology.Continuous_of,
       `Lean.«command__Unif_hint____Where_|_-⊢__»,
       `Lean.unifConstraintElem,
