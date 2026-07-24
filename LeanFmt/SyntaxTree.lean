@@ -791,6 +791,12 @@ def regroupDerivingClause? (children : Array Tree) : Option Tree := do
       some <| .node .derivingClause (#[keyword] ++ classChildren)
   | _ => none
 
+def regroupDerivingCommandChildren (children : Array Tree) : Array Tree :=
+  match (children[3]? : Option Tree) with
+  | some (.node (.raw `null) classChildren) =>
+      children.set! 3 (.node .derivingClause classChildren)
+  | _ => children
+
 def isDelimitedCollectionKind (kind : SyntaxNodeKind) : Bool :=
   kind == `Lean.Parser.Term.tuple
   || kind == `Lean.Parser.Term.anonymousCtor
@@ -873,6 +879,8 @@ def regroupRawNode (kind : SyntaxNodeKind) (children : Array Tree) : Tree :=
     | none => .node (.raw kind) children
   else if declarationValueCommandKind kind then
     regroupDeclarationValueCommand kind children
+  else if kind == `Lean.Parser.Command.deriving then
+    .node (.raw kind) (regroupDerivingCommandChildren children)
   else if kind == `Lean.Parser.Command.declaration then
     match regroupDeclarationChildren children with
     | some declarationChildren => .node (.raw kind) declarationChildren

@@ -2582,6 +2582,8 @@ def ruleFor : SyntaxTree.Tree → Option LineBreakRule
   | .node (.raw `hygieneInfo) _ => some defaultRule
   | .node (.raw `Lean.Parser.Term.type) _ => some defaultRule
   | .node (.raw `Lean.Parser.Term.prop) _ => some defaultRule
+  | .node (.raw `Lean.Parser.Term.motive) _ => some transparentRule
+  | .node (.raw `Lean.Parser.Term.leading_parser) _ => some transparentRule
   | .node (.raw `Lean.Parser.Term.typeAscription) _ => some typeAscriptionRule
   | .node (.raw `Lean.Parser.Term.optEllipsis) _ => some defaultRule
   | .node (.raw `Lean.Parser.Term.explicit) _ => some defaultRule

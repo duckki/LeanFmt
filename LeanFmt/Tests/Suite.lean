@@ -1270,6 +1270,33 @@ def assertLongDerivingClauseFlowsClasses (env : Lean.Environment) : IO Unit := d
   let formatted ← Formatter.formatSourceWithEnv env source "long-deriving-clause.lean"
   assertEq "long deriving clause flows classes" expected formatted
 
+def assertLongDerivingInstanceFlowsClasses (env : Lean.Environment) : IO Unit := do
+  let source :=
+    "deriving instance\n"
+    ++ "  Nontrivial, Add, Sub, LE, LT, Bot, Preorder, LinearOrder, OrderTop, OrderBot, WellFoundedLT, SuccOrder, AddMonoidWithOne, CommSemiring, LinearOrderedAddCommMonoidWithTop\n"
+    ++ "for ENat\n"
+  let expected :=
+    "deriving instance\n"
+    ++ "  Nontrivial, Add, Sub, LE, LT, Bot, Preorder, LinearOrder, OrderTop, OrderBot,\n"
+    ++ "    WellFoundedLT, SuccOrder, AddMonoidWithOne, CommSemiring,\n"
+    ++ "    LinearOrderedAddCommMonoidWithTop\n"
+    ++ "for ENat\n"
+  let formatted ←
+    Formatter.formatSourceWithEnv env source "long-deriving-instance.lean"
+  assertEq "long deriving instance flows classes" expected formatted
+
+def assertMatchMotiveUsesTransparentRule (env : Lean.Environment) : IO Unit := do
+  let source :=
+    "def motiveExample (x : Nat) : Nat :=\n"
+    ++ "  match (motive := fun _ => Nat) x with\n"
+    ++ "  | value => value\n"
+  let formatted ← Formatter.formatSourceWithEnv env source "match-motive.lean"
+  assertEq "match motive formatting" source formatted
+  let moduleTree ←
+    SyntaxTree.parseModuleStringWithEnv env formatted "match-motive-formatted.lean"
+  assertTrue "match motive syntax has no missing rule"
+    (Formatter.Diagnostics.missingRuleOccurrencesForModule moduleTree).isEmpty
+
 def assertStructureBreaksTopLevelFields (env : Lean.Environment) : IO Unit := do
   let source :=
     "structure CustomScalarType where name : Name deriving Repr, DecidableEq\n"
@@ -5970,6 +5997,8 @@ def runBasicFormattingTests (env : Lean.Environment) : IO Unit := do
   assertDerivingStaysOnOwnLine env
   assertDefinitionDerivingStaysOnOwnLine env
   assertLongDerivingClauseFlowsClasses env
+  assertLongDerivingInstanceFlowsClasses env
+  assertMatchMotiveUsesTransparentRule env
   assertStructureBreaksTopLevelFields env
   assertStructureFieldProofBreaksAfterAssignment env
   assertParenthesizedStructureDefaultUsesFieldBase env
