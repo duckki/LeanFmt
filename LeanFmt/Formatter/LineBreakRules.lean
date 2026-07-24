@@ -3065,6 +3065,8 @@ def ruleFor : SyntaxTree.Tree → Option LineBreakRule
   | .node (.raw `token.existing) _ => some defaultRule
   | .node (.raw `Parser.Attr.functor_norm) _ => some defaultRule
   | .node (.raw `Parser.Attr.fin_omega) _ => some defaultRule
+  | .node (.raw `Parser.Attr.enat_to_nat_top) _ => some defaultRule
+  | .node (.raw `Parser.Attr.enat_to_nat_coe) _ => some defaultRule
   | .node (.raw `Mathlib.Tactic.ToAdditive.to_additive) _ => some defaultRule
   | .node (.raw `Lean.Elab.Command.irredDefLemma) _ => some defaultRule
   | .node (.raw `Mathlib.Tactic.MkIff.mkIff) _ => some defaultRule
@@ -3171,6 +3173,8 @@ def ruleFor : SyntaxTree.Tree → Option LineBreakRule
   | .node (.raw `Aesop.Frontend.Parser.«priority_%») _ => some defaultRule
   | .node (.raw `Aesop.Frontend.Parser.«priority-_») _ => some defaultRule
   | .node (.raw `measurability) _ => some defaultRule
+  | .node (.raw `finiteness) _ => some defaultRule
+  | .node (.raw `eqns) _ => some defaultRule
   | .node (.raw `prioLow) _ => some defaultRule
   | .node (.raw `prioMid) _ => some defaultRule
   | .node (.raw `prioHigh) _ => some defaultRule
