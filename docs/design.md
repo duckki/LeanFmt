@@ -997,7 +997,9 @@ layout parser cannot absorb it into that expression.
 
 A `have` body also begins on a separate line. When its declaration does not fit,
 the assigned value breaks after `:=` while the following body remains aligned
-with the `have` expression rather than the assigned value.
+with the `have` expression rather than the assigned value. A dependent return
+type that begins with `have` owns its layout base after the signature colon, so
+both its proof and following type stay offside after the signature is reflowed.
 
 ## Conditionals
 

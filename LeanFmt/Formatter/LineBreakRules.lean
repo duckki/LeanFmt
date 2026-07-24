@@ -2577,7 +2577,9 @@ def haveRule : LineBreakRule :=
   {
     name := "have"
     mandatory := fun _ _ => true
-    inheritBase := fun context _ => !parentIsInfixChain context
+    inheritBase :=
+      fun context _ =>
+        !parentIsInfixChain context && !parentIsRawKind context `Lean.Parser.Term.typeSpec
     breakPoints := haveBreaks
   }
 

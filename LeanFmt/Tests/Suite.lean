@@ -2251,6 +2251,33 @@ def assertHaveTermFormatting (env : Lean.Environment) : IO Unit := do
       "long-have-term-formatting-formatted.lean"
   assertEq "long have term formatting is idempotent"
     longResult.formatted longFormattedAgain
+  let dependentReturnSource :=
+    "def dependentHaveReturnTypeWithEnoughHeaderCharactersToRequireSignatureWrapping :\n"
+    ++ "    have : Left = Right := by\n"
+    ++ "      exact proof\n"
+    ++ "    Result this :=\n"
+    ++ "  result\n"
+  let dependentReturnExpected :=
+    "def dependentHaveReturnTypeWithEnoughHeaderCharactersToRequireSignatureWrapping\n"
+    ++ "    : have : Left = Right := by\n"
+    ++ "        exact proof\n"
+    ++ "      Result this :=\n"
+    ++ "  result\n"
+  let dependentReturnResult ←
+    Formatter.formatSourceWithEnvDetailed env dependentReturnSource
+      "dependent-have-return-type.lean" { lineWidth := 100 }
+  assertTrue "dependent have return type does not fall back"
+    (!dependentReturnResult.fellBack)
+  assertEq "dependent have return type keeps proof and body offside"
+    dependentReturnExpected dependentReturnResult.formatted
+  assertTrue "dependent have return type preserves code"
+    (← codePreservedIgnoringWhitespace
+        env dependentReturnSource dependentReturnResult.formatted)
+  let dependentReturnAgain ←
+    Formatter.formatSourceWithEnv env dependentReturnResult.formatted
+      "dependent-have-return-type-formatted.lean" { lineWidth := 100 }
+  assertEq "dependent have return type is idempotent"
+    dependentReturnResult.formatted dependentReturnAgain
 
 def assertHaveProofAfterInfixPreservesLayout (env : Lean.Environment) : IO Unit := do
   let source :=
