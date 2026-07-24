@@ -1316,7 +1316,8 @@ A generated term node with exactly three present children whose first and last
 children are the same atom is treated as a symmetric delimited term. Its
 delimiters stay attached while the enclosed expression applies its own layout.
 This covers notation such as `|x|` and `‖x‖` without enumerating delimiter
-spellings.
+spellings. Generated postfix term nodes likewise keep their final atom attached
+to the preceding expression while that expression applies its own layout.
 
 Unknown syntax is lossless, but its whitespace is not guaranteed to remain
 byte-for-byte unchanged. Multiline custom braced term syntax is a conservative

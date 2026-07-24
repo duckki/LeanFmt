@@ -1874,11 +1874,14 @@ def anonymousCtorRule : LineBreakRule :=
     breakPoints := anonymousCtorBreaks
   }
 
+def isGeneratedTermKind (kind : Lean.SyntaxNodeKind) : Bool :=
+  let name := toString kind
+  name.startsWith "«term" || SpaceRules.containsSubstring name ".«term"
+
 def isSymmetricDelimitedGeneratedTerm
     (kind : Lean.SyntaxNodeKind) (children : Array SyntaxTree.Tree)
     : Bool :=
-  let name := toString kind
-  if !name.startsWith "«term" then
+  if !isGeneratedTermKind kind then
     false
   else
     match (children.filter fun child => child.firstToken?.isSome).toList with
@@ -1889,6 +1892,15 @@ def isSymmetricDelimitedGeneratedTerm
             && closing.role == .atom
             && opening.lexeme == closing.lexeme
         | _, _ => false
+    | _ => false
+
+def isGeneratedPostfixTerm (kind : Lean.SyntaxNodeKind) (children : Array SyntaxTree.Tree)
+    : Bool :=
+  if !isGeneratedTermKind kind then
+    false
+  else
+    match (children.filter fun child => child.firstToken?.isSome).toList with
+    | [_, .leaf token] => token.role == .atom
     | _ => false
 
 def isGeneratedLocalNotationKind (kind : Lean.SyntaxNodeKind) : Bool :=
@@ -3223,7 +3235,8 @@ def ruleFor : SyntaxTree.Tree → Option LineBreakRule
   | .node (.raw `Lean.Parser.Term.matchAltsWhereDecls) _ => some matchAltsWhereDeclsRule
   | .node (.raw `Lean.Parser.Term.matchAlts) _ => some matchAltsRule
   | .node (.raw kind) children =>
-      if isSymmetricDelimitedGeneratedTerm kind children then
+      if isSymmetricDelimitedGeneratedTerm kind children
+          || isGeneratedPostfixTerm kind children then
         some transparentRule
       else if isGeneratedLocalNotationKind kind then
         some defaultRule

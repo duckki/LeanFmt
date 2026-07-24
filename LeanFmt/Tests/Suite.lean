@@ -2321,6 +2321,27 @@ def assertSymmetricDelimitersStayAttachedAcrossPasses (env : Lean.Environment)
       "symmetric-delimiters-formatted.lean" { lineWidth := 100 }
   assertEq "symmetric delimiter formatting is idempotent" result.formatted formattedAgain
 
+def assertGeneratedPostfixMarkersStayAttached (env : Lean.Environment) : IO Unit := do
+  let source :=
+    "namespace Matrix\n\n"
+    ++ "postfix:max \"ᵀ\" => id\n\n"
+    ++ "theorem generatedPostfixMarkerStaysAttached\n"
+    ++ "    : ((veryLongHeadForGeneratedPostfixMarker firstArgument secondArgument).toMatrix\n"
+    ++ "          (veryLongArgumentForGeneratedPostfixMarker thirdArgument fourthArgument))ᵀ =\n"
+    ++ "      expected := by\n"
+    ++ "  exact proof\n\n"
+    ++ "end Matrix\n"
+  let result ←
+    Formatter.formatSourceWithEnvDetailed env source "generated-postfix-marker.lean"
+      { lineWidth := 100 }
+  assertTrue "generated postfix marker does not change code" (!result.fellBack)
+  assertTextLacks "generated postfix marker stays attached" result.formatted "\n        ᵀ"
+  let formattedAgain ←
+    Formatter.formatSourceWithEnv env result.formatted
+      "generated-postfix-marker-formatted.lean" { lineWidth := 100 }
+  assertEq "generated postfix marker formatting is idempotent"
+    result.formatted formattedAgain
+
 def assertSignatureParametersUseLeadingSourceBreakAfterFlatFails (env : Lean.Environment)
     : IO Unit := do
   let source :=
@@ -6686,6 +6707,7 @@ def runBasicFormattingTests (env : Lean.Environment) : IO Unit := do
   assertHaveProofAfterInfixPreservesLayout env
   assertAbsoluteValueDelimitersStayAttached env
   assertSymmetricDelimitersStayAttachedAcrossPasses env
+  assertGeneratedPostfixMarkersStayAttached env
   assertSignatureParametersUseLeadingSourceBreakAfterFlatFails env
   assertDefinitionSourceBreakAfterAssignOverridesFlat env
 
