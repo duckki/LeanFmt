@@ -698,8 +698,6 @@ partial def treeContainsProofTree : SyntaxTree.Tree → Bool
   | .missing => false
   | .leaf _ => false
   | .node .proofBody _ => true
-  | tree@(.node (.raw `Lean.Parser.Termination.suffix) children) =>
-      (SyntaxTree.Tree.firstToken? tree).isSome || children.any treeContainsProofTree
   | .node _ children => children.any treeContainsProofTree
 
 def childHasNestedProofBody (segment : Segment) (index : Nat) : Bool :=
@@ -752,17 +750,34 @@ def derivingClauseBreaks (_context : RuleContext) (segment : Segment) : List Bre
             none
       | none => none
 
-def declarationWhereSuffixBreak? (segment : Segment) : Option BreakPoint := do
-  let index ←
-    segment.indexes.find?
+def terminationSuffixChildBreaksWithIndent (segment : Segment) (indentLevels : Nat)
+    : List BreakPoint :=
+  segment.indexes.filterMap
+    fun index =>
+      match segment.child? index with
+      | some child =>
+          if childIsRawKind segment index `Lean.Parser.Termination.suffix
+              && child.firstToken?.isSome then
+            boundaryBreak? segment index indentLevels
+          else
+            none
+      | none => none
+
+def terminationSuffixChildBreaks (segment : Segment) : List BreakPoint :=
+  terminationSuffixChildBreaksWithIndent segment 0
+
+def declarationTrailingClauseBreaks (segment : Segment) : List BreakPoint :=
+  terminationSuffixChildBreaks segment
+  ++ segment.indexes.filterMap
       fun index =>
-        3 < index && childStartsWithLexeme segment index "where"
-  boundaryBreak? segment index 0
+        if 3 < index && childStartsWithLexeme segment index "where" then
+          boundaryBreak? segment index 0
+        else
+          none
 
 def definitionBreaks (context : RuleContext) (segment : Segment) : List BreakPoint :=
   let valueBreak := [declarationValueBreak? segment].filterMap id
-  let whereBreak := [declarationWhereSuffixBreak? segment].filterMap id
-  valueBreak ++ whereBreak ++ derivingBreaks context segment
+  valueBreak ++ declarationTrailingClauseBreaks segment ++ derivingBreaks context segment
 
 def leadingAnnotationBreak? (segment : Segment) : Option BreakPoint := do
   let firstIndex ← (nonemptyChildIndexes segment).head?
@@ -1583,6 +1598,13 @@ def dbgTraceRule : LineBreakRule :=
 
 /-! ### Declaration suffixes and recursive declarations -/
 
+def baseAlignedTrailingClauseBreaks (segment : Segment) : List BreakPoint :=
+  match nonemptyChildIndexes segment with
+  | [] => []
+  | firstIndex :: rest =>
+      [leadingBreak? segment firstIndex 0].filterMap id
+      ++ rest.filterMap fun index => boundaryBreak? segment index 0
+
 def whereDeclsBreaks (_context : RuleContext) (segment : Segment) : List BreakPoint :=
   let leading :=
     match leadingBreak? segment segment.start 0 with
@@ -1609,6 +1631,19 @@ def whereStructInstBreaks (_context : RuleContext) (segment : Segment)
   match boundaryBreak? segment 1 1 with
   | some breakPoint => [breakPoint]
   | none => []
+
+def terminationSuffixBreaks (_context : RuleContext) (segment : Segment)
+    : List BreakPoint :=
+  baseAlignedTrailingClauseBreaks segment
+
+def terminationByBreaks (_context : RuleContext) (segment : Segment) : List BreakPoint :=
+  match (nonemptyChildIndexes segment).reverse with
+  | measureIndex :: _ =>
+      [boundaryBreak? segment measureIndex 1].filterMap id
+  | [] => []
+
+def decreasingByBreaks (_context : RuleContext) (segment : Segment) : List BreakPoint :=
+  [boundaryBreak? segment 1 1].filterMap id
 
 def setOptionBreaks (_context : RuleContext) (segment : Segment) : List BreakPoint :=
   match breakAfterLexeme? segment "in" 0 with
@@ -1640,14 +1675,37 @@ def whereStructInstRule : LineBreakRule :=
     breakPoints := whereStructInstBreaks
   }
 
+def terminationSuffixRule : LineBreakRule :=
+  {
+    name := "terminationSuffix"
+    useExistingBreaks := fun _ _ => true
+    inheritBase := fun _ _ => true
+    breakPoints := terminationSuffixBreaks
+  }
+
+def terminationByRule : LineBreakRule :=
+  {
+    name := "terminationBy"
+    useExistingBreaks := fun _ _ => true
+    inheritBase := fun _ _ => true
+    breakPoints := terminationByBreaks
+  }
+
+def decreasingByRule : LineBreakRule :=
+  {
+    name := "decreasingBy"
+    useExistingBreaks := fun _ _ => true
+    inheritBase := fun _ _ => true
+    breakPoints := decreasingByBreaks
+  }
+
 def rawDefinitionBreaks (_context : RuleContext) (segment : Segment) : List BreakPoint :=
   let valueBreak :=
     if childStartsWithSuffixKeywordToken segment 3 then
       []
     else
       [boundaryBreak? segment 3 1].filterMap id
-  let whereBreak := [declarationWhereSuffixBreak? segment].filterMap id
-  valueBreak ++ whereBreak
+  valueBreak ++ declarationTrailingClauseBreaks segment
 
 def declarationEquationBreaks (segment : Segment) : List BreakPoint :=
   match firstChildRawKind? segment `Lean.Parser.Command.declValEqns with
@@ -1657,7 +1715,7 @@ def declarationEquationBreaks (segment : Segment) : List BreakPoint :=
 def theoremBreaks (_context : RuleContext) (segment : Segment) : List BreakPoint :=
   [declarationValueBreak? segment].filterMap id
   ++ declarationEquationBreaks segment
-  ++ [declarationWhereSuffixBreak? segment].filterMap id
+  ++ declarationTrailingClauseBreaks segment
 
 def inductiveBreaks (context : RuleContext) (segment : Segment) : List BreakPoint :=
   let alternativeBreaks :=
@@ -1944,9 +2002,16 @@ def doBreaks (context : RuleContext) (segment : Segment) : List BreakPoint :=
 
 def matchAltsWhereDeclsBreaks (_context : RuleContext) (segment : Segment)
     : List BreakPoint :=
-  match leadingBreak? segment segment.start 0 with
-  | some breakPoint => [breakPoint]
-  | none => []
+  let leading := [leadingBreak? segment segment.start 0].filterMap id
+  let trailingClauses :=
+    terminationSuffixChildBreaks segment
+    ++ segment.indexes.filterMap
+        fun index =>
+          if childStartsWithLexeme segment index "where" then
+            boundaryBreak? segment index 0
+          else
+            none
+  leading ++ trailingClauses
 
 def matchAltsBreaks (_context : RuleContext) (segment : Segment) : List BreakPoint :=
   segment.indexes.filterMap fun index => leadingBreak? segment index 0
@@ -2162,6 +2227,16 @@ def letRecDeclarationRule : LineBreakRule :=
   {
     name := "letRecDeclaration"
     inheritBase := fun _ _ => true
+    breakPoints :=
+      fun context segment =>
+        let indentLevels :=
+          if context.ancestors.any
+              fun frame =>
+                frame.rawKind? == some `Lean.Parser.Term.letRecDecls then
+            1
+          else
+            0
+        terminationSuffixChildBreaksWithIndent segment indentLevels
   }
 
 def letRecEquationRule : LineBreakRule :=
@@ -2749,6 +2824,13 @@ def ruleFor : SyntaxTree.Tree → Option LineBreakRule
   | .node (.raw `Lean.Parser.Term.fromTerm) _ => some fromTermRule
   | .node (.raw `Lean.Parser.Term.byTactic) _ => some byTacticRule
   | .node (.raw `Lean.Parser.Term.byTactic') _ => some byTacticRule
+  | .node (.raw `Lean.Parser.Termination.suffix) _ => some terminationSuffixRule
+  | .node (.raw `Lean.Parser.Termination.terminationBy) _ => some terminationByRule
+  | .node (.raw `Lean.Parser.Termination.terminationBy?) _ => some defaultRule
+  | .node (.raw `Lean.Parser.Termination.decreasingBy) _ => some decreasingByRule
+  | .node (.raw `Lean.Parser.Termination.partialFixpoint) _ => some defaultRule
+  | .node (.raw `Lean.Parser.Termination.coinductiveFixpoint) _ => some defaultRule
+  | .node (.raw `Lean.Parser.Termination.inductiveFixpoint) _ => some defaultRule
   | .node (.raw `Lean.Parser.Term.whereFinally) _ => some whereFinallyRule
   | .node .proofBody _ => some defaultRule
   | .node (.raw `Lean.Parser.Tactic.tacticSeq) _ => some defaultRule

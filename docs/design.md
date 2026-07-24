@@ -504,6 +504,24 @@ where
   inner : Nat := 0
 ```
 
+Termination clauses follow the same ownership rule. `termination_by` and
+`decreasing_by` return to the base column of the declaration they modify. A
+termination measure may wrap one level beneath its keyword. The tactic after
+`decreasing_by` retains its source layout, rebased beneath the formatted clause.
+
+```lean
+def outer (n : Nat) : Nat :=
+  helper n
+termination_by n
+decreasing_by
+  exact outerProof
+where
+  helper (n : Nat) : Nat := helper (n - 1)
+  termination_by n
+  decreasing_by
+    exact helperProof
+```
+
 ### Theorems and proofs
 
 Theorem headers use the same parameter and return-type rules as definitions.
@@ -516,9 +534,10 @@ theorem theoremArrowChain (h : HypothesisWithEnoughCharactersForLayoutTesting)
 ```
 
 The source text of theorem proof values is preserved. Definitions and
-abbreviations containing proof subtrees are preserved as a whole. Termination
-proof suffixes are also protected. LeanFmt can therefore format surrounding
-declarations and propositions without imposing a tactic style.
+abbreviations containing proof subtrees are preserved as a whole. The tactic
+body after `decreasing_by` is protected separately from the formatted
+termination-clause keywords and measure. LeanFmt can therefore format
+surrounding declarations and propositions without imposing a tactic style.
 
 Equation-style theorem and definition arms begin on their own lines and use the
 declaration body indentation.

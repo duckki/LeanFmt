@@ -521,7 +521,7 @@ def unwrapSingleNullTree : Tree → Tree
       if children.size == 1 then children[0]?.getD tree else tree
   | tree => tree
 
-def splitEquationWhereValue? : Tree → Option (Tree × Tree)
+def splitEquationTrailingClauses? : Tree → Option (Tree × Array Tree)
   | .node (.raw `Lean.Parser.Command.declValEqns) valueChildren => do
       let alternativesIndex ←
         valueChildren.findIdx?
@@ -530,29 +530,49 @@ def splitEquationWhereValue? : Tree → Option (Tree × Tree)
       let alternatives ← valueChildren[alternativesIndex]?
       match alternatives with
       | .node (.raw `Lean.Parser.Term.matchAltsWhereDecls) children => do
-          let whereIndex ←
-            children.findIdx?
-              fun child =>
-                child.firstToken?.any fun token => token.lexeme == "where"
-          if !(childrenRange children 0 whereIndex).any
+          let clauseIndexes :=
+            (List.range children.size).filter
+              fun index =>
+                match children[index]? with
+                | some child =>
+                    (rawKind? child == some `Lean.Parser.Termination.suffix
+                      && child.firstToken?.isSome)
+                    || child.firstToken?.any fun token => token.lexeme == "where"
+                | none => false
+          let firstClauseIndex ← clauseIndexes.head?
+          if !(childrenRange children 0 firstClauseIndex).any
                 fun child => child.firstToken?.any fun token => token.lexeme == "|" then
             none
-          let whereTree ← children[whereIndex]?
+          let clauses :=
+            clauseIndexes.foldl
+              (fun clauses index =>
+                match children[index]? with
+                | some child =>
+                    clauses.push
+                    <|  if child.firstToken?.any fun token => token.lexeme == "where" then
+                          unwrapSingleNullTree child
+                        else
+                          child
+                | none => clauses)
+              #[]
           let alternatives :=
             .node (.raw `Lean.Parser.Term.matchAltsWhereDecls)
-              (children.set! whereIndex .missing)
+              (children.mapIdx
+                fun index child =>
+                  if clauseIndexes.contains index then .missing else child)
           let value :=
             .node (.raw `Lean.Parser.Command.declValEqns)
               (valueChildren.set! alternativesIndex alternatives)
-          some (value, unwrapSingleNullTree whereTree)
+          some (value, clauses)
       | _ => none
   | _ => none
 
-def regroupEquationWhereChildren (children : Array Tree) : Array Tree :=
-  match children[3]? >>= splitEquationWhereValue? with
-  | some (value, whereTree) =>
+def regroupEquationTrailingClauseChildren (children : Array Tree) : Array Tree :=
+  match children[3]? >>= splitEquationTrailingClauses? with
+  | some (value, clauses) =>
       childrenRange children 0 3
-      ++ #[value, whereTree]
+      ++ #[value]
+      ++ clauses
       ++ childrenRange children 4 children.size
   | none => children
 
@@ -627,7 +647,7 @@ def annotatedDeclarationTree (annotations modifiers declaration : Tree) : Tree :
 
 def regroupDeclarationValueCommand (kind : SyntaxNodeKind) (children : Array Tree)
     : Tree :=
-  let children := regroupEquationWhereChildren children
+  let children := regroupEquationTrailingClauseChildren children
   let command :=
     match regroupDefinitionChildren children with
     | some declarationChildren => .node (.raw kind) declarationChildren
@@ -726,6 +746,19 @@ def regroupByTacticChildren (children : Array Tree) : Array Tree :=
   | some byKeyword =>
       #[byKeyword, .node .proofBody <| childrenRange children 1 children.size]
   | none => children
+
+def regroupDecreasingByChildren (children : Array Tree) : Array Tree :=
+  match children[0]? with
+  | some decreasingByKeyword =>
+      #[decreasingByKeyword, .node .proofBody <| childrenRange children 1 children.size]
+  | none => children
+
+def regroupTerminationSuffixChildren (children : Array Tree) : Array Tree :=
+  children.foldl
+    (fun clauses child =>
+      let clause := unwrapSingleNullTree child
+      if clause.firstToken?.isSome then clauses.push clause else clauses)
+    #[]
 
 def regroupWhereFinallyChildren (children : Array Tree) : Array Tree :=
   match children[1]? with
@@ -879,7 +912,7 @@ def regroupRawNode (kind : SyntaxNodeKind) (children : Array Tree) : Tree :=
         .node (.raw kind) children
   else if kind == `Lean.Parser.Command.definition
           || kind == `Lean.Parser.Command.abbrev then
-    let children := regroupEquationWhereChildren children
+    let children := regroupEquationTrailingClauseChildren children
     match regroupDefinitionChildren children with
     | some definitionChildren => .node .definition definitionChildren
     | none => .node (.raw kind) children
@@ -959,6 +992,10 @@ def regroupRawNode (kind : SyntaxNodeKind) (children : Array Tree) : Tree :=
     | none => .node (.raw kind) children
   else if kind == `Lean.Parser.Term.byTactic || kind == `Lean.Parser.Term.byTactic' then
     .node (.raw kind) (regroupByTacticChildren children)
+  else if kind == `Lean.Parser.Termination.decreasingBy then
+    .node (.raw kind) (regroupDecreasingByChildren children)
+  else if kind == `Lean.Parser.Termination.suffix then
+    .node (.raw kind) (regroupTerminationSuffixChildren children)
   else if kind == `Lean.Parser.Term.whereFinally then
     .node (.raw kind) (regroupWhereFinallyChildren children)
   else if kind == `Lean.Parser.Term.whereDecls then

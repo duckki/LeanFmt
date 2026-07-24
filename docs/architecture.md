@@ -196,9 +196,10 @@ Current logical regroupings are:
 | `.doForHeader` | A `for` binder and its collection need separate LHS and `in` layout without teaching the renderer about `do` syntax. | The `for` keyword and declaration children before the loop body. |
 | `.structureUpdate` | The source before `with` behaves as an LHS expression, while the surrounding braces remain an ordinary balanced structure. | The comma-separated source expressions as direct children, including their separators and the final `with` token. Redundant anonymous sequence wrappers are removed. |
 | `.ifThenElseClause` and `.ifThenElseChain` | Nested raw `else if` nodes must share one balanced branch decision without making the renderer inspect conditional syntax or ancestor paths. | The chain alternates clause headers and result branches, followed by the final `else` and fallback branch. A clause header contains `if ... then` or `else if ... then` as one transparent segment, so the condition can still wrap by its own rules. |
-| `.proofBody` | Tactic syntax after `by` is one protected proof-layout region, including both ordinary term proofs and binder default tactics. | The tactic-sequence children after the separate `by` token. For `binderTactic`, the preceding `:=` also remains a separate sibling. |
+| `.proofBody` | Tactic syntax after `by` or `decreasing_by` is one protected proof-layout region, including ordinary term proofs, binder default tactics, and termination proofs. | The tactic-sequence children after the separate introducer token. For `binderTactic`, the preceding `:=` also remains a separate sibling. |
 | `.derivingClause` | Long deriving-class lists need peer flow boundaries rather than an opaque optional wrapper. | The `deriving` keyword followed by deriving classes and commas as direct children. |
 | `.unifConstraints` | Pre-goal `unif_hint` constraints use line breaks as syntax separators and must never be flattened into horizontal whitespace. | The constraint elements between `where` and `⊢` as direct children. |
+| Termination suffixes | `termination_by` is an ordinary formatted measure while only the tactic after `decreasing_by` needs proof-layout protection. Both clauses align with the base of their owning declaration. | Optional wrappers under the raw `Termination.suffix` node are removed. `decreasingBy` retains its keyword as one child and wraps only its tactic sequence in `.proofBody`. |
 | Lake DSL commands | Lake package and library commands need their `where` configuration body to share the command base, while Git dependency clauses need one rule to own the complete `from git` header and revision suffix. | Optional configuration wrappers are replaced by their `where` and field children. Dependency-name, source, and Git wrappers are spliced into the raw `requireDecl` node in source order. |
 | Multi-item delimited collections | Arrays, lists, tuples, anonymous constructors, and matrix vectors need one balanced rule to own opening, item, and closing breaks. | Parser sequence wrappers are spliced so delimiters, items, and commas are direct children of the original raw collection node. Singleton wrappers remain intact to preserve the established base for a multiline item. |
 
@@ -389,6 +390,8 @@ structure RenderState where
   pendingIndent? : Option Nat := none
   segmentBaseColumn : Nat := 0
   segmentIndentation : Nat := 0
+  sourceLayoutBaseColumn : Nat := 0
+  outputLayoutBaseColumn : Nat := 0
   tailIndentation? : Option Nat := none
   tailIndentationStop? : Option Nat := none
   tailIndentationAnchors : List TailIndentationAnchor := []
@@ -405,6 +408,10 @@ Key fields:
 - `pendingIndent?` records a scheduled newline before the next emitted token.
 - `segmentBaseColumn` and `segmentIndentation` are the current segment's physical and
   logical bases.
+- `sourceLayoutBaseColumn` and `outputLayoutBaseColumn` map the nearest enclosing
+  source-line layout base to its rendered column. Protected source regions use this
+  mapping to move with an enclosing declaration or alternative while retaining their
+  internal relative indentation.
 - `tailIndentation?` is the indentation floor inherited by continuation lines in the
   current segment. It is a single absolute indentation, not an infix depth counter.
   Child rendering restores the surrounding tail when it returns.
@@ -641,7 +648,10 @@ boundary, same-line comment trivia preceding that boundary still contributes to 
 ### Proof and original-source escape hatches
 
 Proof subtrees and extensible attribute payloads are not reformatted. When the renderer reaches a recognized proof or attribute node, it
-emits the original source slice, adjusted only for indentation when needed. Module and
+emits the original source slice, adjusted only for indentation when needed. A protected
+subtree that begins on a new source line inherits the source-to-output layout-base
+translation established by its enclosing formatted segment; every line moves by the same
+delta. Module and
 declaration documentation comments are also emitted from their original source slices so
 their internal whitespace cannot be changed. This protects tactic scripts, term proof
 layout, and comment text while declarations around them can still be formatted. When an

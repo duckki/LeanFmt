@@ -1520,6 +1520,47 @@ def assertMovedProofBodiesKeepRelativeIndentation (env : Lean.Environment) : IO 
   assertEq "moved match alternative proof is idempotent"
     matchFormatted matchFormattedAgain
 
+  let whereSource :=
+    "private theorem outer\n"
+    ++ "    : ∀ values : List Nat, True\n"
+    ++ "  | [] => by\n"
+    ++ "      trivial\n"
+    ++ "  | value :: rest => by\n"
+    ++ "      exact True.intro\n"
+    ++ "  where\n"
+    ++ "    helper (target : Nat) : ∀ values : List Nat, True\n"
+    ++ "      | [] => by\n"
+    ++ "          trivial\n"
+    ++ "      | candidate :: rest => by\n"
+    ++ "          by_cases hmatch : target = candidate\n"
+    ++ "          · trivial\n"
+    ++ "          · trivial\n"
+  let whereExpected :=
+    "private theorem outer : ∀ values : List Nat, True\n"
+    ++ "  | [] => by\n"
+    ++ "      trivial\n"
+    ++ "  | value :: rest => by\n"
+    ++ "      exact True.intro\n"
+    ++ "where\n"
+    ++ "  helper (target : Nat) : ∀ values : List Nat, True\n"
+    ++ "    | [] => by\n"
+    ++ "        trivial\n"
+    ++ "    | candidate :: rest => by\n"
+    ++ "        by_cases hmatch : target = candidate\n"
+    ++ "        · trivial\n"
+    ++ "        · trivial\n"
+  let whereFormatted ←
+    Formatter.formatSourceWithEnv env whereSource
+      "proof-under-moved-where-declaration.lean"
+  assertEq "proof bodies follow moved where declarations" whereExpected whereFormatted
+  assertTrue "moved where declaration proof preserves code"
+    (← codePreservedIgnoringWhitespace env whereSource whereFormatted)
+  let whereFormattedAgain ←
+    Formatter.formatSourceWithEnv env whereFormatted
+      "proof-under-moved-where-declaration-formatted.lean"
+  assertEq "moved where declaration proof is idempotent"
+    whereFormatted whereFormattedAgain
+
 def assertMovedInlineProofBodiesRemainParseable (env : Lean.Environment) : IO Unit := do
   let source :=
     "theorem nestedInlineProofs (left right : True) : True :=\n"
@@ -1636,6 +1677,105 @@ def assertTerminationProofSuffixDoesNotAccumulateIndent (env : Lean.Environment)
     Formatter.formatSourceWithEnv env formatted
       "termination-proof-suffix-stable-indent-formatted.lean"
   assertEq "termination proof suffix indentation is idempotent" formatted formattedAgain
+
+def assertTerminationClausesUseDeclarationBase (env : Lean.Environment) : IO Unit := do
+  let simpleSource :=
+    "def outer (n : Nat) : Nat :=\n"
+    ++ "  helper n\n"
+    ++ "  termination_by n\n"
+    ++ "  decreasing_by\n"
+    ++ "    exact outerProof\n"
+    ++ "  where\n"
+    ++ "    helper (n : Nat) : Nat := helper (n - 1)\n"
+    ++ "    termination_by n\n"
+    ++ "    decreasing_by exact helperProof\n"
+  let simpleExpected :=
+    "def outer (n : Nat) : Nat :=\n"
+    ++ "  helper n\n"
+    ++ "termination_by n\n"
+    ++ "decreasing_by\n"
+    ++ "  exact outerProof\n"
+    ++ "where\n"
+    ++ "  helper (n : Nat) : Nat := helper (n - 1)\n"
+    ++ "  termination_by n\n"
+    ++ "  decreasing_by exact helperProof\n"
+  let simpleResult ←
+    Formatter.formatSourceWithEnvDetailed env simpleSource
+      "termination-clauses-declaration-base.lean"
+  assertTrue "termination clause alignment does not fall back" (!simpleResult.fellBack)
+  assertEq "termination clauses use their declaration base"
+    simpleExpected simpleResult.formatted
+  assertTrue "termination clause alignment preserves code"
+    (← codePreservedIgnoringWhitespace env simpleSource simpleResult.formatted)
+  let moduleTree ←
+    SyntaxTree.parseModuleStringWithEnv env simpleResult.formatted
+      "termination-clauses-declaration-base-formatted.lean"
+  assertTrue "decreasing clause tactic is a protected proof body"
+    (moduleTree.tree.containsNodeKind .proofBody)
+  assertTrue "termination clauses have complete rule coverage"
+    (Formatter.Diagnostics.missingRuleOccurrencesForModule moduleTree).isEmpty
+  let formattedAgain ←
+    Formatter.formatSourceWithEnv env simpleResult.formatted
+      "termination-clauses-declaration-base-formatted-again.lean"
+  assertEq "termination clause alignment is idempotent"
+    simpleResult.formatted formattedAgain
+
+  let equationSource :=
+    "def countdown : Nat -> Nat\n"
+    ++ "  | 0 => 0\n"
+    ++ "  | n + 1 => countdown n\n"
+    ++ "  termination_by n => n\n"
+    ++ "  decreasing_by\n"
+    ++ "    exact equationProof\n"
+  let equationExpected :=
+    "def countdown : Nat -> Nat\n"
+    ++ "  | 0 => 0\n"
+    ++ "  | n + 1 => countdown n\n"
+    ++ "termination_by n => n\n"
+    ++ "decreasing_by\n"
+    ++ "  exact equationProof\n"
+  let equationResult ←
+    Formatter.formatSourceWithEnvDetailed env equationSource
+      "equation-termination-clauses.lean"
+  assertTrue "equation termination clauses do not fall back" (!equationResult.fellBack)
+  assertEq "equation termination clauses use their declaration base"
+    equationExpected equationResult.formatted
+  assertTrue "equation termination clause alignment preserves code"
+    (← codePreservedIgnoringWhitespace env equationSource equationResult.formatted)
+  let equationFormattedAgain ←
+    Formatter.formatSourceWithEnv env equationResult.formatted
+      "equation-termination-clauses-formatted.lean"
+  assertEq "equation termination clause alignment is idempotent"
+    equationResult.formatted equationFormattedAgain
+
+  let letRecSource :=
+    "def localCountdown (n : Nat) : Nat :=\n"
+    ++ "  let rec go (n : Nat) : Nat :=\n"
+    ++ "    if n = 0 then 0 else go (n - 1)\n"
+    ++ "      termination_by n\n"
+    ++ "      decreasing_by\n"
+    ++ "        exact localProof\n"
+    ++ "  go n\n"
+  let letRecExpected :=
+    "def localCountdown (n : Nat) : Nat :=\n"
+    ++ "  let rec go (n : Nat) : Nat := if n = 0 then 0 else go (n - 1)\n"
+    ++ "    termination_by n\n"
+    ++ "    decreasing_by\n"
+    ++ "      exact localProof\n"
+    ++ "  go n\n"
+  let letRecResult ←
+    Formatter.formatSourceWithEnvDetailed env letRecSource
+      "let-rec-termination-clauses.lean"
+  assertTrue "let-rec termination clauses do not fall back" (!letRecResult.fellBack)
+  assertEq "let-rec termination clauses use the local declaration base"
+    letRecExpected letRecResult.formatted
+  assertTrue "let-rec termination clause alignment preserves code"
+    (← codePreservedIgnoringWhitespace env letRecSource letRecResult.formatted)
+  let letRecFormattedAgain ←
+    Formatter.formatSourceWithEnv env letRecResult.formatted
+      "let-rec-termination-clauses-formatted.lean"
+  assertEq "let-rec termination clause alignment is idempotent"
+    letRecResult.formatted letRecFormattedAgain
 
 def assertBasicDeclarationBreak (env : Lean.Environment) : IO Unit := do
   let source :=
@@ -6413,6 +6553,7 @@ def runBasicFormattingTests (env : Lean.Environment) : IO Unit := do
   assertInstanceContainingProofUntouched env
   assertTerminationProofSuffixUntouched env
   assertTerminationProofSuffixDoesNotAccumulateIndent env
+  assertTerminationClausesUseDeclarationBase env
   assertBasicDeclarationBreak env
   assertTopLevelAnnotationsBreakConsistently env
   assertDeclarationValueInfixBreaksAfterAssign env

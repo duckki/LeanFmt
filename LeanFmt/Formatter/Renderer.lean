@@ -98,6 +98,13 @@ def hasBlankLineStructure (text : String) : Bool :=
 def originalColumnAt (source : String) (position : String.Pos.Raw) : Nat :=
   lineWidth <| charsAfterLastNewline <| SyntaxTree.sourceText source 0 position
 
+def shiftColumnByAnchor (sourceAnchorColumn outputAnchorColumn sourceColumn : Nat)
+    : Nat :=
+  if sourceAnchorColumn <= outputAnchorColumn then
+    sourceColumn + (outputAnchorColumn - sourceAnchorColumn)
+  else
+    sourceColumn - min sourceColumn (sourceAnchorColumn - outputAnchorColumn)
+
 def shiftLineIndent (sourceColumn targetColumn : Nat) (line : String) : String :=
   if line.isEmpty then
     line
@@ -156,6 +163,8 @@ structure RenderState where
   pendingCommandBoundary? : Option CommandBoundarySpacing := none
   segmentBaseColumn : Nat := 0
   segmentIndentation : Nat := 0
+  sourceLayoutBaseColumn : Nat := 0
+  outputLayoutBaseColumn : Nat := 0
   tailIndentation? : Option Nat := none
   tailIndentationStop? : Option Nat := none
   tailIndentationAnchors : List TailIndentationAnchor := []
@@ -174,6 +183,8 @@ structure ChildRenderScope where
   context : LineBreakRules.RuleContext
   segmentBaseColumn : Nat
   segmentIndentation : Nat
+  sourceLayoutBaseColumn : Nat
+  outputLayoutBaseColumn : Nat
   tailIndentation? : Option Nat
   tailIndentationStop? : Option Nat
   tailIndentationAnchors : List TailIndentationAnchor
@@ -186,6 +197,8 @@ def ChildRenderScope.capture (state : RenderState) : ChildRenderScope :=
     context := state.context
     segmentBaseColumn := state.segmentBaseColumn
     segmentIndentation := state.segmentIndentation
+    sourceLayoutBaseColumn := state.sourceLayoutBaseColumn
+    outputLayoutBaseColumn := state.outputLayoutBaseColumn
     tailIndentation? := state.tailIndentation?
     tailIndentationStop? := state.tailIndentationStop?
     tailIndentationAnchors := state.tailIndentationAnchors
@@ -201,6 +214,8 @@ def ChildRenderScope.restore (scope : ChildRenderScope) (rendered : RenderState)
       context := scope.context
       segmentBaseColumn := scope.segmentBaseColumn
       segmentIndentation := scope.segmentIndentation
+      sourceLayoutBaseColumn := scope.sourceLayoutBaseColumn
+      outputLayoutBaseColumn := scope.outputLayoutBaseColumn
       tailIndentation? := scope.tailIndentation?
       tailIndentationStop? := scope.tailIndentationStop?
       tailIndentationAnchors := scope.tailIndentationAnchors
@@ -517,15 +532,10 @@ def RenderState.hasBlankBoundaryBefore (state : RenderState) (tree : SyntaxTree.
       hasBlankLineStructure trivia
   | _, _ => false
 
-def isTerminationSuffixTree : SyntaxTree.Tree → Bool
-  | .node (.raw `Lean.Parser.Termination.suffix) _ => true
-  | _ => false
-
 def isProofTree (tree : SyntaxTree.Tree) : Bool :=
   match tree with
   | .node .proofBody _ => true
-  | tree =>
-      isTerminationSuffixTree tree && (SyntaxTree.Tree.firstToken? tree).isSome
+  | _ => false
 
 def isQuotationTree : SyntaxTree.Tree → Bool
   | .node (.raw `Lean.Parser.Term.quot) _ => true
@@ -745,10 +755,7 @@ def RenderState.emitOriginalTree
     : RenderState :=
   match SyntaxTree.Tree.firstToken? tree, SyntaxTree.Tree.lastToken? tree with
   | some firstToken, some lastToken =>
-      let usesPendingIndent :=
-        respectPendingIndent
-        && !isTerminationSuffixTree tree
-        && state.pendingIndent?.isSome
+      let usesPendingIndent := respectPendingIndent && state.pendingIndent?.isSome
       let originalLeading :=
         match state.lastToken? with
         | some leftToken =>
@@ -763,18 +770,18 @@ def RenderState.emitOriginalTree
       let sourceText :=
         SyntaxTree.sourceText state.source firstToken.span.start lastToken.span.stop
       let sourceColumn := originalColumnAt state.source firstToken.span.start
+      let sourceColumnRebasedFromLayoutBase :=
+        shiftColumnByAnchor state.sourceLayoutBaseColumn
+          state.outputLayoutBaseColumn sourceColumn
       let proofTargetColumn? :=
-        if !isProofTree tree || isTerminationSuffixTree tree then
+        if !isProofTree tree then
           none
         else if usesPendingIndent then
-          if SpaceRules.hasLineStructure originalLeading then
-            some <| max sourceColumn leadingColumn
-          else
-            some leadingColumn
+          some leadingColumn
         else if treeHasLineBreakTrivia tree then
           let layoutColumn :=
             if SpaceRules.hasLineStructure originalLeading then
-              sourceColumn
+              sourceColumnRebasedFromLayoutBase
             else
               leadingColumn
           some <| max layoutColumn ((state.segmentIndentation + 1) * indentationSpaces)
@@ -811,6 +818,19 @@ def RenderState.originalTreeStartsOnNewSourceLine
       SpaceRules.hasLineStructure
         (SyntaxTree.sourceText state.source leftToken.span.stop firstToken.span.start)
   | _, _ => false
+
+def RenderState.originalTreeColumnAfterLineBreak
+    (state : RenderState) (tree : SyntaxTree.Tree)
+    : Nat :=
+  match SyntaxTree.Tree.firstToken? tree with
+  | some firstToken =>
+      let leading :=
+        match state.lastToken? with
+        | some leftToken =>
+            SyntaxTree.sourceText state.source leftToken.span.stop firstToken.span.start
+        | none => firstToken.leading.text
+      lineWidth <| charsAfterLastNewline leading
+  | none => 0
 
 def originalTreeHasLineStructure (source : String) (tree : SyntaxTree.Tree) : Bool :=
   match SyntaxTree.Tree.firstToken? tree, SyntaxTree.Tree.lastToken? tree with
@@ -1911,12 +1931,31 @@ partial def renderNestedSegment
       { column := state.segmentBaseColumn, indentation := state.segmentIndentation }
     else
       state.segmentStartBaseFor childSegment
+  let (sourceLayoutBaseColumn, outputLayoutBaseColumn) :=
+    let startsOnNewSourceLine :=
+      state.lastToken?.isNone || state.originalTreeStartsOnNewSourceLine child
+    if startsOnNewSourceLine then
+      match SyntaxTree.Tree.firstToken? child with
+      | some _ =>
+          let sourceColumn := state.originalTreeColumnAfterLineBreak child
+          let outputColumn :=
+            match state.pendingIndent? with
+            | some pendingIndent => pendingIndent
+            | none =>
+                shiftColumnByAnchor state.sourceLayoutBaseColumn
+                  state.outputLayoutBaseColumn sourceColumn
+          (sourceColumn, outputColumn)
+      | none => (state.sourceLayoutBaseColumn, state.outputLayoutBaseColumn)
+    else
+      (state.sourceLayoutBaseColumn, state.outputLayoutBaseColumn)
   let childState :=
     {
       state with
         context := childContext
         segmentBaseColumn := childBase.column
         segmentIndentation := childBase.indentation
+        sourceLayoutBaseColumn
+        outputLayoutBaseColumn
         lineFitSuffixWidth := lineFitSuffix
         trace := state.trace.pushPath index
     }

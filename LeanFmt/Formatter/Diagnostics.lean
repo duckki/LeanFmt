@@ -116,7 +116,6 @@ def lineNumberAt (source : String) (position : String.Pos.Raw) : Nat :=
 
 def missingRuleReportSkipsTree : SyntaxTree.Tree → Bool
   | .node (.raw `Lean.Parser.Term.byTactic') _ => true
-  | .node (.raw `Lean.Parser.Termination.suffix) _ => true
   | tree => shouldEmitOriginalTree tree
 
 def missingRuleReportIgnoresTermNotationKindName (kindName : String) : Bool :=
