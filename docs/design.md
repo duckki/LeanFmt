@@ -541,12 +541,14 @@ termination_by
 ```
 
 Declarations inside `mutual` remain peers at the mutual-body indentation even
-when a preceding declaration ends with a termination clause:
+when a preceding declaration ends with a termination clause. A declaration's
+documentation comment shares that same base:
 
 ```lean
 mutual
   def first (n : Nat) : Nat := second n
   termination_by n
+  /-- Calls `first`. -/
   def second (n : Nat) : Nat := first n
   termination_by n
 end

@@ -579,12 +579,24 @@ def regroupEquationTrailingClauseChildren (children : Array Tree) : Array Tree :
 def declarationValueCommandKind (kind : SyntaxNodeKind) : Bool :=
   kind == `Lean.Parser.Command.theorem || kind == `lemma || kind == `group
 
+partial def isDocCommentContainer : Tree → Bool
+  | .node (.raw `Lean.Parser.Command.docComment) _ => true
+  | .node kind children =>
+      if kind == .raw `null || kind == .raw `Lean.Parser.Command.declModifiers then
+        let presentChildren := children.filter fun child => child.firstToken?.isSome
+        !presentChildren.isEmpty && presentChildren.all isDocCommentContainer
+      else
+        false
+  | _ => false
+
 def splitLeadingAnnotations? : Tree → Option (Tree × Tree)
   | .node (.raw `Lean.Parser.Command.declModifiers) children => do
-      let annotationIndex ←
-        children.findIdx?
+      let reverseIndex ←
+        children.reverse.findIdx?
           fun child =>
             child.firstToken?.map (fun token => token.lexeme) == some "@["
+            || isDocCommentContainer child
+      let annotationIndex := children.size - reverseIndex - 1
       let annotation ← children[annotationIndex]?
       let annotationChildren :=
         children.mapIdx
@@ -616,13 +628,6 @@ def splitDeclarationAnnotations? : Tree → Option (Tree × Tree)
       let (annotations, remainingModifiers) ← splitLeadingAnnotations? modifiers
       some (annotations, .node kind (children.set! modifierIndex remainingModifiers))
   | _ => none
-
-partial def isDocCommentContainer : Tree → Bool
-  | .node (.raw `Lean.Parser.Command.docComment) _ => true
-  | .node (.raw `null) children =>
-      let presentChildren := children.filter fun child => child.firstToken?.isSome
-      !presentChildren.isEmpty && presentChildren.all isDocCommentContainer
-  | _ => false
 
 def splitDirectCommandDocComment? : Tree → Option (Tree × Tree)
   | .node kind children => do

@@ -769,7 +769,9 @@ def RenderState.emitOriginalTree
   match SyntaxTree.Tree.firstToken? tree, SyntaxTree.Tree.lastToken? tree with
   | some firstToken, some lastToken =>
       let usesPendingIndent :=
-        (respectPendingIndent || isProofWidgetsJsxSyntaxTree tree)
+        (respectPendingIndent
+          || isProofWidgetsJsxSyntaxTree tree
+          || isSyntaxCommentTree tree)
         && state.pendingIndent?.isSome
       let originalLeading :=
         match state.lastToken? with

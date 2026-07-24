@@ -1887,6 +1887,42 @@ def assertTerminationClausesUseDeclarationBase (env : Lean.Environment) : IO Uni
   assertEq "mutual termination clause alignment is idempotent"
     mutualResult.formatted mutualFormattedAgain
 
+def assertDocumentedMutualCommandsKeepBase (env : Lean.Environment) : IO Unit := do
+  let source :=
+    "mutual\n"
+    ++ "\n"
+    ++ "theorem first : True := by\n"
+    ++ "  trivial\n"
+    ++ "\n"
+    ++ "/-- The second theorem. -/\n"
+    ++ "theorem second : True := by\n"
+    ++ "  trivial\n"
+    ++ "\n"
+    ++ "end\n"
+  let expected :=
+    "mutual\n"
+    ++ "\n"
+    ++ "  theorem first : True := by\n"
+    ++ "    trivial\n"
+    ++ "\n"
+    ++ "  /-- The second theorem. -/\n"
+    ++ "  theorem second : True := by\n"
+    ++ "    trivial\n"
+    ++ "\n"
+    ++ "end\n"
+  let result ←
+    Formatter.formatSourceWithEnvDetailed env source "documented-mutual-commands.lean"
+  assertTrue "documented mutual declarations do not fall back" (!result.fellBack)
+  assertEq "documented mutual declarations use the mutual body base"
+    expected result.formatted
+  assertTrue "documented mutual declarations preserve code"
+    (← codePreservedIgnoringWhitespace env source result.formatted)
+  let formattedAgain ←
+    Formatter.formatSourceWithEnv env result.formatted
+      "documented-mutual-commands-formatted.lean"
+  assertEq "documented mutual declaration layout is idempotent"
+    result.formatted formattedAgain
+
 def assertBasicDeclarationBreak (env : Lean.Environment) : IO Unit := do
   let source :=
     "def declarationTreeBodyBreak : Nat := veryLongIdentifierNameThatPushesTheDefinitionBodyPastTheWidthLimit\n"
@@ -6838,6 +6874,7 @@ def runBasicFormattingTests (env : Lean.Environment) : IO Unit := do
   assertTerminationProofSuffixUntouched env
   assertTerminationProofSuffixDoesNotAccumulateIndent env
   assertTerminationClausesUseDeclarationBase env
+  assertDocumentedMutualCommandsKeepBase env
   assertBasicDeclarationBreak env
   assertTopLevelAnnotationsBreakConsistently env
   assertDeclarationValueInfixBreaksAfterAssign env
