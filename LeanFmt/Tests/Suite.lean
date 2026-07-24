@@ -6494,7 +6494,13 @@ def assertMathlibLowRiskSyntaxKindsHaveRules : IO Unit := do
       `Lean.termM!_,
       `Mathlib.Meta.FunProp.funPropTacStx,
       `Mathlib.CrossRef.stacksTagDBKerodon,
-      `Mathlib.CrossRef.lmfdbTag
+      `Mathlib.CrossRef.lmfdbTag,
+      `Lean.Parser.«command_Dsimproc_decl_(_):=_»,
+      `Lean.Parser.Term.withAnonymousAntiquot,
+      `Lean.Parser.Term.falseVal,
+      `Lean.includeStr,
+      `Parser.Attr.zify_simps,
+      `attrContinuity
     ]
   for kind in kinds do
     let tree := SyntaxTree.Tree.node (.raw kind) #[]

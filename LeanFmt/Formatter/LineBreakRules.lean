@@ -2885,6 +2885,7 @@ def ruleFor : SyntaxTree.Tree → Option LineBreakRule
   | .node (.raw `Lean.Parser.Command.initialize) _ => some defaultRule
   | .node (.raw `Lean.Parser.Command.initializeKeyword) _ => some defaultRule
   | .node (.raw `Lean.runCmd) _ => some transparentRule
+  | .node (.raw `Lean.includeStr) _ => some defaultRule
   | .node (.raw `Lean.Option.registerOption) _ => some transparentRule
   | .node (.raw `Lean.Parser.Command.namedName) _ => some defaultRule
   | .node (.raw `Lean.Parser.Command.macroArg) _ => some defaultRule
@@ -3035,6 +3036,8 @@ def ruleFor : SyntaxTree.Tree → Option LineBreakRule
   | .node (.raw `Lean.Parser.Term.nomatch) _ => some defaultRule
   | .node (.raw `Lean.Parser.Term.nofun) _ => some defaultRule
   | .node (.raw `Lean.Parser.Term.quotedName) _ => some defaultRule
+  | .node (.raw `Lean.Parser.Term.withAnonymousAntiquot) _ => some defaultRule
+  | .node (.raw `Lean.Parser.Term.falseVal) _ => some defaultRule
   | .node (.raw `Lean.Parser.Term.cdot) _ => some defaultRule
   | .node (.raw `Lean.Parser.Term.show) _ => some transparentRule
   | .node (.raw `Lean.Parser.Term.fromTerm) _ => some fromTermRule
@@ -3166,6 +3169,8 @@ def ruleFor : SyntaxTree.Tree → Option LineBreakRule
   | .node (.raw `Parser.Attr.enat_to_nat_top) _ => some defaultRule
   | .node (.raw `Parser.Attr.enat_to_nat_coe) _ => some defaultRule
   | .node (.raw `Parser.Attr.pnat_to_nat_coe) _ => some defaultRule
+  | .node (.raw `Parser.Attr.zify_simps) _ => some defaultRule
+  | .node (.raw `attrContinuity) _ => some defaultRule
   | .node (.raw `Mathlib.Tactic.ToAdditive.to_additive) _ => some defaultRule
   | .node (.raw `Lean.Elab.Command.irredDefLemma) _ => some defaultRule
   | .node (.raw `Mathlib.Tactic.MkIff.mkIff) _ => some defaultRule
@@ -3328,6 +3333,8 @@ def ruleFor : SyntaxTree.Tree → Option LineBreakRule
   | .node (.raw `proof_wanted) _ => some defaultRule
   | .node (.raw `antiquotNestedExpr) _ => some defaultRule
   | .node (.raw `Lean.Parser.«command__Dsimproc__[_]_(_):=_») _ =>
+      some defaultRule
+  | .node (.raw `Lean.Parser.«command_Dsimproc_decl_(_):=_») _ =>
       some defaultRule
   | .node (.raw `«term{_}») _ => some bracedTermRule
   | .node (.raw `«term[_]») _ => some arrayRule
