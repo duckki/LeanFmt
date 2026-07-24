@@ -353,9 +353,9 @@ def atomicTreeSpan? (tree : SyntaxTree.Tree) : Option SyntaxTree.Span :=
   if isInterpolatedStringTree tree then
     treeSpan? tree
   else
-      match tree.tokens.toList.filter fun token => !token.lexeme.isEmpty with
-      | [token] => some token.span
-      | _ => none
+    match tree.tokens.toList.filter fun token => !token.lexeme.isEmpty with
+    | [token] => some token.span
+    | _ => none
 
 def atomicWithCommaSpan? (atomicTree commaTree : SyntaxTree.Tree)
     : Option SyntaxTree.Span := do

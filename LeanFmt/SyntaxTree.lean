@@ -524,14 +524,16 @@ def unwrapSingleNullTree : Tree → Tree
 def splitEquationWhereValue? : Tree → Option (Tree × Tree)
   | .node (.raw `Lean.Parser.Command.declValEqns) valueChildren => do
       let alternativesIndex ←
-        valueChildren.findIdx? fun child =>
-          rawKind? child == some `Lean.Parser.Term.matchAltsWhereDecls
+        valueChildren.findIdx?
+          fun child =>
+            rawKind? child == some `Lean.Parser.Term.matchAltsWhereDecls
       let alternatives ← valueChildren[alternativesIndex]?
       match alternatives with
       | .node (.raw `Lean.Parser.Term.matchAltsWhereDecls) children => do
           let whereIndex ←
-            children.findIdx? fun child =>
-              child.firstToken?.any fun token => token.lexeme == "where"
+            children.findIdx?
+              fun child =>
+                child.firstToken?.any fun token => token.lexeme == "where"
           if !(childrenRange children 0 whereIndex).any
                 fun child => child.firstToken?.any fun token => token.lexeme == "|" then
             none
@@ -605,8 +607,9 @@ partial def isDocCommentContainer : Tree → Bool
 def splitDirectCommandDocComment? : Tree → Option (Tree × Tree)
   | .node kind children => do
       let annotationIndex ←
-        children.findIdx? fun child =>
-          child.firstToken?.isSome
+        children.findIdx?
+          fun child =>
+            child.firstToken?.isSome
       let annotation ← children[annotationIndex]?
       if isDocCommentContainer annotation then
         some (annotation, .node kind (children.set! annotationIndex .missing))
@@ -732,8 +735,9 @@ def regroupWhereFinallyChildren (children : Array Tree) : Array Tree :=
 
 def regroupWhereDeclsChildren (children : Array Tree) : Array Tree :=
   match children[0]?, children[1]?, children[2]? with
-  | some whereKeyword, some (Tree.node (.raw `null) declarations),
-      some (Tree.node (.raw `null) finallyWrapper) =>
+  | some whereKeyword,
+    some (Tree.node (.raw `null) declarations),
+    some (Tree.node (.raw `null) finallyWrapper) =>
       let finallyChildren :=
         match finallyWrapper[0]? with
         | some (Tree.node (.raw `Lean.Parser.Term.whereFinally) children) =>
@@ -748,8 +752,9 @@ def regroupCommandInWrapperChildren (children : Array Tree) : Array Tree :=
       match wrapped[0]? with
       | some first =>
           if first.firstToken?.any (·.lexeme == "in") then
-            childrenRange children 0 1 ++ wrapped
-              ++ childrenRange children 2 children.size
+            childrenRange children 0 1
+            ++ wrapped
+            ++ childrenRange children 2 children.size
           else
             children
       | none => children

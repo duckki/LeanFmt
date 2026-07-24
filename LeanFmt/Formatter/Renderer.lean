@@ -759,8 +759,7 @@ def RenderState.emitOriginalTree
           state.defaultWhitespace firstToken true
         else
           originalLeading
-      let leadingColumn :=
-        lineWidth <| currentLineAfterAppend state.currentLine leading
+      let leadingColumn := lineWidth <| currentLineAfterAppend state.currentLine leading
       let sourceText :=
         SyntaxTree.sourceText state.source firstToken.span.start lastToken.span.stop
       let sourceColumn := originalColumnAt state.source firstToken.span.start
@@ -778,8 +777,7 @@ def RenderState.emitOriginalTree
               sourceColumn
             else
               leadingColumn
-          some
-          <| max layoutColumn ((state.segmentIndentation + 1) * indentationSpaces)
+          some <| max layoutColumn ((state.segmentIndentation + 1) * indentationSpaces)
         else
           none
       let leading :=
@@ -1288,7 +1286,7 @@ def breakPointPreservesTightTokenBoundary
   | some (left, right) =>
       !SpaceRules.preservesTightDotSpacing left right
       && !(left.span.stop == right.span.start
-        && SpaceRules.preservesTightPostfixSpacing right)
+            && SpaceRules.preservesTightPostfixSpacing right)
   | none => true
 
 def normalizeBreakPoints
@@ -1729,8 +1727,7 @@ mutual
 
   partial def renderSegment (state : RenderState) (segment : LineBreakRules.Segment)
       (prepared?
-        : Option (LineBreakRules.LineBreakRule × List LineBreakRules.BreakPoint) :=
-                                                                                  none)
+        : Option (LineBreakRules.LineBreakRule × List LineBreakRules.BreakPoint) := none)
       : RenderState :=
     let (rule, breakPoints) :=
       match prepared? with

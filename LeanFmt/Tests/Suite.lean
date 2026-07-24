@@ -155,11 +155,10 @@ def assertTacticQuotationAntiquotationPreserved (env : Lean.Environment) : IO Un
   let elabRulesResult ←
     Formatter.formatSourceWithEnvDetailed env elabRulesSource
       "tactic-quotation-sequence.lean"
-  assertTrue "tactic quotation sequence does not fall back"
-    (!elabRulesResult.fellBack)
+  assertTrue "tactic quotation sequence does not fall back" (!elabRulesResult.fellBack)
   assertTextContains "tactic quotation sequence keeps its source layout"
     elabRulesResult.formatted
-      "`(tactic|\n      refine And.intro ?_ ?_;\n      exact $goal)"
+    "`(tactic|\n      refine And.intro ?_ ?_;\n      exact $goal)"
   let elabRulesTree ←
     SyntaxTree.parseModuleStringWithEnv env elabRulesResult.formatted
       "tactic-quotation-sequence-formatted.lean"
@@ -193,16 +192,14 @@ def assertSafeArrayIndexKeepsPostfixQuestion (env : Lean.Environment) : IO Unit 
     Formatter.formatSourceWithEnv env formatted "safe-array-index-formatted.lean"
   assertEq "safe array index formatting is idempotent" formatted formattedAgain
 
-def assertGetElemBracketStaysAttachedAcrossWrap (env : Lean.Environment)
-    : IO Unit := do
+def assertGetElemBracketStaysAttachedAcrossWrap (env : Lean.Environment) : IO Unit := do
   let source :=
     "set_option linter.style.whitespace false in\n"
     ++ "theorem getElemSpacing (l : List α) (n k : Nat) (hk : k < l.length)\n"
     ++ "    : l[k] = ((l.rotate n)[(l.length - n % l.length + k) % l.length]'\n"
     ++ "      ((Nat.mod_lt _ hk).trans_eq (List.length_rotate l n).symm)) := by\n"
     ++ "  sorry\n"
-  let formatted ←
-    Formatter.formatSourceWithEnv env source "get-elem-tight-spacing.lean"
+  let formatted ← Formatter.formatSourceWithEnv env source "get-elem-tight-spacing.lean"
   assertTextContains "get-element bracket stays attached to its receiver"
     formatted "(l.rotate n)["
   assertTextLacks "get-element bracket does not become a spaced argument"
@@ -210,8 +207,7 @@ def assertGetElemBracketStaysAttachedAcrossWrap (env : Lean.Environment)
   assertTrue "wrapped get-element notation preserves code"
     (← codePreservedIgnoringWhitespace env source formatted)
   let formattedAgain ←
-    Formatter.formatSourceWithEnv env formatted
-      "get-elem-tight-spacing-formatted.lean"
+    Formatter.formatSourceWithEnv env formatted "get-elem-tight-spacing-formatted.lean"
   assertEq "wrapped get-element notation is idempotent" formatted formattedAgain
 
 def assertPostfixSuperscriptSpacingPreservesParse (env : Lean.Environment) : IO Unit := do
@@ -240,16 +236,12 @@ def assertBlockCommentInternalWhitespacePreservedByFormatting (env : Lean.Enviro
   assertTextContains "block comment internal blank lines are preserved"
     formatted "Copyright line\n\n\n  Indented author line"
   let nestedSource :=
-    "/-\n"
-    ++ "Outer comment.\n"
-    ++ "/-- Nested documentation comment. -/\n"
-    ++ "  Indentation after the nested comment stays unchanged.\n"
-    ++ "-/\n"
+    "/-\n" ++ "Outer comment.\n" ++ "/-- Nested documentation comment. -/\n"
+    ++ "  Indentation after the nested comment stays unchanged.\n" ++ "-/\n"
     ++ "def nestedCommentAfterHeader := 0\n"
   let nestedFormatted ←
     Formatter.formatSourceWithEnv env nestedSource "nested-block-comment-spacing.lean"
-  assertEq "nested block comment whitespace is preserved"
-    nestedSource nestedFormatted
+  assertEq "nested block comment whitespace is preserved" nestedSource nestedFormatted
 
 def assertModuleDocInternalBlankLinesPreservedByFormatting (env : Lean.Environment)
     : IO Unit := do
@@ -804,8 +796,7 @@ def assertEquationWhereUsesDeclarationBase (env : Lean.Environment) : IO Unit :=
     ++ "  computeResultWithManyArguments firstArgument secondArgument thirdArgument :=\n"
     ++ "    thirdArgument\n"
     ++ "  secondLocalDeclaration value := value\n"
-  let formatted ←
-    Formatter.formatSourceWithEnv env source "equation-where-base.lean"
+  let formatted ← Formatter.formatSourceWithEnv env source "equation-where-base.lean"
   assertEq "equational declaration where uses command base" expected formatted
 
 def assertSingleLineOriginalAttributeSyntaxFitsInline (env : Lean.Environment)
@@ -888,12 +879,10 @@ def assertDoReassignArrowHasRule (env : Lean.Environment) : IO Unit := do
     ++ "  _ ← pure ()\n"
     ++ "  _ ← pure ()\n"
     ++ "  pure ()\n"
-  let formatted ←
-    Formatter.formatSourceWithEnv env source "do-reassign-arrow.lean"
+  let formatted ← Formatter.formatSourceWithEnv env source "do-reassign-arrow.lean"
   assertEq "do reassign arrow formatting" source formatted
   let moduleTree ←
-    SyntaxTree.parseModuleStringWithEnv env formatted
-      "do-reassign-arrow-formatted.lean"
+    SyntaxTree.parseModuleStringWithEnv env formatted "do-reassign-arrow-formatted.lean"
   assertTrue "do reassign arrow has complete rule coverage"
     (Formatter.Diagnostics.missingRuleOccurrencesForModule moduleTree).isEmpty
 
@@ -985,8 +974,7 @@ def assertDbgTraceBodyUsesTermBase (env : Lean.Environment) : IO Unit := do
     ++ "    value\n"
     ++ "  else\n"
     ++ "    value\n"
-  let formatted ←
-    Formatter.formatSourceWithEnv env source "dbg-trace-body.lean"
+  let formatted ← Formatter.formatSourceWithEnv env source "dbg-trace-body.lean"
   assertEq "dbg_trace body stays aligned with dbg_trace" source formatted
   assertTrue "dbg_trace body formatting preserves syntax"
     (← codePreservedIgnoringWhitespace env source formatted)
@@ -1316,8 +1304,7 @@ def assertLongDerivingInstanceFlowsClasses (env : Lean.Environment) : IO Unit :=
     ++ "    WellFoundedLT, SuccOrder, AddMonoidWithOne, CommSemiring,\n"
     ++ "    LinearOrderedAddCommMonoidWithTop\n"
     ++ "for ENat\n"
-  let formatted ←
-    Formatter.formatSourceWithEnv env source "long-deriving-instance.lean"
+  let formatted ← Formatter.formatSourceWithEnv env source "long-deriving-instance.lean"
   assertEq "long deriving instance flows classes" expected formatted
 
 def assertMatchMotiveUsesTransparentRule (env : Lean.Environment) : IO Unit := do
@@ -1356,8 +1343,7 @@ def assertPrivateStructureFieldsUseCommandBase (env : Lean.Environment) : IO Uni
   let formattedAgain ←
     Formatter.formatSourceWithEnv env formatted
       "private-structure-field-base-formatted.lean"
-  assertEq "private structure field formatting is idempotent"
-    formatted formattedAgain
+  assertEq "private structure field formatting is idempotent" formatted formattedAgain
 
 def assertStructureFieldProofBreaksAfterAssignment (env : Lean.Environment)
     : IO Unit := do
@@ -1465,15 +1451,10 @@ def assertWhereFormattingKeepsSuffix (env : Lean.Environment) : IO Unit := do
 
 def assertWhereFinallyKeepsHeaderAndProofBody (env : Lean.Environment) : IO Unit := do
   let source :=
-    "def fillHole : Nat :=\n"
-    ++ "  ?_\n"
-    ++ "where finally\n"
-    ++ "  exact 0\n"
-  let result ←
-    Formatter.formatSourceWithEnvDetailed env source "where-finally.lean"
+    "def fillHole : Nat :=\n" ++ "  ?_\n" ++ "where finally\n" ++ "  exact 0\n"
+  let result ← Formatter.formatSourceWithEnvDetailed env source "where-finally.lean"
   assertTrue "where finally does not fall back" (!result.fellBack)
-  assertTextContains "where finally stays on one line"
-    result.formatted "where finally\n"
+  assertTextContains "where finally stays on one line" result.formatted "where finally\n"
   assertTextContains "where finally proof body remains intact"
     result.formatted "finally\n  exact 0\n"
   assertTrue "where finally preserves code"
@@ -1641,22 +1622,20 @@ def assertTerminationProofSuffixUntouched (env : Lean.Environment) : IO Unit := 
     Formatter.formatSourceWithEnv env source "termination-proof-suffix-untouched.lean"
   assertEq "termination proof suffix untouched" source formatted
 
-def assertTerminationProofSuffixDoesNotAccumulateIndent
-    (env : Lean.Environment) : IO Unit := do
+def assertTerminationProofSuffixDoesNotAccumulateIndent (env : Lean.Environment)
+    : IO Unit := do
   let source :=
     "def toTree (p : DyckWord) : BinaryTree Unit :=\n"
     ++ "  if p = 0 then nil else p.insidePart.toTree △ p.outsidePart.toTree\n"
     ++ "termination_by p.semilength\n"
     ++ "decreasing_by exacts [semilength_insidePart_lt ‹_›, semilength_outsidePart_lt ‹_›]\n"
   let formatted ←
-    Formatter.formatSourceWithEnv env source
-      "termination-proof-suffix-stable-indent.lean"
+    Formatter.formatSourceWithEnv env source "termination-proof-suffix-stable-indent.lean"
   assertEq "termination proof suffix keeps its source indentation" source formatted
   let formattedAgain ←
     Formatter.formatSourceWithEnv env formatted
       "termination-proof-suffix-stable-indent-formatted.lean"
-  assertEq "termination proof suffix indentation is idempotent"
-    formatted formattedAgain
+  assertEq "termination proof suffix indentation is idempotent" formatted formattedAgain
 
 def assertBasicDeclarationBreak (env : Lean.Environment) : IO Unit := do
   let source :=
@@ -2081,8 +2060,7 @@ def assertHaveTermFormatting (env : Lean.Environment) : IO Unit := do
   assertEq "long have term formatting is idempotent"
     longResult.formatted longFormattedAgain
 
-def assertHaveProofAfterInfixPreservesLayout (env : Lean.Environment)
-    : IO Unit := do
+def assertHaveProofAfterInfixPreservesLayout (env : Lean.Environment) : IO Unit := do
   let source :=
     "def f (hM : ∃ n : Nat, n = n) : Nat :=\n"
     ++ "  id <|\n"
@@ -2096,14 +2074,12 @@ def assertHaveProofAfterInfixPreservesLayout (env : Lean.Environment)
     ++ "  have hex : ∃ n : Nat, n = n := by\n"
     ++ "    obtain ⟨n, h⟩ := hM; refine ⟨n, h⟩\n"
     ++ "  Nat.succ (Classical.choose hex)\n"
-  let formatted ←
-    Formatter.formatSourceWithEnv env source "have-proof-after-infix.lean"
+  let formatted ← Formatter.formatSourceWithEnv env source "have-proof-after-infix.lean"
   assertEq "have proof after infix keeps the proof offside" expected formatted
   assertTrue "have proof after infix preserves code"
     (← codePreservedIgnoringWhitespace env source formatted)
   let formattedAgain ←
-    Formatter.formatSourceWithEnv env formatted
-      "have-proof-after-infix-formatted.lean"
+    Formatter.formatSourceWithEnv env formatted "have-proof-after-infix-formatted.lean"
   assertEq "have proof after infix is idempotent" formatted formattedAgain
 
 def assertAbsoluteValueDelimitersStayAttached (env : Lean.Environment) : IO Unit := do
@@ -3036,8 +3012,7 @@ def assertCommandBinderSequencesFlow (env : Lean.Environment) : IO Unit := do
     ++ "  firstVeryLongVariableName secondVeryLongVariableName thirdVeryLongVariableName\n"
     ++ "    fourthVeryLongVariableName fifthVeryLongVariableName in\n"
     ++ "theorem includedValue : True := by trivial\n"
-  let formatted ←
-    Formatter.formatSourceWithEnv env source "command-binder-flow.lean"
+  let formatted ← Formatter.formatSourceWithEnv env source "command-binder-flow.lean"
   assertEq "command binder sequences flow between binders" expected formatted
 
 def assertMutualEquationArmIndent (env : Lean.Environment) : IO Unit := do
@@ -4058,19 +4033,15 @@ def assertCheckCommandHasRule (env : Lean.Environment) : IO Unit := do
 def assertGuardMsgsCommandUsesCommandInLayout (env : Lean.Environment) : IO Unit := do
   let source :=
     "/-- info: value : Nat -/\n"
-    ++ "#guard_msgs in\n"
-    ++ "#check (sorry : Nat)\n"
-  let formatted ←
-    Formatter.formatSourceWithEnv env source "guard-msgs-command.lean"
+    ++ "#guard_msgs in\n" ++ "#check (sorry : Nat)\n"
+  let formatted ← Formatter.formatSourceWithEnv env source "guard-msgs-command.lean"
   assertEq "guard messages command uses command in layout" source formatted
   let moduleTree ←
-    SyntaxTree.parseModuleStringWithEnv env formatted
-      "guard-msgs-command-formatted.lean"
+    SyntaxTree.parseModuleStringWithEnv env formatted "guard-msgs-command-formatted.lean"
   assertTrue "guard messages command has complete rule coverage"
     (Formatter.Diagnostics.missingRuleOccurrencesForModule moduleTree).isEmpty
   let formattedAgain ←
-    Formatter.formatSourceWithEnv env formatted
-      "guard-msgs-command-formatted-again.lean"
+    Formatter.formatSourceWithEnv env formatted "guard-msgs-command-formatted-again.lean"
   assertEq "guard messages command is idempotent" formatted formattedAgain
 
 def assertBinderTacticProofBodyHasNoMissingRules (env : Lean.Environment) : IO Unit := do
@@ -4299,8 +4270,8 @@ def assertShortStructureExtendsHeaderStaysFlat (env : Lean.Environment) : IO Uni
     Formatter.formatSourceWithEnv env source "short-structure-extends-header.lean"
   assertEq "short structure extends header stays flat" source formatted
 
-def assertStructureExtendsDoesNotIndentFollowingCommand
-    (env : Lean.Environment) : IO Unit := do
+def assertStructureExtendsDoesNotIndentFollowingCommand (env : Lean.Environment)
+    : IO Unit := do
   let source :=
     "structure Child\n"
     ++ "    extends Parent where\n"
@@ -4309,10 +4280,8 @@ def assertStructureExtendsDoesNotIndentFollowingCommand
     ++ "/-- The following command remains at the command base. -/\n"
     ++ "#check Nat\n"
   let formatted ←
-    Formatter.formatSourceWithEnv env source
-      "structure-extends-following-command.lean"
-  assertEq "structure extends does not indent the following command"
-    source formatted
+    Formatter.formatSourceWithEnv env source "structure-extends-following-command.lean"
+  assertEq "structure extends does not indent the following command" source formatted
 
 def assertInductiveAlternativesBreakMandatory (env : Lean.Environment) : IO Unit := do
   let source := "inductive Color where | red | green | blue\n"
@@ -5436,14 +5405,11 @@ def assertFormatterArchitecture : IO Unit := do
     SyntaxTree.Tree.node (.raw `commandUnsuppress_compilationIn_)
       #[
         .leaf (syntheticAtomToken "unsuppress_compilation"),
-        .node (.raw `null)
-          #[.leaf (syntheticAtomToken "in"), extendedTheorem]
+        .node (.raw `null) #[.leaf (syntheticAtomToken "in"), extendedTheorem]
       ]
   let regroupedUnsuppress := SyntaxTree.regroupTree unsuppressWrapper
-  let unsuppressSegment :=
-    Formatter.LineBreakRules.Segment.ofTree regroupedUnsuppress
-  let unsuppressRule :=
-    Formatter.LineBreakRules.formattingRuleFor regroupedUnsuppress
+  let unsuppressSegment := Formatter.LineBreakRules.Segment.ofTree regroupedUnsuppress
+  let unsuppressRule := Formatter.LineBreakRules.formattingRuleFor regroupedUnsuppress
   assertTrue "command in wrapper flattens its optional payload"
     (unsuppressSegment.size == 3)
   assertTrue "command in wrapper breaks after in"
@@ -5849,10 +5815,7 @@ def assertMathlibLowRiskSyntaxKindsHaveRules : IO Unit := do
       (Formatter.LineBreakRules.ruleFor tree).isSome
   let linterItems :=
     SyntaxTree.Tree.node (.raw `null)
-      #[
-        .leaf (syntheticAtomToken "linter.one"),
-        .leaf (syntheticAtomToken "linter.two")
-      ]
+      #[.leaf (syntheticAtomToken "linter.one"), .leaf (syntheticAtomToken "linter.two")]
   let linterSetChildren :=
     SyntaxTree.regroupRegisterLinterSetChildren
       #[
@@ -5862,8 +5825,7 @@ def assertMathlibLowRiskSyntaxKindsHaveRules : IO Unit := do
         .leaf (syntheticAtomToken ":="),
         linterItems
       ]
-  assertTrue "register_linter_set list wrapper is flattened"
-    (linterSetChildren.size == 6)
+  assertTrue "register_linter_set list wrapper is flattened" (linterSetChildren.size == 6)
   let linterSetTree :=
     SyntaxTree.Tree.node (.raw `Lean.Linter.«command_Register_linter_set_:=_»)
       linterSetChildren
@@ -5901,26 +5863,26 @@ def assertMathlibLowRiskSyntaxKindsHaveRules : IO Unit := do
   let matrixTree :=
     SyntaxTree.regroupTree
     <| SyntaxTree.Tree.node (.raw `Matrix.matrixNotation)
-      #[
-        .leaf (syntheticAtomToken "!!["),
-        .node (.raw `null)
-          #[
-            .node (.raw `null)
-              #[
-                .leaf (syntheticAtomToken "a"),
-                .leaf (syntheticAtomToken ","),
-                .leaf (syntheticAtomToken "b")
-              ],
-            .leaf (syntheticAtomToken ";"),
-            .node (.raw `null)
-              #[
-                .leaf (syntheticAtomToken "c"),
-                .leaf (syntheticAtomToken ","),
-                .leaf (syntheticAtomToken "d")
-              ]
-          ],
-        .leaf (syntheticAtomToken "]")
-      ]
+        #[
+          .leaf (syntheticAtomToken "!!["),
+          .node (.raw `null)
+            #[
+              .node (.raw `null)
+                #[
+                  .leaf (syntheticAtomToken "a"),
+                  .leaf (syntheticAtomToken ","),
+                  .leaf (syntheticAtomToken "b")
+                ],
+              .leaf (syntheticAtomToken ";"),
+              .node (.raw `null)
+                #[
+                  .leaf (syntheticAtomToken "c"),
+                  .leaf (syntheticAtomToken ","),
+                  .leaf (syntheticAtomToken "d")
+                ]
+            ],
+          .leaf (syntheticAtomToken "]")
+        ]
   match matrixTree, Formatter.LineBreakRules.ruleFor matrixTree with
   | .node _ children, some rule =>
       assertTrue "matrix notation rows and columns are flattened for layout"
@@ -5980,8 +5942,7 @@ def assertMathlibLowRiskSyntaxKindsHaveRules : IO Unit := do
   assertTrue "bracketed simproc declarations keep original formatting"
     (Formatter.shouldEmitOriginalTree bracketedSimprocTree)
   let jsxTree :=
-    SyntaxTree.Tree.node
-      (.raw `ProofWidgets.Jsx.«proofWidgetsJsxElement<__>_</_>») #[]
+    SyntaxTree.Tree.node (.raw `ProofWidgets.Jsx.«proofWidgetsJsxElement<__>_</_>») #[]
   assertTrue "ProofWidgets JSX keeps original formatting"
     (Formatter.shouldEmitOriginalTree jsxTree)
   assertTrue "ProofWidgets JSX is skipped by missing-rule reporting"
@@ -6092,23 +6053,21 @@ def assertElaborationSyntaxHasRules (env : Lean.Environment) : IO Unit := do
     ++ "\n"
     ++ "run_cmd Lean.Elab.Command.liftTermElabM do\n"
     ++ "  pure ()\n"
-  let formatted ←
-    Formatter.formatSourceWithEnv env source "elaboration-syntax-rules.lean"
+  let formatted ← Formatter.formatSourceWithEnv env source "elaboration-syntax-rules.lean"
   assertTrue "elaboration syntax formatting preserves code"
     (← codePreservedIgnoringWhitespace env source formatted)
   assertTextContains "elaborator declarations keep their source layout"
     formatted
-      ("elab \"identity% \" t:term : term => do\n"
-        ++ "  let declarationName := ``Nat.succ\n"
-        ++ "  return t\n")
+    ("elab \"identity% \" t:term : term => do\n"
+      ++ "  let declarationName := ``Nat.succ\n"
+      ++ "  return t\n")
   let moduleTree ←
     SyntaxTree.parseModuleStringWithEnv env formatted
       "elaboration-syntax-rules-formatted.lean"
   assertTrue "elaboration syntax has complete rule coverage"
     (Formatter.Diagnostics.missingRuleOccurrencesForModule moduleTree).isEmpty
   let formattedAgain ←
-    Formatter.formatSourceWithEnv env formatted
-      "elaboration-syntax-rules-idempotent.lean"
+    Formatter.formatSourceWithEnv env formatted "elaboration-syntax-rules-idempotent.lean"
   assertEq "elaboration syntax formatting is idempotent" formatted formattedAgain
 
 def assertMatchExprAlternativesStartOnNewLines (env : Lean.Environment) : IO Unit := do
@@ -6131,8 +6090,7 @@ def assertMatchExprAlternativesStartOnNewLines (env : Lean.Environment) : IO Uni
   let formattedAgain ←
     Formatter.formatSourceWithEnv env formatted
       "match-expr-alternative-breaks-idempotent.lean"
-  assertEq "match_expr alternative formatting is idempotent"
-    formatted formattedAgain
+  assertEq "match_expr alternative formatting is idempotent" formatted formattedAgain
   let attachedDoSource :=
     "def inspectAttachedDo (e : Lean.Expr) : Lean.Meta.MetaM Lean.Expr := do\n"
     ++ "  match e with\n"
@@ -6142,15 +6100,14 @@ def assertMatchExprAlternativesStartOnNewLines (env : Lean.Environment) : IO Uni
     ++ "    else return e\n"
     ++ "  | _ => return e\n"
   let attachedDoFormatted ←
-    Formatter.formatSourceWithEnv env attachedDoSource
-      "match-attached-do-base.lean"
+    Formatter.formatSourceWithEnv env attachedDoSource "match-attached-do-base.lean"
   assertTextContains "attached do keeps the match-arm base"
     attachedDoFormatted
-      ("  | .app f _ => do\n"
-        ++ "      if true then\n"
-        ++ "        return f\n"
-        ++ "      else\n"
-        ++ "        return e\n")
+    ("  | .app f _ => do\n"
+      ++ "      if true then\n"
+      ++ "        return f\n"
+      ++ "      else\n"
+      ++ "        return e\n")
   assertTextLacks "attached do body does not inherit the pattern end column"
     attachedDoFormatted "\n                  if true then"
 

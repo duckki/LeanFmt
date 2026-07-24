@@ -69,8 +69,8 @@ partial def takeBlockCommentTriviaAux (depth : Nat) (reversed : List Char)
 def pushNonemptyString (text : String) (pieces : List String) : List String :=
   if text.isEmpty then pieces else text :: pieces
 
-partial def cleanTriviaAux (outsideReversed : List Char)
-    (piecesReversed : List String) : List Char → List String
+partial def cleanTriviaAux (outsideReversed : List Char) (piecesReversed : List String)
+    : List Char → List String
   | [] =>
       (pushNonemptyString
         (cleanWhitespaceTrivia <| String.ofList outsideReversed.reverse)

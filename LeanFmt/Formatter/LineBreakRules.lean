@@ -144,9 +144,9 @@ def RuleContext.parentIsCommandBinderList (context : RuleContext) : Bool :=
   match context.ancestors with
   | parent :: _ =>
       (parent.rawKind? == some `Lean.Parser.Command.variable
-          || parent.rawKind? == some `Lean.Parser.Command.omit
-          || parent.rawKind? == some `Lean.Parser.Command.include)
-        && parent.childIndex == 1
+        || parent.rawKind? == some `Lean.Parser.Command.omit
+        || parent.rawKind? == some `Lean.Parser.Command.include)
+      && parent.childIndex == 1
   | _ => false
 
 def RuleContext.parentIsStructureFieldDefaultValue (context : RuleContext) : Bool :=
@@ -283,8 +283,9 @@ def childStartsWithLexeme (segment : Segment) (index : Nat) (lexeme : String) : 
 
 def frameSelectsDoLetElseFallback (frame : Frame) : Bool :=
   frame.rawKind? == some `Lean.Parser.Term.doLetElse
-  && (List.range frame.childIndex).any fun index =>
-      childStartsWithLexeme frame.segment index "|"
+  && (List.range frame.childIndex).any
+      fun index =>
+        childStartsWithLexeme frame.segment index "|"
 
 def inDoLetElseFallback (context : RuleContext) : Bool :=
   context.ancestors.head?.any frameSelectsDoLetElseFallback
@@ -515,7 +516,7 @@ def defaultInfixBreaks (_context : RuleContext) (segment : Segment) : List Break
       | some child =>
           if defaultChildIsNonemptyLeaf child then
             match defaultPresentChildIndexBefore? segment index,
-                  defaultPresentChildIndexAfter? segment index with
+              defaultPresentChildIndexAfter? segment index with
             | some beforeIndex, some afterIndex =>
                 if defaultChildIsNodeAt segment beforeIndex
                     && defaultChildIsNodeAt segment afterIndex then
@@ -753,8 +754,9 @@ def derivingClauseBreaks (_context : RuleContext) (segment : Segment) : List Bre
 
 def declarationWhereSuffixBreak? (segment : Segment) : Option BreakPoint := do
   let index ←
-    segment.indexes.find? fun index =>
-      3 < index && childStartsWithLexeme segment index "where"
+    segment.indexes.find?
+      fun index =>
+        3 < index && childStartsWithLexeme segment index "where"
   boundaryBreak? segment index 0
 
 def definitionBreaks (context : RuleContext) (segment : Segment) : List BreakPoint :=
@@ -904,7 +906,7 @@ def delimitedItemIndexes (segment : Segment) : List Nat :=
         fun index =>
           !childStartsWithLexeme segment index ","
           && !(segment.rawKind? == some `Matrix.matrixNotation
-            && childStartsWithLexeme segment index ";")
+                && childStartsWithLexeme segment index ";")
 
 def delimitedItemCount (segment : Segment) : Nat :=
   (delimitedItemIndexes segment).length
@@ -976,7 +978,7 @@ def structInstBreaks (_context : RuleContext) (segment : Segment) : List BreakPo
       else
         []
     match segment.indexes.find? fun index => childStartsWithLexeme segment index "{",
-          segment.indexes.find? fun index => childStartsWithLexeme segment index "}" with
+      segment.indexes.find? fun index => childStartsWithLexeme segment index "}" with
     | some openIndex, some closeIndex =>
         let openBreak :=
           match (nonemptyChildIndexes segment).find? fun index => openIndex < index with
@@ -1217,8 +1219,7 @@ def signatureBreaks (context : RuleContext) (segment : Segment) : List BreakPoin
 def binderBreaks (_context : RuleContext) (segment : Segment) : List BreakPoint :=
   [breakBeforeLexeme? segment ":" 1].filterMap id
 
-def binderDefaultBreaks (_context : RuleContext) (segment : Segment)
-    : List BreakPoint :=
+def binderDefaultBreaks (_context : RuleContext) (segment : Segment) : List BreakPoint :=
   [boundaryBreak? segment 1 1].filterMap id
 
 /-! ### Application, signature, and binder rule values -/
@@ -1460,13 +1461,12 @@ def doLetArrowFallbackTailBreaks (context : RuleContext) (segment : Segment)
     []
 
 def doLetElseContinuationBreak? (segment : Segment) : Option BreakPoint := do
-    let pipeIndex ←
-      segment.indexes.find? fun index => childStartsWithLexeme segment index "|"
-    let fallbackIndex ←
-      (nonemptyChildIndexes segment).find? fun index => pipeIndex < index
-    let continuationIndex ←
-      (nonemptyChildIndexes segment).find? fun index => fallbackIndex < index
-    boundaryBreak? segment continuationIndex 0
+  let pipeIndex ←
+    segment.indexes.find? fun index => childStartsWithLexeme segment index "|"
+  let fallbackIndex ← (nonemptyChildIndexes segment).find? fun index => pipeIndex < index
+  let continuationIndex ←
+    (nonemptyChildIndexes segment).find? fun index => fallbackIndex < index
+  boundaryBreak? segment continuationIndex 0
 
 def doLetElseBreaks (_context : RuleContext) (segment : Segment) : List BreakPoint :=
   [
@@ -1590,18 +1590,18 @@ def whereDeclsBreaks (_context : RuleContext) (segment : Segment) : List BreakPo
     | none => []
   let bodyIndexes := (nonemptyChildIndexes segment).drop 1
   let body :=
-    bodyIndexes.filterMap fun index =>
-      if childStartsWithLexeme segment index "finally" then
-        if bodyIndexes.head? == some index then
-          none
+    bodyIndexes.filterMap
+      fun index =>
+        if childStartsWithLexeme segment index "finally" then
+          if bodyIndexes.head? == some index then
+            none
+          else
+            boundaryBreak? segment index 0
         else
-          boundaryBreak? segment index 0
-      else
-        boundaryBreak? segment index 1
+          boundaryBreak? segment index 1
   leading ++ body
 
-def whereFinallyBreaks (_context : RuleContext) (segment : Segment)
-    : List BreakPoint :=
+def whereFinallyBreaks (_context : RuleContext) (segment : Segment) : List BreakPoint :=
   [boundaryBreak? segment 1 1].filterMap id
 
 def whereStructInstBreaks (_context : RuleContext) (segment : Segment)
@@ -1965,9 +1965,9 @@ def infixBreaks (_context : RuleContext) (segment : Segment) : List BreakPoint :
               if index % 2 == 1 && !attachedBodyInfixOperator segment index then
                 boundaryBreak? segment index 0
               else if 1 < index
-                  && index % 2 == 0
-                  && (childIsRawKind segment index `Lean.Parser.Term.have
-                    || childIsRawKind segment index `Lean.Parser.Term.haveI) then
+                      && index % 2 == 0
+                      && (childIsRawKind segment index `Lean.Parser.Term.have
+                          || childIsRawKind segment index `Lean.Parser.Term.haveI) then
                 boundaryBreak? segment index 0
               else
                 none
@@ -1975,8 +1975,9 @@ def infixBreaks (_context : RuleContext) (segment : Segment) : List BreakPoint :
 def infixRuleBreaks (context : RuleContext) (segment : Segment) : List BreakPoint :=
   let breaks := infixBreaks context segment
   if infixAttachedBodyAssignmentValue context segment then
-    breaks.map fun breakPoint =>
-      { breakPoint with indentLevels := breakPoint.indentLevels + 1 }
+    breaks.map
+      fun breakPoint =>
+        { breakPoint with indentLevels := breakPoint.indentLevels + 1 }
   else
     breaks
 
@@ -2504,11 +2505,12 @@ def registerLinterSetBreaks (_context : RuleContext) (segment : Segment)
     : List BreakPoint :=
   match contentIndexAfterLexeme? segment ":=" with
   | some firstLinterIndex =>
-      segment.indexes.filterMap fun index =>
-        if firstLinterIndex <= index then
-          boundaryBreak? segment index 1
-        else
-          none
+      segment.indexes.filterMap
+        fun index =>
+          if firstLinterIndex <= index then
+            boundaryBreak? segment index 1
+          else
+            none
   | none => []
 
 def registerLinterSetRule : LineBreakRule :=
@@ -2955,7 +2957,7 @@ def ruleFor : SyntaxTree.Tree → Option LineBreakRule
   | .node (.raw `Aesop.Frontend.Parser.builder_nameTactic) _ => some defaultRule
   | .node (.raw `Aesop.Frontend.Parser.builder_nameUnfold) _ => some defaultRule
   | .node (.raw `Aesop.Frontend.Parser.«builder_option(Index:=[_])») _ =>
-    some defaultRule
+      some defaultRule
   | .node (.raw `Aesop.Frontend.Parser.indexing_modeTarget_) _ => some defaultRule
   | .node (.raw `Aesop.Frontend.Parser.«priority_%») _ => some defaultRule
   | .node (.raw `Aesop.Frontend.Parser.«priority-_») _ => some defaultRule
