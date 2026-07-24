@@ -1874,9 +1874,22 @@ def anonymousCtorRule : LineBreakRule :=
     breakPoints := anonymousCtorBreaks
   }
 
-def isVerticalBarDelimitedTermKind (kind : Lean.SyntaxNodeKind) : Bool :=
+def isSymmetricDelimitedGeneratedTerm
+    (kind : Lean.SyntaxNodeKind) (children : Array SyntaxTree.Tree)
+    : Bool :=
   let name := toString kind
-  name.startsWith "«term|" && name.endsWith "|»"
+  if !name.startsWith "«term" then
+    false
+  else
+    match (children.filter fun child => child.firstToken?.isSome).toList with
+    | [opening, _, closing] =>
+        match opening.firstToken?, closing.lastToken? with
+        | some opening, some closing =>
+            opening.role == .atom
+            && closing.role == .atom
+            && opening.lexeme == closing.lexeme
+        | _, _ => false
+    | _ => false
 
 def isGeneratedLocalNotationKind (kind : Lean.SyntaxNodeKind) : Bool :=
   (toString kind).endsWith "Local≺»"
@@ -3209,8 +3222,8 @@ def ruleFor : SyntaxTree.Tree → Option LineBreakRule
       if treeFirstLexeme? tree == some "lemma" then some theoremRule else some groupRule
   | .node (.raw `Lean.Parser.Term.matchAltsWhereDecls) _ => some matchAltsWhereDeclsRule
   | .node (.raw `Lean.Parser.Term.matchAlts) _ => some matchAltsRule
-  | .node (.raw kind) _ =>
-      if isVerticalBarDelimitedTermKind kind then
+  | .node (.raw kind) children =>
+      if isSymmetricDelimitedGeneratedTerm kind children then
         some transparentRule
       else if isGeneratedLocalNotationKind kind then
         some defaultRule

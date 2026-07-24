@@ -2294,6 +2294,33 @@ def assertAbsoluteValueDelimitersStayAttached (env : Lean.Environment) : IO Unit
       "absolute-value-delimiters-formatted.lean"
   assertEq "absolute value formatting is idempotent" result.formatted formattedAgain
 
+def assertSymmetricDelimitersStayAttachedAcrossPasses (env : Lean.Environment)
+    : IO Unit := do
+  let source :=
+    "notation \"‖\" x \"‖\" => x\n\n"
+    ++ "theorem symmetricDelimiterSignatureWraps\n"
+    ++ "    (h : VeryLongHypothesisNameForSymmetricDelimiterLayoutTesting) :\n"
+    ++ "    ‖firstVeryLongExpressionForSymmetricDelimiterFormatting -\n"
+    ++ "      (secondVeryLongExpressionForSymmetricDelimiterFormatting -\n"
+    ++ "        thirdVeryLongExpressionForSymmetricDelimiterFormatting)‖ ≤\n"
+    ++ "      2 * epsilon * veryLongBoundForSymmetricDelimiterFormatting := by\n"
+    ++ "  -- Keep this comment attached to the proof.\n"
+    ++ "  exact proof\n"
+  let result ←
+    Formatter.formatSourceWithEnvDetailed env source "symmetric-delimiters.lean"
+      { lineWidth := 100 }
+  assertTrue "symmetric delimiters do not trigger fallback" (!result.fellBack)
+  assertTextLacks "symmetric delimiter closing token keeps its expression base"
+    result.formatted "\n‖"
+  assertTextLacks "symmetric delimiter relation keeps its signature base"
+    result.formatted "\n≤"
+  assertTextContains "proof comment keeps its proof-body base"
+    result.formatted "\n  -- Keep this comment attached to the proof.\n"
+  let formattedAgain ←
+    Formatter.formatSourceWithEnv env result.formatted
+      "symmetric-delimiters-formatted.lean" { lineWidth := 100 }
+  assertEq "symmetric delimiter formatting is idempotent" result.formatted formattedAgain
+
 def assertSignatureParametersUseLeadingSourceBreakAfterFlatFails (env : Lean.Environment)
     : IO Unit := do
   let source :=
@@ -6658,6 +6685,7 @@ def runBasicFormattingTests (env : Lean.Environment) : IO Unit := do
   assertHaveTermFormatting env
   assertHaveProofAfterInfixPreservesLayout env
   assertAbsoluteValueDelimitersStayAttached env
+  assertSymmetricDelimitersStayAttachedAcrossPasses env
   assertSignatureParametersUseLeadingSourceBreakAfterFlatFails env
   assertDefinitionSourceBreakAfterAssignOverridesFlat env
 
