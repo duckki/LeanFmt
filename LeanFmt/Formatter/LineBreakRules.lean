@@ -3310,6 +3310,8 @@ def ruleFor : SyntaxTree.Tree → Option LineBreakRule
   | .node (.raw `Aesop.Frontend.Parser.phaseUnsafe) _ => some defaultRule
   | .node (.raw `Aesop.Frontend.Parser.builder_nameApply) _ => some defaultRule
   | .node (.raw `Aesop.Frontend.Parser.builder_nameCases) _ => some defaultRule
+  | .node (.raw `Aesop.Frontend.Parser.builder_nameDestruct) _ =>
+      some defaultRule
   | .node (.raw `Aesop.Frontend.Parser.builder_nameForward) _ => some defaultRule
   | .node (.raw `Aesop.Frontend.Parser.builder_nameTactic) _ => some defaultRule
   | .node (.raw `Aesop.Frontend.Parser.builder_nameUnfold) _ => some defaultRule
@@ -3373,6 +3375,7 @@ def ruleFor : SyntaxTree.Tree → Option LineBreakRule
   | .node (.raw `CategoryTheory.SimplicialObject.Truncated.mkNotation) _ =>
       some defaultRule
   | .node (.raw `SimplexCategory.Truncated.mkNotation) _ => some defaultRule
+  | .node (.raw `TopCat.Presheaf.attrSheaf_restrict) _ => some defaultRule
   | .node (.raw `Mathlib.Tactic.TermCongr.termCongr) _ => some defaultRule
   | .node (.raw `Mathlib.Meta.FunProp.funPropTacStx) _ => some defaultRule
   | .node (.raw `Lean.Parser.Command.registerTryTactic) _ => some defaultRule
