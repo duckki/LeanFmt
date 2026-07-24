@@ -2140,6 +2140,48 @@ def assertDocumentedMutualCommandsKeepBase (env : Lean.Environment) : IO Unit :=
   assertEq "documented mutual declaration layout is idempotent"
     result.formatted formattedAgain
 
+def assertMovedDocumentedDoLetRecRebasesCommentedArms (env : Lean.Environment)
+    : IO Unit := do
+  let source :=
+    "def run : Nat :=\n"
+    ++ "  id (Id.run do\n"
+    ++ "    let rec\n"
+    ++ "    /-- First helper. -/\n"
+    ++ "    first : Nat → Nat\n"
+    ++ "      | 0 => 0,\n"
+    ++ "    /-- Second helper. -/\n"
+    ++ "    second : Nat → Nat\n"
+    ++ "      | 0 =>\n"
+    ++ "        -- Preserve this comment.\n"
+    ++ "        first 0\n"
+    ++ "    pure (second 0))\n"
+  let expected :=
+    "def run : Nat :=\n"
+    ++ "  id\n"
+    ++ "    (Id.run\n"
+    ++ "      do\n"
+    ++ "        let rec\n"
+    ++ "        /-- First helper. -/\n"
+    ++ "        first : Nat → Nat\n"
+    ++ "          | 0 => 0,\n"
+    ++ "        /-- Second helper. -/\n"
+    ++ "        second : Nat → Nat\n"
+    ++ "          | 0 =>\n"
+    ++ "              -- Preserve this comment.\n"
+    ++ "              first 0\n"
+    ++ "        pure (second 0))\n"
+  let result ←
+    Formatter.formatSourceWithEnvDetailed env source "moved-documented-do-let-rec.lean"
+  assertTrue "moved documented do-let-rec does not fall back" (!result.fellBack)
+  assertEq "moved documented do-let-rec rebases declarations and comments"
+    expected result.formatted
+  assertTrue "moved documented do-let-rec preserves code"
+    (← codePreservedIgnoringWhitespace env source result.formatted)
+  let formattedAgain ←
+    Formatter.formatSourceWithEnv env result.formatted
+      "moved-documented-do-let-rec-formatted.lean"
+  assertEq "moved documented do-let-rec is idempotent" result.formatted formattedAgain
+
 def assertBasicDeclarationBreak (env : Lean.Environment) : IO Unit := do
   let source :=
     "def declarationTreeBodyBreak : Nat := veryLongIdentifierNameThatPushesTheDefinitionBodyPastTheWidthLimit\n"
@@ -7211,6 +7253,7 @@ def runBasicFormattingTests (env : Lean.Environment) : IO Unit := do
   assertTerminationProofSuffixDoesNotAccumulateIndent env
   assertTerminationClausesUseDeclarationBase env
   assertDocumentedMutualCommandsKeepBase env
+  assertMovedDocumentedDoLetRecRebasesCommentedArms env
   assertBasicDeclarationBreak env
   assertTopLevelAnnotationsBreakConsistently env
   assertDeclarationValueInfixBreaksAfterAssign env

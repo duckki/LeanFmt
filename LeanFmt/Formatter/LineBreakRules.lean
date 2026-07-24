@@ -1236,6 +1236,19 @@ def mutualCommandBreaks (context : RuleContext) (segment : Segment) : List Break
         []
   | _ => []
 
+def letRecDeclarationSequenceBreaks (context : RuleContext) (segment : Segment)
+    : List BreakPoint :=
+  if parentIsRawKind context `Lean.Parser.Term.letRecDecls then
+    let declarationIndexes :=
+      segment.indexes.filter
+        fun index => childIsRawKind segment index `Lean.Parser.Term.letRecDecl
+    match declarationIndexes with
+    | [] | [_] => []
+    | _ :: rest =>
+        rest.filterMap fun index => boundaryBreak? segment index 0
+  else
+    []
+
 def configEntrySequenceBreaks (context : RuleContext) (segment : Segment)
     : List BreakPoint :=
   if parentIsRawKind context `Lean.Elab.ConfigEval.configEntries then
@@ -1389,6 +1402,15 @@ def letBodyCanStartApplicationArgument (segment : Segment) : Bool :=
 def letRecBreaks (_context : RuleContext) (segment : Segment) : List BreakPoint :=
   match boundaryBreak? segment 3 0 with
   | some breakPoint => [breakPoint]
+  | none => []
+
+def doLetRecBreaks (_context : RuleContext) (segment : Segment) : List BreakPoint :=
+  match segment.child? 1 >>= SyntaxTree.Tree.firstToken? with
+  | some token =>
+      if SpaceRules.hasLineStructure token.leading.text then
+        [boundaryBreak? segment 1 0].filterMap id
+      else
+        []
   | none => []
 
 def letRecEquationBreaks (_context : RuleContext) (segment : Segment) : List BreakPoint :=
@@ -1641,6 +1663,14 @@ def letRecRule : LineBreakRule :=
       fun _ segment =>
         if letBodyCanStartApplicationArgument segment then .required else .preferred
     breakPoints := letRecBreaks
+  }
+
+def doLetRecRule : LineBreakRule :=
+  {
+    name := "doLetRec"
+    mandatory := fun context segment => !(doLetRecBreaks context segment).isEmpty
+    inheritBase := fun _ _ => true
+    breakPoints := doLetRecBreaks
   }
 
 def letIdDeclRule : LineBreakRule :=
@@ -2161,6 +2191,13 @@ def matchAltBreaks (context : RuleContext) (segment : Segment) : List BreakPoint
     | some breakPoint => [breakPoint]
     | none => []
 
+def matchAltBodyStartsAfterCommentBreak (segment : Segment) : Bool :=
+  match segment.child? 3 >>= SyntaxTree.Tree.firstToken? with
+  | some token =>
+      SpaceRules.hasCommentStart token.leading.text
+      && SpaceRules.hasLineStructure token.leading.text
+  | none => false
+
 def matchExprAltBreaks (_context : RuleContext) (segment : Segment) : List BreakPoint :=
   [leadingBreak? segment segment.start 0, boundaryBreak? segment 3 1].filterMap id
 
@@ -2375,6 +2412,7 @@ def nullBreaks (context : RuleContext) (segment : Segment) : List BreakPoint :=
   ++ moduleImportBreaks context segment
   ++ moduleCommandBreaks context segment
   ++ mutualCommandBreaks context segment
+  ++ letRecDeclarationSequenceBreaks context segment
   ++ configEntrySequenceBreaks context segment
 
 def nullBreaksMandatory (context : RuleContext) (segment : Segment) : Bool :=
@@ -2390,6 +2428,7 @@ def nullBreaksMandatory (context : RuleContext) (segment : Segment) : Bool :=
   || !(moduleImportBreaks context segment).isEmpty
   || !(moduleCommandBreaks context segment).isEmpty
   || !(mutualCommandBreaks context segment).isEmpty
+  || !(letRecDeclarationSequenceBreaks context segment).isEmpty
   || !(configEntrySequenceBreaks context segment).isEmpty
 
 -----------------------------------------------------------------------------------------
@@ -2655,7 +2694,9 @@ def subtypeRule : LineBreakRule :=
 def matchAltRule : LineBreakRule :=
   {
     name := "matchAlt"
-    mandatory := fun _ segment => childHasNestedProofBody segment 3
+    mandatory :=
+      fun _ segment =>
+        childHasNestedProofBody segment 3 || matchAltBodyStartsAfterCommentBreak segment
     useExistingBreaks := fun _ _ => true
     flow := fun _ _ => true
     breakPoints := matchAltBreaks
@@ -3455,7 +3496,7 @@ def ruleFor : SyntaxTree.Tree → Option LineBreakRule
   | .node (.raw `Lean.Parser.Term.doDbgTrace) _ => some defaultRule
   | .node (.raw `Lean.Parser.Term.doIdbg) _ => some defaultRule
   | .node (.raw `Lean.Parser.Term.doLet) _ => some doLetRule
-  | .node (.raw `Lean.Parser.Term.doLetRec) _ => some doLetRule
+  | .node (.raw `Lean.Parser.Term.doLetRec) _ => some doLetRecRule
   | .node (.raw `Lean.Parser.Term.doLetElse) _ => some doLetElseRule
   | .node (.raw `Lean.Parser.Term.doMatch) _ => some matchExpressionRule
   | .node (.raw `Lean.Parser.Term.doTry) _ => some doTryRule
