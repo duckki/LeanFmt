@@ -4325,7 +4325,8 @@ def assertRecursiveWorkerChecksTargetToolchain : IO Unit := do
           (← LeanFmt.Driver.checkWorkerToolchain (some matching))
         let mismatching := root / "mismatching"
         IO.FS.createDirAll mismatching
-        IO.FS.writeFile (mismatching / "lean-toolchain") "leanprover/lean4:v4.29.1\n"
+        IO.FS.writeFile (mismatching / "lean-toolchain")
+          s!"{LeanFmt.Driver.expectedLeanToolchain}-mismatch\n"
         assertTrue "recursive worker rejects mismatching Lean toolchain"
           (!(← LeanFmt.Driver.checkWorkerToolchain (some mismatching)))
 
