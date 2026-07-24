@@ -3087,6 +3087,7 @@ def ruleFor : SyntaxTree.Tree → Option LineBreakRule
   | .node (.raw `Parser.Attr.parity_simps) _ => some defaultRule
   | .node (.raw `Parser.Attr.nontriviality) _ => some defaultRule
   | .node (.raw `Parser.Attr.mfld_simps) _ => some defaultRule
+  | .node (.raw `Parser.Attr.rclike_simps) _ => some defaultRule
   | .node (.raw `Batteries.Tactic.Alias.alias) _ => some defaultRule
   | .node (.raw `Batteries.Tactic.Alias.aliasLR) _ => some defaultRule
   | .node (.raw `Batteries.Tactic.Lint.nolint) _ => some defaultRule

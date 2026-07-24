@@ -5995,6 +5995,7 @@ def assertMathlibLowRiskSyntaxKindsHaveRules : IO Unit := do
       `Parser.Attr.fin_omega,
       `Parser.Attr.nontriviality,
       `Parser.Attr.mfld_simps,
+      `Parser.Attr.rclike_simps,
       `Mathlib.Tactic.ToAdditive.to_additive,
       `Mathlib.Tactic.MkIff.mkIff,
       `Mathlib.Tactic.Translate.attrArgs,
