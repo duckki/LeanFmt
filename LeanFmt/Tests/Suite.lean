@@ -4934,6 +4934,15 @@ def assertInductiveConstructorIndentation (env : Lean.Environment) : IO Unit := 
     Formatter.formatSourceWithEnv env source "inductive-constructor-indent.lean"
   assertEq "inductive constructor indentation" expected formatted
 
+def assertClassInductiveAlternativesStaySeparated (env : Lean.Environment) : IO Unit := do
+  let source :=
+    "class inductive ClassInductiveLayout : Nat → Prop where\n"
+    ++ "  | zero : ClassInductiveLayout 0\n"
+    ++ "  | succ (n : Nat) (h : ClassInductiveLayout n) : ClassInductiveLayout (n + 1)\n"
+  let formatted ←
+    Formatter.formatSourceWithEnv env source "class-inductive-alternatives.lean"
+  assertEq "class inductive alternatives stay separated" source formatted
+
 def assertConstructorBinderContinuesFromUnbrokenPrefix (env : Lean.Environment)
     : IO Unit := do
   let source :=
@@ -7316,6 +7325,7 @@ def runControlFlowTests (env : Lean.Environment) : IO Unit := do
 
 def runCollectionAndDeclarationTests (env : Lean.Environment) : IO Unit := do
   assertInductiveConstructorIndentation env
+  assertClassInductiveAlternativesStaySeparated env
   assertConstructorBinderContinuesFromUnbrokenPrefix env
   assertStructureFieldsBreakMandatory env
   assertStructureFieldTypeBreakIndentation env

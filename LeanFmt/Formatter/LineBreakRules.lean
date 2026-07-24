@@ -1069,7 +1069,8 @@ def typeAscriptionBreaks (_context : RuleContext) (segment : Segment) : List Bre
 
 def inductiveAlternativeBreaks (context : RuleContext) (segment : Segment)
     : List BreakPoint :=
-  if parentIsRawKind context `Lean.Parser.Command.inductive then
+  if parentIsRawKind context `Lean.Parser.Command.inductive
+      || parentIsRawKind context `Lean.Parser.Command.classInductive then
     match segment.indexes.filter fun index => childStartsWithLexeme segment index "|" with
     | [] => []
     | _ :: rest =>
