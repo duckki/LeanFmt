@@ -3820,13 +3820,27 @@ def assertMatchDiscriminantsFlowAfterCommas (env : Lean.Environment) : IO Unit :
   let expected :=
     "def compare segment index :=\n"
     ++ "  match defaultPresentChildIndexBefore? segment index,\n"
-    ++ "    defaultPresentChildIndexAfter? segment index,\n"
-    ++ "    defaultPresentChildIndexAround? segment index with\n"
+    ++ "        defaultPresentChildIndexAfter? segment index,\n"
+    ++ "        defaultPresentChildIndexAround? segment index with\n"
     ++ "  | some before,\n"
     ++ "    some after,\n"
     ++ "    some around => result\n"
   let formatted ← Formatter.formatSourceWithEnv env source "match-discriminants-flow.lean"
-  assertEq "match discriminants use one continuation indentation" expected formatted
+  assertEq "match discriminants align under the first discriminant" expected formatted
+  let parenthesizedSource :=
+    "theorem resolveBoth\n"
+    ++ "    : Result\n"
+    ++ "      -> (match schema.lookupField sourceField.parentType sourceField.fieldName,\n"
+    ++ "                resolvers.resolve sourceField.parentType sourceField.fieldName\n"
+    ++ "                  sourceField.arguments source with\n"
+    ++ "          | some fieldDefinition, some value => completeValue fieldDefinition value\n"
+    ++ "          | _, _ => defaultValue) := by\n"
+    ++ "  exact proof\n"
+  let parenthesizedFormatted ←
+    Formatter.formatSourceWithEnv env parenthesizedSource
+      "parenthesized-match-discriminants.lean"
+  assertEq "parenthesized match discriminants retain first-discriminant alignment"
+    parenthesizedSource parenthesizedFormatted
   let longMotiveSource :=
     "theorem longMotive {o : ONote} {x} (e : fundamentalSequence o = x)\n"
     ++ "    : fastGrowing o\n"

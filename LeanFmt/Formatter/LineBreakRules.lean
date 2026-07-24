@@ -516,7 +516,7 @@ def defaultInfixBreaks (_context : RuleContext) (segment : Segment) : List Break
       | some child =>
           if defaultChildIsNonemptyLeaf child then
             match defaultPresentChildIndexBefore? segment index,
-              defaultPresentChildIndexAfter? segment index with
+                  defaultPresentChildIndexAfter? segment index with
             | some beforeIndex, some afterIndex =>
                 if defaultChildIsNodeAt segment beforeIndex
                     && defaultChildIsNodeAt segment afterIndex then
@@ -978,7 +978,7 @@ def structInstBreaks (_context : RuleContext) (segment : Segment) : List BreakPo
       else
         []
     match segment.indexes.find? fun index => childStartsWithLexeme segment index "{",
-      segment.indexes.find? fun index => childStartsWithLexeme segment index "}" with
+          segment.indexes.find? fun index => childStartsWithLexeme segment index "}" with
     | some openIndex, some closeIndex =>
         let openBreak :=
           match (nonemptyChildIndexes segment).find? fun index => openIndex < index with
@@ -1098,7 +1098,7 @@ def matchDiscriminantBreaks (_context : RuleContext) (segment : Segment)
       match previousContentIndex? segment index with
       | some previousIndex =>
           if childStartsWithLexeme segment previousIndex "," then
-            boundaryBreak? segment index 1
+            boundaryBreak? segment index 0
           else
             none
       | none => none
@@ -2319,7 +2319,6 @@ def matchDiscriminantsRule : LineBreakRule :=
     name := "matchDiscriminants"
     useExistingBreaks := fun _ _ => true
     flow := fun _ _ => true
-    inheritBase := fun _ _ => true
     breakPoints := matchDiscriminantBreaks
   }
 
