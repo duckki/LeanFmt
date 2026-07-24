@@ -6038,6 +6038,7 @@ def assertMathlibLowRiskSyntaxKindsHaveRules : IO Unit := do
       `Mathlib.Tactic.TermCongr.termCongr,
       `Mathlib.PPWithUniv.ppWithUnivAttr,
       `Mathlib.Elab.FastInstance.fastInstance,
+      `Mathlib.ProxyType.proxy_equiv,
       `Mathlib.Util.«commandCompile_inductive%_»,
       `commandUnsuppress_compilationIn_,
       `Mathlib.Util.TermReduce.deltaStx,

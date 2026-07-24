@@ -3076,6 +3076,8 @@ def ruleFor : SyntaxTree.Tree → Option LineBreakRule
   | .node (.raw `term.pseudo.antiquot) _ => some defaultRule
   | .node (.raw `Lean.termThrowError__) _ => some defaultRule
   | .node (.raw `Mathlib.Elab.FastInstance.fastInstance) _ => some defaultRule
+  | .node (.raw `Mathlib.ProxyType.proxy_equiv) _ =>
+      some <| prefixedTermRule "proxyEquiv"
   | .node (.raw `Mathlib.Tactic.scopedNS) _ => some defaultRule
   | .node (.raw `Mathlib.Tactic.Push.pushAttr) _ => some defaultRule
   | .node (.raw `Mathlib.Tactic.GCongr.gcongrAttr) _ => some defaultRule
