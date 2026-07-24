@@ -779,8 +779,11 @@ When a `doIdDecl` or `doPatDecl` contains a fallback tail, the declaration may b
 after `←` and before the `|` fallback arm. The wrapper that owns `| fallback` plus the
 following `do` continuation forces a break before that continuation. This keeps
 continuation commands at the outer `do` indentation instead of allowing them to become
-source text after the fallback expression. The post-format build remains the guardrail
-for preservation classes that syntax diagnostics cannot prove.
+source text after the fallback expression. If the fallback is itself a multiline
+`doSeqIndent`, its existing source break is a structural breakpoint one level beneath
+the pipe; the later continuation still returns to the declaration base. The post-format
+build remains the guardrail for preservation classes that syntax diagnostics cannot
+prove.
 
 Overflow analysis uses the formatted module's lossless token spans. It ignores comment
 overflow, which occupies trivia rather than syntax tokens, and unavoidable overflow where

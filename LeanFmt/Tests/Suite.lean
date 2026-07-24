@@ -1012,6 +1012,41 @@ def assertDoLetArrowFallbackBreaksBeforeContinuation (env : Lean.Environment)
   let formatted ← Formatter.formatSourceWithEnv env source "do-let-arrow-fallback.lean"
   assertEq "do-let arrow fallback breaks before continuation" expected formatted
 
+def assertNestedDoLetArrowFallbackKeepsBodyBase (env : Lean.Environment) : IO Unit := do
+  let source :=
+    "def nestedDoLetArrowFallback (value : Option Nat) : Option Nat := do\n"
+    ++ "  go value\n"
+    ++ "where\n"
+    ++ "  go (value : Option Nat) : Option Nat := do\n"
+    ++ "    match value with\n"
+    ++ "    | some current =>\n"
+    ++ "      let some extracted ← value\n"
+    ++ "        | -- Keep the multiline fallback beneath the pipe.\n"
+    ++ "          let fallback := current\n"
+    ++ "          let some nested ← value | return none\n"
+    ++ "          return some (fallback + nested)\n"
+    ++ "      return some (extracted + current)\n"
+    ++ "    | none => none\n"
+  let result ←
+    Formatter.formatSourceWithEnvDetailed env source "nested-do-let-arrow-fallback.lean"
+  assertTrue "nested do-let arrow fallback does not fall back" (!result.fellBack)
+  assertTrue "nested do-let arrow fallback preserves code"
+    (← codePreservedIgnoringWhitespace env source result.formatted)
+  assertTextContains "nested do-let arrow fallback keeps its body beneath the pipe"
+    result.formatted
+    ("| -- Keep the multiline fallback beneath the pipe.\n"
+      ++ "              let fallback := current\n")
+  assertTextContains
+    "nested do-let arrow fallback keeps the continuation outside its body"
+    result.formatted
+    ("              return some (fallback + nested)\n"
+      ++ "            return some (extracted + current)\n")
+  let formattedAgain ←
+    Formatter.formatSourceWithEnv env result.formatted
+      "nested-do-let-arrow-fallback-formatted.lean"
+  assertEq "nested do-let arrow fallback layout is idempotent"
+    result.formatted formattedAgain
+
 def assertDoLetExprFallbackBreaksBeforeContinuation (env : Lean.Environment)
     : IO Unit := do
   let source :=
@@ -1173,6 +1208,7 @@ def assertShowAndDoWrapperRules (env : Lean.Environment) : IO Unit := do
   assertDoLetElseBreaks env
   assertDbgTraceBodyUsesTermBase env
   assertDoLetArrowFallbackBreaksBeforeContinuation env
+  assertNestedDoLetArrowFallbackKeepsBodyBase env
   assertDoLetExprFallbackBreaksBeforeContinuation env
   assertDoMatchExprAlternativesPreserveBranches env
   assertCommentedMatchExprAlternativesStayParseable env

@@ -1541,8 +1541,17 @@ def doLetArrowFallbackTailBreaks (context : RuleContext) (segment : Segment)
   if parentIsDoLetArrowDecl context then
     match (nonemptyChildIndexes segment).dropWhile
             (fun index => !childStartsWithLexeme segment index "|") with
-    | _pipeIndex :: _fallbackIndex :: continuationIndex :: _ =>
-        [boundaryBreak? segment continuationIndex 0].filterMap id
+    | _pipeIndex :: fallbackIndex :: continuationIndex :: _ =>
+        let fallbackBreak :=
+          match segment.child? fallbackIndex with
+          | some (.node (.raw `Lean.Parser.Term.doSeqIndent) _) =>
+              if segment.child? fallbackIndex |>.bind SyntaxTree.Tree.firstToken?
+                  |>.any fun token => SpaceRules.hasLineStructure token.leading.text then
+                boundaryBreak? segment fallbackIndex 1
+              else
+                none
+          | _ => none
+        [fallbackBreak, boundaryBreak? segment continuationIndex 0].filterMap id
     | _ => []
   else
     []
