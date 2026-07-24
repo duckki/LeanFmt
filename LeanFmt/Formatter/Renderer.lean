@@ -768,7 +768,9 @@ def RenderState.emitOriginalTree
     : RenderState :=
   match SyntaxTree.Tree.firstToken? tree, SyntaxTree.Tree.lastToken? tree with
   | some firstToken, some lastToken =>
-      let usesPendingIndent := respectPendingIndent && state.pendingIndent?.isSome
+      let usesPendingIndent :=
+        (respectPendingIndent || isProofWidgetsJsxSyntaxTree tree)
+        && state.pendingIndent?.isSome
       let originalLeading :=
         match state.lastToken? with
         | some leftToken =>
@@ -803,6 +805,15 @@ def RenderState.emitOriginalTree
       let sourceColumnRebasedFromLayoutBase :=
         shiftColumnByAnchor state.sourceLayoutBaseColumn
           state.outputLayoutBaseColumn sourceColumn
+      let originalLayoutTargetColumn? :=
+        if !isProofWidgetsJsxSyntaxTree tree then
+          none
+        else if usesPendingIndent then
+          some leadingColumn
+        else if SpaceRules.hasLineStructure originalLeading then
+          some sourceColumnRebasedFromLayoutBase
+        else
+          none
       let proofTargetColumn? :=
         if !isProofTree tree then
           none
@@ -826,7 +837,13 @@ def RenderState.emitOriginalTree
                 targetColumn leading
             else
               leading
-        | none => leading
+        | none =>
+            match originalLayoutTargetColumn? with
+            | some targetColumn =>
+                rebaseOriginalTextIndent
+                  (if usesPendingIndent then leadingColumn else sourceColumn)
+                  targetColumn leading
+            | none => leading
       let sourceText :=
         match proofTargetColumn? with
         | some targetColumn =>
@@ -834,7 +851,11 @@ def RenderState.emitOriginalTree
             | some (sourceIndent, targetIndent) =>
                 rebaseOriginalTextIndent sourceIndent targetIndent sourceText
             | none => rebaseOriginalTextIndent sourceColumn targetColumn sourceText
-        | none => sourceText
+        | none =>
+            match originalLayoutTargetColumn? with
+            | some targetColumn =>
+                rebaseOriginalTextIndent sourceColumn targetColumn sourceText
+            | none => sourceText
       {
         state.appendOutput <| leading ++ sourceText with
           lastToken? := some lastToken

@@ -668,6 +668,9 @@ are currently original-source islands because their syntax is extension-owned an
 already encodes tactic-specific layout requirements. Multiline custom braced term
 syntax is also emitted from original source so LeanFmt does not invent a layout for an
 extension-owned DSL whose braces may carry domain-specific structure.
+ProofWidgets JSX remains an original-source island, but its complete relative indentation
+is rebased when the surrounding formatted layout moves it; leaving a JSX tag at its old
+absolute column can change which tokens Lean's layout parser assigns to the element.
 An original-source island whose own source slice is single-line still participates in
 ordinary flat-fit checks, so inline extension syntax does not force its parent to break.
 

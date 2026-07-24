@@ -3534,6 +3534,35 @@ def tokenAt (lexeme : String) (start stop : String.Pos.Raw) : SyntaxTree.Token :
     span := { start, stop }
   }
 
+def assertMovedProofWidgetsJsxUsesPendingIndent : IO Unit := do
+  let source := "previous\n      <div>\n        child\n      </div>"
+  let previous := tokenAt "previous" (String.Pos.Raw.mk 0) (String.Pos.Raw.mk 8)
+  let openTag := tokenAt "<div>" (String.Pos.Raw.mk 15) (String.Pos.Raw.mk 20)
+  let closeTag := tokenAt "</div>" (String.Pos.Raw.mk 41) (String.Pos.Raw.mk 47)
+  let jsx :=
+    SyntaxTree.Tree.node
+      (.raw `ProofWidgets.Jsx.syntheticElementForIndentTest)
+      #[.leaf openTag, .leaf closeTag]
+  let parent := SyntaxTree.Tree.node .application #[.leaf previous, jsx]
+  let state : Formatter.RenderState :=
+    {
+      source
+      output := "previous"
+      currentLine := "previous"
+      lastToken? := some previous
+      pendingIndent? := some 20
+    }
+  let rendered :=
+    Formatter.renderNestedSegment state
+      (Formatter.LineBreakRules.Segment.ofTree parent) 1 jsx
+  let expected :=
+    "previous\n"
+    ++ "                    <div>\n"
+    ++ "                      child\n"
+    ++ "                    </div>"
+  assertEq "moved original layout follows the formatter-selected indentation"
+    expected rendered.output
+
 def assertSegmentBaseUsesRenderedStartColumn : IO Unit := do
   let source := "left\n      right"
   let left := tokenAt "left" (String.Pos.Raw.mk 0) (String.Pos.Raw.mk 4)
@@ -6872,6 +6901,7 @@ def runExpressionAndRendererTests (env : Lean.Environment) : IO Unit := do
   assertLineFitCountsTrailingComment env
   assertColumnIndentationIsConservative
   assertCurrentLineFitChecksCompletedLines
+  assertMovedProofWidgetsJsxUsesPendingIndent
   assertSegmentBaseUsesRenderedStartColumn
   assertListApplicationColumnIndent env
   assertListApplicationSourceBreakIndent env
