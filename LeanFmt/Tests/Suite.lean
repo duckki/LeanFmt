@@ -911,6 +911,50 @@ def assertDoLetElseBreaks (env : Lean.Environment) : IO Unit := do
     ("  let .leaf comma :=\n"
       ++ "    veryLongAtomicValueNameForDoLetElseFormattingThatCannotShareTheHeaderLine\n"
       ++ "  | veryLongAtomicFallbackNameForDoLetElseFormattingThatCannotShareTheHeaderLine")
+  let nestedSource :=
+    "def nestedDoLetElse (e : Expr) : MetaM (Bool × Expr) := do\n"
+    ++ "  try\n"
+    ++ "    return (true, e)\n"
+    ++ "  catch _ =>\n"
+    ++ "    let some e' := e.not? | throwError \"Not a comparison: {e}\"\n"
+    ++ "    return (false, e')\n"
+  let nestedExpected :=
+    "def nestedDoLetElse (e : Expr) : MetaM (Bool × Expr) := do\n"
+    ++ "  try\n"
+    ++ "    return (true, e)\n"
+    ++ "  catch _ =>\n"
+    ++ "    let some e' := e.not? | throwError \"Not a comparison: {e}\"\n"
+    ++ "    return (false, e')\n"
+  let nestedFormatted ←
+    Formatter.formatSourceWithEnv env nestedSource "nested-do-let-else.lean"
+  assertEq "nested do-let fallback keeps its continuation aligned"
+    nestedExpected nestedFormatted
+  assertTrue "nested do-let fallback preserves code"
+    (← codePreservedIgnoringWhitespace env nestedSource nestedFormatted)
+  let multilineFallbackSource :=
+    "def multilineFallback : Option Nat := do\n"
+    ++ "  let (.some first, .some second) := (some 1, some 2)\n"
+    ++ "  | failure\n"
+    ++ "  return first + second\n"
+  let multilineFallbackFormatted ←
+    Formatter.formatSourceWithEnv env multilineFallbackSource
+      "multiline-do-let-fallback.lean"
+  assertEq "multiline do-let fallback keeps continuation at body base"
+    multilineFallbackSource multilineFallbackFormatted
+
+def assertDbgTraceBodyUsesTermBase (env : Lean.Environment) : IO Unit := do
+  let source :=
+    "def tracedValue (debug : Bool) (value : Nat) : Nat :=\n"
+    ++ "  if debug then\n"
+    ++ "    dbg_trace s!\"value: {value}\"\n"
+    ++ "    value\n"
+    ++ "  else\n"
+    ++ "    value\n"
+  let formatted ←
+    Formatter.formatSourceWithEnv env source "dbg-trace-body.lean"
+  assertEq "dbg_trace body stays aligned with dbg_trace" source formatted
+  assertTrue "dbg_trace body formatting preserves syntax"
+    (← codePreservedIgnoringWhitespace env source formatted)
 
 def assertDoLetArrowFallbackBreaksBeforeContinuation (env : Lean.Environment)
     : IO Unit := do
@@ -1084,6 +1128,7 @@ def assertShowAndDoWrapperRules (env : Lean.Environment) : IO Unit := do
   assertDoControlWrapperRules env
   assertReturnDoesNotBreakBeforeValue env
   assertDoLetElseBreaks env
+  assertDbgTraceBodyUsesTermBase env
   assertDoLetArrowFallbackBreaksBeforeContinuation env
   assertDoLetExprFallbackBreaksBeforeContinuation env
   assertDoMatchExprAlternativesPreserveBranches env

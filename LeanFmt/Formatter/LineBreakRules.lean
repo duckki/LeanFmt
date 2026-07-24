@@ -270,6 +270,21 @@ def childStartsWithLexeme (segment : Segment) (index : Nat) (lexeme : String) : 
   | some child => treeFirstLexeme? child == some lexeme
   | none => false
 
+def frameSelectsDoLetElseFallback (frame : Frame) : Bool :=
+  frame.rawKind? == some `Lean.Parser.Term.doLetElse
+  && (List.range frame.childIndex).any fun index =>
+      childStartsWithLexeme frame.segment index "|"
+
+def inDoLetElseFallback (context : RuleContext) : Bool :=
+  context.ancestors.head?.any frameSelectsDoLetElseFallback
+
+def wrappedByDoLetElseFallbackSequence (context : RuleContext) : Bool :=
+  match context.ancestors with
+  | parent :: grandparent :: _ =>
+      parent.rawKind? == some `Lean.Parser.Term.doSeqIndent
+      && frameSelectsDoLetElseFallback grandparent
+  | _ => false
+
 def previousContentIndex? (segment : Segment) (index : Nat) : Option Nat :=
   segment.indexes.foldl
     (fun found candidate =>
@@ -618,6 +633,7 @@ def nullInheritBase (context : RuleContext) (segment : Segment) : Bool :=
   || parentIsRawKind context `Lean.Parser.Term.structInstFields
   || parentIsRawKind context `Lean.Parser.Term.letRecDecls
   || parentIsRawKind context `Lean.Parser.Term.letRecDecl
+  || wrappedByDoLetElseFallbackSequence context
 
 def attachedBodyStart (segment : Segment) (index : Nat) : Bool :=
   childStartsWithLexeme segment index "do" || childStartsWithLexeme segment index "by"
@@ -1388,8 +1404,7 @@ def doLetArrowFallbackTailBreaks (context : RuleContext) (segment : Segment)
   else
     []
 
-def doLetElseBreaks (_context : RuleContext) (segment : Segment) : List BreakPoint :=
-  let continuationBreak := do
+def doLetElseContinuationBreak? (segment : Segment) : Option BreakPoint := do
     let pipeIndex ←
       segment.indexes.find? fun index => childStartsWithLexeme segment index "|"
     let fallbackIndex ←
@@ -1397,10 +1412,12 @@ def doLetElseBreaks (_context : RuleContext) (segment : Segment) : List BreakPoi
     let continuationIndex ←
       (nonemptyChildIndexes segment).find? fun index => fallbackIndex < index
     boundaryBreak? segment continuationIndex 0
+
+def doLetElseBreaks (_context : RuleContext) (segment : Segment) : List BreakPoint :=
   [
     breakAfterLexeme? segment ":=" 1,
     breakBeforeLexeme? segment "|" 0,
-    continuationBreak
+    doLetElseContinuationBreak? segment
   ].filterMap
     id
 
@@ -1467,6 +1484,8 @@ def byTacticRule : LineBreakRule :=
 def doLetElseRule : LineBreakRule :=
   {
     name := "doLetElse"
+    useExistingBreaks :=
+      fun _ segment => (doLetElseContinuationBreak? segment).isSome
     flow := fun _ _ => true
     inheritBase := fun _ _ => true
     breakPoints := doLetElseBreaks
@@ -1478,6 +1497,12 @@ def doLetExprRule : LineBreakRule :=
     mandatory := fun _ _ => true
     inheritBase := fun _ _ => true
     breakPoints := doLetExprBreaks
+  }
+
+def doSeqIndentRule : LineBreakRule :=
+  {
+    name := "doSeqIndent"
+    inheritBase := fun context _ => inDoLetElseFallback context
   }
 
 def doIdDeclRule : LineBreakRule :=
@@ -1492,6 +1517,13 @@ def doPatternDeclRule : LineBreakRule :=
     name := "doPatternDecl"
     inheritBase := fun _ _ => true
     breakPoints := doPatternDeclBreaks
+  }
+
+def dbgTraceRule : LineBreakRule :=
+  {
+    name := "dbgTrace"
+    useExistingBreaks := fun _ _ => true
+    breakPoints := fun _ segment => [boundaryBreak? segment 3 0].filterMap id
   }
 
 /-! ### Declaration suffixes and recursive declarations -/
@@ -2899,7 +2931,7 @@ def ruleFor : SyntaxTree.Tree → Option LineBreakRule
   | .node (.raw `termS!_) _ => some interpolatedStringRule
   | .node (.raw `interpolatedStrKind) _ => some interpolatedStringRule
   | .node (.raw `interpolatedStrLitKind) _ => some interpolatedStringRule
-  | .node (.raw `Lean.Parser.Term.doSeqIndent) _ => some defaultRule
+  | .node (.raw `Lean.Parser.Term.doSeqIndent) _ => some doSeqIndentRule
   | .node (.raw `Lean.Parser.Term.doSeqItem) _ => some defaultRule
   | .node (.raw `Lean.Parser.Term.doExpr) _ => some defaultRule
   | .node (.raw `Lean.Parser.Term.doIfLet) _ => some defaultRule
@@ -2907,6 +2939,8 @@ def ruleFor : SyntaxTree.Tree → Option LineBreakRule
   | .node (.raw `Lean.Parser.Term.doLetArrow) _ => some doLetRule
   | .node (.raw `Lean.Parser.Term.doIdDecl) _ => some doIdDeclRule
   | .node (.raw `Lean.Parser.Term.doPatDecl) _ => some doPatternDeclRule
+  | .node (.raw `Lean.Parser.Term.dbgTrace) _ => some dbgTraceRule
+  | .node (.raw `Lean.Parser.Term.idbg) _ => some dbgTraceRule
   | tree@(.node (.raw `group) _) =>
       if treeFirstLexeme? tree == some "lemma" then some theoremRule else some groupRule
   | .node (.raw `Lean.Parser.Term.matchAltsWhereDecls) _ => some matchAltsWhereDeclsRule

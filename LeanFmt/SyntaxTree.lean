@@ -761,6 +761,26 @@ def regroupBinderTacticChildren (children : Array Tree) : Array Tree :=
       #[assignment, byKeyword, .node .proofBody <| childrenRange children 2 children.size]
   | _, _ => children
 
+def singleContentChild? (children : Array Tree) : Option Tree :=
+  let content := children.filter fun child => child.firstToken?.isSome
+  if content.size == 1 then content[0]? else none
+
+partial def attachedDoTree? : Tree → Option Tree
+  | tree@(.node (.raw `Lean.Parser.Term.doNested) _) => some tree
+  | .node (.raw kind) children =>
+      if kind == `Lean.Parser.Term.doSeqIndent
+          || kind == `Lean.Parser.Term.doSeqItem
+          || kind == `null then
+        singleContentChild? children >>= attachedDoTree?
+      else
+        none
+  | _ => none
+
+def regroupAttachedDoRhs (children : Array Tree) : Array Tree :=
+  match children[3]? >>= attachedDoTree? with
+  | some body => children.set! 3 body
+  | none => children
+
 def regroupDerivingClause? (children : Array Tree) : Option Tree := do
   let keyword ← children[0]?
   if keyword.firstToken?.map (·.lexeme) != some "deriving" then
@@ -887,6 +907,7 @@ def regroupRawNode (kind : SyntaxNodeKind) (children : Array Tree) : Tree :=
     | some children => .node (.raw kind) children
     | none => .node (.raw kind) children
   else if kind == `Lean.Parser.Term.matchAlt then
+    let children := regroupAttachedDoRhs children
     match children[1]? with
     | some patterns =>
         .node (.raw kind) <| children.set! 1 (regroupMatchPatterns patterns)
