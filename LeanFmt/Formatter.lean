@@ -147,6 +147,43 @@ deriving BEq, Repr
 def warnConvergenceFallback (fileName reason : String) : IO Unit :=
   IO.eprintln s!"leanfmt: warning: using original source for {fileName}: {reason}"
 
+partial def convergeModuleWithEnv
+    (env : Environment) (moduleTree : SyntaxTree.Module) (fileName : String)
+    (passesRemaining : Nat := maxConvergencePasses)
+    (seen : List String := []) (fallback : String := moduleTree.source)
+    (options : Options := {})
+    : IO FormatResult := do
+  let source := moduleTree.source
+  if passesRemaining == 0 then
+    warnConvergenceFallback fileName
+      s!"formatting did not converge within {maxConvergencePasses} passes"
+    pure { formatted := fallback, fellBack := true }
+  else
+    let formatted ← formatModuleWithEnv env moduleTree options
+    if formatted == source then
+      pure { formatted }
+    else if seen.contains formatted then
+      warnConvergenceFallback fileName "formatting entered a layout cycle"
+      pure { formatted := fallback, fellBack := true }
+    else
+      try
+        let formattedModule ← parseModuleWithEnv env formatted fileName
+        let sourceFragments := Diagnostics.preservationFragments moduleTree
+        let formattedFragments := Diagnostics.preservationFragments formattedModule
+        if sourceFragments == formattedFragments then
+          convergeModuleWithEnv env formattedModule fileName (passesRemaining - 1)
+            (source :: seen) fallback options
+        else
+          let mismatch :=
+            Diagnostics.firstPreservationFragmentMismatch?
+              sourceFragments formattedFragments
+          warnConvergenceFallback fileName
+            s!"an intermediate result dropped or changed source tokens: {repr mismatch}"
+          pure { formatted := fallback, fellBack := true }
+      catch _ =>
+        warnConvergenceFallback fileName "an intermediate result did not parse"
+        pure { formatted := fallback, fellBack := true }
+
 partial def convergeSourceWithEnv
     (env : Environment) (source fileName : String)
     (passesRemaining : Nat := maxConvergencePasses)
@@ -158,19 +195,8 @@ partial def convergeSourceWithEnv
       s!"formatting did not converge within {maxConvergencePasses} passes"
     pure { formatted := fallback, fellBack := true }
   else
-    let formatted ← formatPassWithEnv env source fileName options
-    if formatted == source then
-      pure { formatted }
-    else if seen.contains formatted then
-      warnConvergenceFallback fileName "formatting entered a layout cycle"
-      pure { formatted := fallback, fellBack := true }
-    else
-      try
-        convergeSourceWithEnv env formatted fileName (passesRemaining - 1)
-          (source :: seen) fallback options
-      catch _ =>
-        warnConvergenceFallback fileName "an intermediate result did not parse"
-        pure { formatted := fallback, fellBack := true }
+    convergeModuleWithEnv env (← parseModuleWithEnv env source fileName) fileName
+      passesRemaining seen fallback options
 
 def formatChunkWithEnv
     (env : Environment) (source fileName : String) (options : Options := {})

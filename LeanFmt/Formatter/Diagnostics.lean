@@ -184,6 +184,27 @@ inductive PreservationFragment where
   | space
 deriving BEq, Repr
 
+structure PreservationFragmentMismatch where
+  index : Nat
+  before? : Option PreservationFragment
+  after? : Option PreservationFragment
+deriving Repr
+
+partial def firstPreservationFragmentMismatch?
+    (before after : List PreservationFragment) (index : Nat := 0)
+    : Option PreservationFragmentMismatch :=
+  match before, after with
+  | [], [] => none
+  | beforeHead :: beforeTail, afterHead :: afterTail =>
+      if beforeHead == afterHead then
+        firstPreservationFragmentMismatch? beforeTail afterTail (index + 1)
+      else
+        some { index, before? := some beforeHead, after? := some afterHead }
+  | beforeHead :: _, [] =>
+      some { index, before? := some beforeHead, after? := none }
+  | [], afterHead :: _ =>
+      some { index, before? := none, after? := some afterHead }
+
 /-- A syntax-tree representation that omits source positions and other source metadata. -/
 inductive SyntaxSignature where
   | missing
