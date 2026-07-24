@@ -882,6 +882,21 @@ def assertDoBlockPreservesStatementBreaks (env : Lean.Environment) : IO Unit := 
     Formatter.formatSourceWithEnv env source "do-block-statement-breaks.lean"
   assertEq "do block preserves statement breaks" expected formatted
 
+def assertDoReassignArrowHasRule (env : Lean.Environment) : IO Unit := do
+  let source :=
+    "def reassignArrowExample : IO Unit := do\n"
+    ++ "  _ ← pure ()\n"
+    ++ "  _ ← pure ()\n"
+    ++ "  pure ()\n"
+  let formatted ←
+    Formatter.formatSourceWithEnv env source "do-reassign-arrow.lean"
+  assertEq "do reassign arrow formatting" source formatted
+  let moduleTree ←
+    SyntaxTree.parseModuleStringWithEnv env formatted
+      "do-reassign-arrow-formatted.lean"
+  assertTrue "do reassign arrow has complete rule coverage"
+    (Formatter.Diagnostics.missingRuleOccurrencesForModule moduleTree).isEmpty
+
 def assertBracketedDoBlockPreservesStatementBreaks (env : Lean.Environment)
     : IO Unit := do
   let source :=
@@ -1109,6 +1124,14 @@ def assertDoControlWrapperRules (env : Lean.Environment) : IO Unit := do
     ++ "def forInfixExample : IO Unit := do\n"
     ++ "  for firstExtremelyLongBinderNameForInfixDepth + secondExtremelyLongBinderNameForInfixDepth + thirdExtremelyLongBinderNameForInfixDepth in shortCollection do\n"
     ++ "    pure ()\n"
+    ++ "\n"
+    ++ "def whileAndFinallyExample : IO Unit := do\n"
+    ++ "  while keepGoing do\n"
+    ++ "    pure ()\n"
+    ++ "  try\n"
+    ++ "    pure ()\n"
+    ++ "  finally\n"
+    ++ "    pure ()\n"
   let expected :=
     "def doExamples : IO Unit := do\n"
     ++ "  unless aVeryLongConditionNameForUnlessFormatting && anotherLongConditionName do\n"
@@ -1131,8 +1154,20 @@ def assertDoControlWrapperRules (env : Lean.Environment) : IO Unit := do
     ++ "        + thirdExtremelyLongBinderNameForInfixDepth\n"
     ++ "      in shortCollection do\n"
     ++ "    pure ()\n"
+    ++ "\n"
+    ++ "def whileAndFinallyExample : IO Unit := do\n"
+    ++ "  while keepGoing do\n"
+    ++ "    pure ()\n"
+    ++ "  try\n"
+    ++ "    pure ()\n"
+    ++ "  finally pure ()\n"
   let formatted ← Formatter.formatSourceWithEnv env source "do-control-wrapper-rules.lean"
   assertEq "do control wrapper rules" expected formatted
+  let moduleTree ←
+    SyntaxTree.parseModuleStringWithEnv env formatted
+      "do-control-wrapper-rules-formatted.lean"
+  assertTrue "do control wrappers have complete rule coverage"
+    (Formatter.Diagnostics.missingRuleOccurrencesForModule moduleTree).isEmpty
 
 def assertReturnDoesNotBreakBeforeValue (env : Lean.Environment) : IO Unit := do
   let source :=
@@ -6200,6 +6235,7 @@ def runBasicFormattingTests (env : Lean.Environment) : IO Unit := do
   assertDoBlockPreservesBodyBreak env
   assertDoMatchAlternativesAlignWithMatch env
   assertDoBlockPreservesStatementBreaks env
+  assertDoReassignArrowHasRule env
   assertShowAndDoWrapperRules env
   assertProjectionChainDoesNotBreakBeforeDot env
   assertPipeProjectionKeepsTightDot env

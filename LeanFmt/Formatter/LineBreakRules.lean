@@ -1308,6 +1308,9 @@ def doCatchBreaks (_context : RuleContext) (segment : Segment) : List BreakPoint
 def doForBreaks (_context : RuleContext) (segment : Segment) : List BreakPoint :=
   [breakAfterLexeme? segment "do" 1].filterMap id
 
+def doFinallyBreaks (_context : RuleContext) (segment : Segment) : List BreakPoint :=
+  [breakAfterLexeme? segment "finally" 1].filterMap id
+
 def doForHeaderBreaks (_context : RuleContext) (segment : Segment) : List BreakPoint :=
   [breakBeforeLexeme? segment "in" 2].filterMap id
 
@@ -2371,6 +2374,13 @@ def doForRule : LineBreakRule :=
     breakPoints := doForBreaks
   }
 
+def doFinallyRule : LineBreakRule :=
+  {
+    name := "doFinally"
+    inheritBase := fun _ _ => true
+    breakPoints := doFinallyBreaks
+  }
+
 def doForHeaderRule : LineBreakRule :=
   {
     name := "doForHeader"
@@ -2990,15 +3000,24 @@ def ruleFor : SyntaxTree.Tree → Option LineBreakRule
   | .node (.raw `«term{_:_//_}») _ => some subtypeRule
   | .node (.raw `Lean.Parser.Term.matchAlt) _ => some matchAltRule
   | .node (.raw `Lean.Parser.Term.do) _ => some doRule
+  | .node (.raw `Lean.Parser.Term.doRepeat) _ => some doRule
+  | .node (.raw `Lean.Parser.Term.doBreak) _ => some defaultRule
+  | .node (.raw `Lean.Parser.Term.doDbgTrace) _ => some defaultRule
+  | .node (.raw `Lean.Parser.Term.doIdbg) _ => some defaultRule
   | .node (.raw `Lean.Parser.Term.doLet) _ => some doLetRule
   | .node (.raw `Lean.Parser.Term.doLetRec) _ => some doLetRule
   | .node (.raw `Lean.Parser.Term.doLetElse) _ => some doLetElseRule
   | .node (.raw `Lean.Parser.Term.doMatch) _ => some matchExpressionRule
   | .node (.raw `Lean.Parser.Term.doTry) _ => some doTryRule
   | .node (.raw `Lean.Parser.Term.doCatch) _ => some doCatchRule
+  | .node (.raw `Lean.Parser.Term.doCatchMatch) _ => some doRule
   | .node (.raw `Lean.Parser.Term.doFor) _ => some doForRule
+  | .node (.raw `Lean.Parser.Term.doWhile) _ => some doForRule
+  | .node (.raw `Lean.Parser.Term.doFinally) _ => some doFinallyRule
+  | .node (.raw `Lean.Parser.Term.doContinue) _ => some defaultRule
   | .node (.raw `Lean.Parser.Term.doIf) _ => some doIfRule
   | .node (.raw `Lean.Parser.Term.doReassign) _ => some transparentRule
+  | .node (.raw `Lean.Parser.Term.doReassignArrow) _ => some transparentRule
   | .node (.raw `Lean.Parser.Term.doReturn) _ => some transparentRule
   | .node (.raw `Lean.Parser.Term.doIfProp) _ => some transparentRule
   | .node (.raw `Lean.Parser.Term.doUnless) _ => some doUnlessRule
