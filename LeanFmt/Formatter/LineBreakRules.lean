@@ -189,6 +189,14 @@ def parentIsSignatureParameters (context : RuleContext) : Bool :=
 def parentIsRawKind (context : RuleContext) (kind : Lean.SyntaxNodeKind) : Bool :=
   context.parentRawKind? == some kind
 
+def parentIsInfixChain (context : RuleContext) : Bool :=
+  match context.ancestors with
+  | parent :: _ =>
+      match parent.nodeKind? with
+      | some (.infixChain _) => true
+      | _ => false
+  | _ => false
+
 def grandparentIsRawKind (context : RuleContext) (kind : Lean.SyntaxNodeKind) : Bool :=
   match context.ancestors with
   | _ :: grandparent :: _ => grandparent.rawKind? == some kind
@@ -384,7 +392,7 @@ def segmentContentCount (segment : Segment) : Nat :=
 -----------------------------------------------------------------------------------------
 
 def suffixKeywordLexeme (lexeme : String) : Bool :=
-  lexemeIn lexeme ["by", "do", "where", "with", "deriving", "then", "else"]
+  lexemeIn lexeme ["by", "do", "from", "where", "with", "deriving", "then", "else"]
 
 def suffixDelimiterLexeme (lexeme : String) : Bool :=
   lexemeIn lexeme [")", "]", "}", "⟩", "⟫", ",", ";"]
@@ -649,6 +657,13 @@ def nullInheritBase (context : RuleContext) (segment : Segment) : Bool :=
 
 def attachedBodyStart (segment : Segment) (index : Nat) : Bool :=
   childStartsWithLexeme segment index "do" || childStartsWithLexeme segment index "by"
+
+def infixAttachedBodyAssignmentValue (context : RuleContext) (segment : Segment) : Bool :=
+  match context.ancestors, (nonemptyChildIndexes segment).head? with
+  | parent :: _, some firstIndex =>
+      attachedBodyStart segment firstIndex
+      && contentIndexAfterLexeme? parent.segment ":=" == some parent.childIndex
+  | _, _ => false
 
 def delimiterValueBreak? (segment : Segment) (delimiter : String)
     : Option BreakPoint := do
@@ -1081,7 +1096,7 @@ def matchDiscriminantBreaks (_context : RuleContext) (segment : Segment)
       match previousContentIndex? segment index with
       | some previousIndex =>
           if childStartsWithLexeme segment previousIndex "," then
-            boundaryBreak? segment index 0
+            boundaryBreak? segment index 1
           else
             none
       | none => none
@@ -1909,9 +1924,7 @@ def matchAltBreaks (context : RuleContext) (segment : Segment) : List BreakPoint
     | none => []
 
 def matchExprAltBreaks (_context : RuleContext) (segment : Segment) : List BreakPoint :=
-  match boundaryBreak? segment 3 1 with
-  | some breakPoint => [breakPoint]
-  | none => []
+  [leadingBreak? segment segment.start 0, boundaryBreak? segment 3 1].filterMap id
 
 def doBreaks (context : RuleContext) (segment : Segment) : List BreakPoint :=
   let indentLevels :=
@@ -1945,8 +1958,21 @@ def infixBreaks (_context : RuleContext) (segment : Segment) : List BreakPoint :
             fun index =>
               if index % 2 == 1 && !attachedBodyInfixOperator segment index then
                 boundaryBreak? segment index 0
+              else if 1 < index
+                  && index % 2 == 0
+                  && (childIsRawKind segment index `Lean.Parser.Term.have
+                    || childIsRawKind segment index `Lean.Parser.Term.haveI) then
+                boundaryBreak? segment index 0
               else
                 none
+
+def infixRuleBreaks (context : RuleContext) (segment : Segment) : List BreakPoint :=
+  let breaks := infixBreaks context segment
+  if infixAttachedBodyAssignmentValue context segment then
+    breaks.map fun breakPoint =>
+      { breakPoint with indentLevels := breakPoint.indentLevels + 1 }
+  else
+    breaks
 
 def commandInBreaks (_context : RuleContext) (segment : Segment) : List BreakPoint :=
   segment.indexes.filterMap
@@ -2196,9 +2222,12 @@ def infixChainRule : LineBreakRule :=
   {
     name := "infixChain"
     flow := infixFlow
+    inheritBase := infixAttachedBodyAssignmentValue
     liftsTailIndentation :=
-      fun context segment => !(infixBreaks context segment).isEmpty
-    breakPoints := infixBreaks
+      fun context segment =>
+        !infixAttachedBodyAssignmentValue context segment
+        && !(infixRuleBreaks context segment).isEmpty
+    breakPoints := infixRuleBreaks
   }
 
 def binderTacticRule : LineBreakRule :=
@@ -2283,6 +2312,7 @@ def matchDiscriminantsRule : LineBreakRule :=
     name := "matchDiscriminants"
     useExistingBreaks := fun _ _ => true
     flow := fun _ _ => true
+    inheritBase := fun _ _ => true
     breakPoints := matchDiscriminantBreaks
   }
 
@@ -2376,7 +2406,7 @@ def haveRule : LineBreakRule :=
   {
     name := "have"
     mandatory := fun _ _ => true
-    inheritBase := fun _ _ => true
+    inheritBase := fun context _ => !parentIsInfixChain context
     breakPoints := haveBreaks
   }
 

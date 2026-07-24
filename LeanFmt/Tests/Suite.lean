@@ -1854,6 +1854,34 @@ def assertDeclarationValueKeepsAttachedDoBody (env : Lean.Environment) : IO Unit
       "declaration-value-attached-do-formatted.lean"
   assertEq "declaration value attached do is idempotent" formatted formattedAgain
 
+def assertAttachedDoInAssignmentInfixUsesDeclarationBase (env : Lean.Environment)
+    : IO Unit := do
+  let source :=
+    "def isBlackListed {m} [Monad m] [MonadEnv m] (declName : Name) : m Bool := do\n"
+    ++ "  if declName == ``sorryAx then return true\n"
+    ++ "  let env ← getEnv\n"
+    ++ "  pure <| declName.isInternalDetail || isAuxRecursor env declName || isNoConfusion env declName\n"
+    ++ "  <||> isRec declName <||> isMatcher declName\n"
+  let expected :=
+    "def isBlackListed {m} [Monad m] [MonadEnv m] (declName : Name) : m Bool := do\n"
+    ++ "  if declName == ``sorryAx then\n"
+    ++ "    return true\n"
+    ++ "  let env ← getEnv\n"
+    ++ "  pure <| declName.isInternalDetail || isAuxRecursor env declName || isNoConfusion env declName\n"
+    ++ "  <||> isRec declName\n"
+    ++ "  <||> isMatcher declName\n"
+  let result ←
+    Formatter.formatSourceWithEnvDetailed env source
+      "attached-do-in-assignment-infix.lean" { lineWidth := 100 }
+  assertTrue "attached do assignment infix does not fall back" (!result.fellBack)
+  assertEq "attached do assignment infix uses declaration base" expected result.formatted
+  assertTrue "attached do assignment infix preserves code"
+    (← codePreservedIgnoringWhitespace env source result.formatted)
+  let formattedAgain ←
+    Formatter.formatSourceWithEnv env result.formatted
+      "attached-do-in-assignment-infix-formatted.lean" { lineWidth := 100 }
+  assertEq "attached do assignment infix is idempotent" result.formatted formattedAgain
+
 def assertProofValuesRemainLayoutIslands (env : Lean.Environment) : IO Unit := do
   let directSource :=
     "theorem directProofValueLayoutIsland : VeryLongLeftOperandForLayoutTesting = VeryLongRightOperandForLayoutTesting := by\n"
@@ -2017,6 +2045,31 @@ def assertHaveTermFormatting (env : Lean.Environment) : IO Unit := do
       "long-have-term-formatting-formatted.lean"
   assertEq "long have term formatting is idempotent"
     longResult.formatted longFormattedAgain
+
+def assertHaveProofAfterInfixPreservesLayout (env : Lean.Environment)
+    : IO Unit := do
+  let source :=
+    "def f (hM : ∃ n : Nat, n = n) : Nat :=\n"
+    ++ "  id <|\n"
+    ++ "  have hex : ∃ n : Nat, n = n := by\n"
+    ++ "    obtain ⟨n, h⟩ := hM; refine ⟨n, h⟩\n"
+    ++ "  Nat.succ (Classical.choose hex)\n"
+  let expected :=
+    "def f (hM : ∃ n : Nat, n = n) : Nat :=\n"
+    ++ "  id\n"
+    ++ "  <|\n"
+    ++ "  have hex : ∃ n : Nat, n = n := by\n"
+    ++ "    obtain ⟨n, h⟩ := hM; refine ⟨n, h⟩\n"
+    ++ "  Nat.succ (Classical.choose hex)\n"
+  let formatted ←
+    Formatter.formatSourceWithEnv env source "have-proof-after-infix.lean"
+  assertEq "have proof after infix keeps the proof offside" expected formatted
+  assertTrue "have proof after infix preserves code"
+    (← codePreservedIgnoringWhitespace env source formatted)
+  let formattedAgain ←
+    Formatter.formatSourceWithEnv env formatted
+      "have-proof-after-infix-formatted.lean"
+  assertEq "have proof after infix is idempotent" formatted formattedAgain
 
 def assertAbsoluteValueDelimitersStayAttached (env : Lean.Environment) : IO Unit := do
   let source :=
@@ -3757,13 +3810,36 @@ def assertMatchDiscriminantsFlowAfterCommas (env : Lean.Environment) : IO Unit :
   let expected :=
     "def compare segment index :=\n"
     ++ "  match defaultPresentChildIndexBefore? segment index,\n"
-    ++ "        defaultPresentChildIndexAfter? segment index,\n"
-    ++ "        defaultPresentChildIndexAround? segment index with\n"
+    ++ "    defaultPresentChildIndexAfter? segment index,\n"
+    ++ "    defaultPresentChildIndexAround? segment index with\n"
     ++ "  | some before,\n"
     ++ "    some after,\n"
     ++ "    some around => result\n"
   let formatted ← Formatter.formatSourceWithEnv env source "match-discriminants-flow.lean"
-  assertEq "match discriminants flow after commas aligned under first" expected formatted
+  assertEq "match discriminants use one continuation indentation" expected formatted
+  let longMotiveSource :=
+    "theorem longMotive {o : ONote} {x} (e : fundamentalSequence o = x)\n"
+    ++ "    : fastGrowing o\n"
+    ++ "      = match (motive := (x : Option ONote ⊕ (Nat → ONote)) → FundamentalSequenceProp o x → Nat → Nat) x,\n"
+    ++ "          e ▸ fundamentalSequence_has_prop o with\n"
+    ++ "        | Sum.inl none, _ => Nat.succ\n"
+    ++ "        | Sum.inl (some a), _ => fun i => fastGrowing a i\n"
+    ++ "        | Sum.inr f, _ => fun i => fastGrowing (f i) i := by\n"
+    ++ "  simp\n"
+  let longMotiveFormatted ←
+    Formatter.formatSourceWithEnv env longMotiveSource
+      "long-match-motive-discriminants.lean" { lineWidth := 100 }
+  let longMotiveModule ←
+    SyntaxTree.parseModuleStringWithEnv env longMotiveFormatted
+      "long-match-motive-discriminants-formatted.lean"
+  assertTrue "long match motive discriminants avoid overflow"
+    (Formatter.Diagnostics.overflowOccurrences longMotiveModule
+      { lineWidth := 100 }).isEmpty
+  let longMotiveFormattedAgain ←
+    Formatter.formatSourceWithEnv env longMotiveFormatted
+      "long-match-motive-discriminants-formatted.lean" { lineWidth := 100 }
+  assertEq "long match motive discriminants are idempotent"
+    longMotiveFormatted longMotiveFormattedAgain
 
 def assertMatchPeerBreakConsistency (env : Lean.Environment) : IO Unit := do
   assertMatchArmPatternsHonorSourceBreaks env
@@ -6169,10 +6245,12 @@ def runBasicFormattingTests (env : Lean.Environment) : IO Unit := do
   assertDeclarationWhereSuffixCountsForSignatureFit env
   assertDeclarationValueKeepsAttachedByBody env
   assertDeclarationValueKeepsAttachedDoBody env
+  assertAttachedDoInAssignmentInfixUsesDeclarationBase env
   assertProofValuesRemainLayoutIslands env
   assertOriginalLayoutValueHonorsDeclarationBreak env
   assertCalcLayoutIslandAfterNestedInfix env
   assertHaveTermFormatting env
+  assertHaveProofAfterInfixPreservesLayout env
   assertAbsoluteValueDelimitersStayAttached env
   assertSignatureParametersUseLeadingSourceBreakAfterFlatFails env
   assertDefinitionSourceBreakAfterAssignOverridesFlat env
