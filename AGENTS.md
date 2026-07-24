@@ -115,7 +115,8 @@ scripts/validate-external-projects.sh \
 
 For an iterative single-project run, pass `GIT_REPO` or `NAME=GIT_REPO`; the
 source can be a local path or any clone source accepted by `git clone`, and it is
-still cloned into a fresh scratch checkout. Pass `--files FILE_SELECTOR` or
+cloned into a fresh scratch checkout unless `--reuse-clone` is passed. Pass
+`--files FILE_SELECTOR` or
 append `::FILE_SELECTOR` to one project spec to validate a tracked-file subset.
 When the selector names a tracked directory, every tracked `.lean` file under
 that directory is included:
@@ -146,7 +147,12 @@ post-format build also runs after a formatter failure; after both results are
 reported, validation stops. It times every phase and returns failure when any
 required phase fails. A missing build-cache executable is only an optional-phase
 skip. Pass `--skip-final-build` during formatter-only iteration to omit the
-post-format build while retaining the initial clean build.
+post-format build while retaining the initial clean build. To resume an existing
+scratch clone after a successful batch, combine `--start-batch N`,
+`--reuse-clone`, and `--skip-initial-build`; the validator then continues from
+batch `N` without recloning or repeating the completed pre-format build.
+Formatter workers run serially. Per-batch output and the last batch state are
+persisted under `.scratch/external-validation/logs/PROJECT/`.
 
 Review external changes and diagnostics in the scratch clone. Treat code changes,
 non-idempotence, missing rules, actionable overflow, and either build failure as

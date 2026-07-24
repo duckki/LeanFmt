@@ -19,13 +19,17 @@ failures=0
 usage() {
   cat >&2 <<'EOF'
 Usage:
-  scripts/validate-external-projects.sh [--files FILE_SELECTOR] [--batch N] [--skip-final-build] GIT_REPO[::FILE_SELECTOR]...
-  scripts/validate-external-projects.sh [--files FILE_SELECTOR] [--batch N] [--skip-final-build] NAME=GIT_REPO[::FILE_SELECTOR]...
+  scripts/validate-external-projects.sh [--files FILE_SELECTOR] [--batch N | --start-batch N] [--reuse-clone] [--skip-initial-build] [--skip-final-build] GIT_REPO[::FILE_SELECTOR]...
+  scripts/validate-external-projects.sh [--files FILE_SELECTOR] [--batch N | --start-batch N] [--reuse-clone] [--skip-initial-build] [--skip-final-build] NAME=GIT_REPO[::FILE_SELECTOR]...
 
 Each project argument must name an explicit git clone source. The validator
-creates a fresh clone under .scratch/external-validation/ before formatting.
+creates a fresh clone under .scratch/external-validation/ before formatting
+unless --reuse-clone is passed.
 Pass --skip-final-build to omit the complete build after formatter batches.
 The complete build before formatting still runs.
+Pass --start-batch N to validate batch N and every later batch. Pass
+--reuse-clone to keep an existing scratch clone, and --skip-initial-build to
+omit its already-completed pre-format build while resuming validation.
 
 Set LEANFMT_VALIDATION_LINE_WIDTH=N to pass --line-width N to every formatter
 invocation. For example, validate mathlib at width 100 with:
@@ -247,12 +251,28 @@ run_formatter_file_list() {
   )
 }
 
+run_logged_formatter_file_list() {
+  local project_dir="$1"
+  local list_file="$2"
+  local log_file="$3"
+  shift 3
+
+  {
+    printf 'Project directory: %s\n' "$project_dir"
+    printf 'File list: %s\n' "$list_file"
+    printf 'Formatter worker execution: serial\n'
+    run_formatter_file_list "$project_dir" "$list_file" "$@"
+  } 2>&1 | tee "$log_file"
+}
+
 run_project_validation_batches() {
   local project_name="$1"
   local project_dir="$2"
   local file_selector="$3"
   local selected_batch="$4"
-  local skip_final_build="$5"
+  local start_batch="$5"
+  local skip_initial_build="$6"
+  local skip_final_build="$7"
   local -a files=()
   local file
 
@@ -278,6 +298,13 @@ run_project_validation_batches() {
     fi
     first_batch="$selected_batch"
     last_batch="$selected_batch"
+  elif [[ -n "$start_batch" ]]; then
+    if ((start_batch < 1 || start_batch > total_batches)); then
+      printf 'Starting batch %d is out of range for %s (%d file(s), %d batch(es)).\n' \
+        "$start_batch" "$file_selector" "$total_files" "$total_batches" >&2
+      return 2
+    fi
+    first_batch="$start_batch"
   fi
 
   printf 'Formatter file set: %s\n' "$file_selector"
@@ -292,19 +319,32 @@ run_project_validation_batches() {
   fi
   if [[ -n "$selected_batch" ]]; then
     printf 'Running selected validation batch: %d\n' "$selected_batch"
+  elif [[ -n "$start_batch" ]]; then
+    printf 'Starting validation at batch: %d\n' "$start_batch"
   fi
 
-  local batch first_index count last_index list_file formatter_status build_status status
+  local log_dir="$WORK_DIR/logs/$project_name"
+  local state_file="$log_dir/state"
+  local batch first_index count last_index list_file log_file
+  local formatter_status build_status status
   local formatted_through_batch=0
 
-  if run_phase_result \
-      "Build all of $project_name before formatting ($file_selector)" \
-      build_project "$project_dir"; then
-    :
+  mkdir -p "$log_dir"
+  printf 'Formatter batch logs: %s\n' "$log_dir"
+
+  if ((skip_initial_build == 1)); then
+    section "Skip initial build of $project_name before formatting ($file_selector)"
+    printf 'SKIPPED: initial build disabled by --skip-initial-build.\n'
   else
-    status=$?
-    printf 'Stopping before formatter batches after the initial build failed.\n' >&2
-    return "$status"
+    if run_phase_result \
+        "Build all of $project_name before formatting ($file_selector)" \
+        build_project "$project_dir"; then
+      :
+    else
+      status=$?
+      printf 'Stopping before formatter batches after the initial build failed.\n' >&2
+      return "$status"
+    fi
   fi
 
   for ((batch = first_batch; batch <= last_batch; batch++)); do
@@ -317,21 +357,32 @@ run_project_validation_batches() {
 
     list_file="$(mktemp "$WORK_DIR/$project_name-batch-$batch.XXXXXX")" || return 1
     write_file_batch "$list_file" "$first_index" "$count" "${files[@]}"
+    log_file="$log_dir/batch-$batch.log"
 
     printf '\n-- Formatter batch %d/%d: %d file(s), indexes %d-%d --\n' \
       "$batch" "$total_batches" "$count" "$((first_index + 1))" \
       "$((last_index + 1))"
     printf 'First file: %s\n' "${files[$first_index]#"$project_dir/"}"
     printf 'Last file:  %s\n' "${files[$last_index]#"$project_dir/"}"
+    printf 'Batch log:  %s\n' "$log_file"
+    printf 'batch=%d\nstatus=running\nlog=%s\n' \
+      "$batch" "$log_file" > "$state_file"
 
     formatter_status=0
     if run_phase_result \
         "Format and check $project_name batch $batch/$total_batches ($file_selector)" \
-        run_formatter_file_list "$project_dir" "$list_file" \
+        run_logged_formatter_file_list "$project_dir" "$list_file" "$log_file" \
           --check-exception --check-idempotent; then
       :
     else
       formatter_status=$?
+    fi
+    if ((formatter_status == 0)); then
+      printf 'batch=%d\nstatus=passed\nlog=%s\n' \
+        "$batch" "$log_file" > "$state_file"
+    else
+      printf 'batch=%d\nstatus=failed\nexit=%d\nlog=%s\n' \
+        "$batch" "$formatter_status" "$log_file" > "$state_file"
     fi
 
     formatted_through_batch="$batch"
@@ -379,6 +430,9 @@ main() {
   local -a projects=()
   local default_file_selector="$DEFAULT_FILE_SELECTOR"
   local selected_batch=""
+  local start_batch=""
+  local reuse_clone=0
+  local skip_initial_build=0
   local skip_final_build=0
 
   validate_positive_integer LEANFMT_VALIDATION_BATCH_SIZE \
@@ -421,6 +475,25 @@ main() {
       shift
       continue
     fi
+    if [[ "$specification" == "--start-batch" ]]; then
+      if (($# == 0)); then
+        printf 'Missing value for --start-batch.\n' >&2
+        usage
+        return 2
+      fi
+      validate_positive_integer "--start-batch" "$1" || return $?
+      start_batch="$1"
+      shift
+      continue
+    fi
+    if [[ "$specification" == "--reuse-clone" ]]; then
+      reuse_clone=1
+      continue
+    fi
+    if [[ "$specification" == "--skip-initial-build" ]]; then
+      skip_initial_build=1
+      continue
+    fi
     if [[ "$specification" == "--skip-final-build" ]]; then
       skip_final_build=1
       continue
@@ -456,6 +529,11 @@ main() {
     usage
     return 2
   fi
+  if [[ -n "$selected_batch" && -n "$start_batch" ]]; then
+    printf '%s\n' '--batch and --start-batch cannot be used together.' >&2
+    usage
+    return 2
+  fi
 
   mkdir -p "$WORK_DIR"
 
@@ -470,17 +548,22 @@ main() {
     IFS='|' read -r name source file_selector <<< "$project"
     project_dir="$WORK_DIR/$name"
 
-    run_phase "Clone $name" clone_project "$source" "$project_dir"
+    if ((reuse_clone == 1)); then
+      run_phase "Reuse existing $name clone" validate_local_git_repo "$project_dir"
+    else
+      run_phase "Clone $name" clone_project "$source" "$project_dir"
+    fi
     if [[ ! -d "$project_dir/.git" ]]; then
       printf 'Skipping %s because its clone is unavailable.\n' "$name" >&2
       continue
     fi
 
-    seed_local_lake_packages "$source" "$project_dir"
-
-    run_optional_phase "Download $name build cache" get_build_cache "$project_dir"
+    if ((reuse_clone == 0)); then
+      seed_local_lake_packages "$source" "$project_dir"
+      run_optional_phase "Download $name build cache" get_build_cache "$project_dir"
+    fi
     run_project_validation_batches "$name" "$project_dir" "$file_selector" \
-      "$selected_batch" "$skip_final_build"
+      "$selected_batch" "$start_batch" "$skip_initial_build" "$skip_final_build"
   done
 
   section "Validation summary"

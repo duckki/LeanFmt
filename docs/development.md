@@ -380,8 +380,8 @@ scripts/validate-external-projects.sh $HOME/lean-libs/mathlib4
 
 At least one Git repository argument is required; there are no preset targets.
 Pass either `GIT_REPO` or `NAME=GIT_REPO`. The source can be a local path or any
-clone source accepted by `git clone`. The validator always makes a fresh scratch
-clone:
+clone source accepted by `git clone`. The validator makes a fresh scratch clone
+unless `--reuse-clone` is passed:
 
 ```sh
 scripts/validate-external-projects.sh $HOME/target-repo
@@ -420,6 +420,27 @@ scripts/validate-external-projects.sh \
   mathlib=https://github.com/leanprover-community/mathlib4.git
 ```
 
+To resume an interrupted scratch validation, pass `--start-batch N` with
+`--reuse-clone`. The validator keeps the existing clone and validates batch `N`
+and every later batch. Add `--skip-initial-build` only when that same clone
+already completed the clean pre-format build:
+
+```sh
+scripts/validate-external-projects.sh \
+  --files Mathlib \
+  --start-batch 34 \
+  --reuse-clone \
+  --skip-initial-build \
+  --skip-final-build \
+  mathlib=$HOME/work/lean-libs/mathlib4
+```
+
+Formatter execution remains serial even though the CLI isolates work in worker
+processes. Each batch writes its formatter output to
+`.scratch/external-validation/logs/PROJECT/batch-N.log` and updates the adjacent
+`state` file with the running, passed, or failed batch, so interrupted runs can
+be diagnosed and resumed without overlapping formatter invocations.
+
 For formatter-only iteration, pass `--skip-final-build`. The initial clean build
 still runs, but the validator omits the complete build after the last successful
 or first failing formatter batch:
@@ -431,7 +452,8 @@ scripts/validate-external-projects.sh \
   mathlib=$HOME/work/lean-libs/mathlib4
 ```
 
-Clones are recreated under `.scratch/external-validation`. Set
+Clones are created under `.scratch/external-validation`; `--reuse-clone` requires
+the corresponding existing clone there. Set
 `LEANFMT_VALIDATION_DIR` to use another directory,
 `LEANFMT_VALIDATION_SKIP_CACHE=1` to build without downloading caches,
 `LEANFMT_VALIDATION_FILE_PATTERN` to change the default file selector, or
