@@ -577,6 +577,15 @@ structure Candidate extends CandidateKey where
   occurrenceCount : Nat
 ```
 
+When an `extends` list itself wraps, parent types flow after commas one level
+beyond the `extends` line:
+
+```lean
+structure MultipleParentStructure (A : Type)
+    extends FirstLongParentName A, SecondLongParentName A, ThirdLongParentName A,
+      FourthLongParentName A, FifthLongParentName A where
+```
+
 Long field types use the same binder/type continuation principles as other
 declarations.
 

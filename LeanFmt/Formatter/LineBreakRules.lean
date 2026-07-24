@@ -651,6 +651,7 @@ def nullInheritBase (context : RuleContext) (segment : Segment) : Bool :=
   || singletonArrayItemWrapper context segment
   || parentIsBinderDefaultWrapper context
   || quantifierBinderSequence context
+  || parentIsRawKind context `Lean.Parser.Command.extends
   || parentIsRawKind context `Lean.Parser.Term.structInstFields
   || parentIsRawKind context `Lean.Parser.Term.letRecDecls
   || parentIsRawKind context `Lean.Parser.Term.letRecDecl
@@ -749,6 +750,20 @@ def derivingClauseBreaks (_context : RuleContext) (segment : Segment) : List Bre
           else
             none
       | none => none
+
+def structureParentBreaks (context : RuleContext) (segment : Segment) : List BreakPoint :=
+  if parentIsRawKind context `Lean.Parser.Command.extends then
+    segment.indexes.filterMap
+      fun index =>
+        match previousContentIndex? segment index with
+        | some previousIndex =>
+            if childStartsWithLexeme segment previousIndex "," then
+              boundaryBreak? segment index 1
+            else
+              none
+        | none => none
+  else
+    []
 
 def terminationSuffixChildBreaksWithIndent (segment : Segment) (indentLevels : Nat)
     : List BreakPoint :=
@@ -2147,6 +2162,7 @@ def binderTacticBreaks (_context : RuleContext) (segment : Segment) : List Break
 def nullBreaks (context : RuleContext) (segment : Segment) : List BreakPoint :=
   structureFieldBreaks context segment
   ++ structureWhereFieldBreaks context segment
+  ++ structureParentBreaks context segment
   ++ structInstFieldBreaks context segment
   ++ inductiveAlternativeBreaks context segment
   ++ quantifierBinderBreaks context segment
@@ -2188,7 +2204,8 @@ def nullRule : LineBreakRule :=
     mandatory := nullBreaksMandatory
     flow :=
       fun context segment =>
-        !(quantifierBinderBreaks context segment).isEmpty
+        !(structureParentBreaks context segment).isEmpty
+        || !(quantifierBinderBreaks context segment).isEmpty
         || !(binderIdentifierBreaks context segment).isEmpty
         || !(commandBinderBreaks context segment).isEmpty
         || !(openIdentifierBreaks context segment).isEmpty
@@ -2714,7 +2731,7 @@ def ruleFor : SyntaxTree.Tree → Option LineBreakRule
       some defaultRule
   | .node (.raw `Lean.Parser.Command.structExplicitBinder) _ =>
       some transparentRule
-  | .node (.raw `Lean.Parser.Command.extends) _ => some defaultRule
+  | .node (.raw `Lean.Parser.Command.extends) _ => some transparentRule
   | .node (.raw `Lean.Parser.Command.initialize_simps_projections) _ => some defaultRule
   | .node (.raw `Lean.Parser.Command.simpsProj) _ => some defaultRule
   | .node (.raw `Lean.Parser.Command.simpsRule) _ => some defaultRule

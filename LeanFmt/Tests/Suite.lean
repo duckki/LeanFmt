@@ -4467,6 +4467,40 @@ def assertStructureExtendsBreaksBeforeWhereFields (env : Lean.Environment) : IO 
   let formatted ← Formatter.formatSourceWithEnv env source "structure-extends-rule.lean"
   assertEq "structure extends breaks before where fields" expected formatted
 
+  let multipleParentsSource :=
+    "structure MultipleParentStructure (A : Type) extends FirstLongParentName A, SecondLongParentName A,\n"
+    ++ "    ThirdLongParentName A, FourthLongParentName A, FifthLongParentName A where\n"
+    ++ "  marker : Nat\n"
+    ++ "\n"
+    ++ "def forceAnotherPass : Nat :=\n"
+    ++ "value\n"
+  let multipleParentsExpected :=
+    "structure MultipleParentStructure (A : Type)\n"
+    ++ "    extends FirstLongParentName A, SecondLongParentName A,\n"
+    ++ "      ThirdLongParentName A, FourthLongParentName A, FifthLongParentName A where\n"
+    ++ "  marker : Nat\n"
+    ++ "\n"
+    ++ "def forceAnotherPass : Nat :=\n"
+    ++ "  value\n"
+  let multipleParentsResult ←
+    Formatter.formatSourceWithEnvDetailed env multipleParentsSource
+      "structure-multiple-parents.lean" { lineWidth := 100 }
+  assertTrue "multiple structure parents do not fall back"
+    (!multipleParentsResult.fellBack)
+  assertEq "multiple structure parents flow after commas"
+    multipleParentsExpected multipleParentsResult.formatted
+  let multipleParentsModule ←
+    SyntaxTree.parseModuleStringWithEnv env multipleParentsResult.formatted
+      "structure-multiple-parents-formatted.lean"
+  assertTrue "multiple structure parents have no overflow"
+    (Formatter.Diagnostics.overflowOccurrences multipleParentsModule
+      { lineWidth := 100 }).isEmpty
+  let multipleParentsFormattedAgain ←
+    Formatter.formatSourceWithEnv env multipleParentsResult.formatted
+      "structure-multiple-parents-formatted-again.lean" { lineWidth := 100 }
+  assertEq "multiple structure parent formatting is idempotent"
+    multipleParentsResult.formatted multipleParentsFormattedAgain
+
 def assertShortStructureExtendsHeaderStaysFlat (env : Lean.Environment) : IO Unit := do
   let source :=
     "structure Candidate extends CandidateKey where\n"
