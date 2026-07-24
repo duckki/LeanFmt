@@ -448,20 +448,34 @@ inductive SuffixTokenAction where
   | stop
 deriving BEq, Repr
 
-def suffixProjectionMember (context : RuleContext) : Bool :=
-  match context.ancestors with
-  | parent :: _ =>
-      parent.nodeKind? == some (.infixChain `Lean.Parser.Term.proj)
-      && parent.childIndex != 0
-  | _ => false
+def frameWrapsOnlySelectedChild (frame : Frame) : Bool :=
+  frame.segment.parentIndexes.all
+    fun index =>
+      index == frame.childIndex
+      || match frame.segment.parentChild? index >>= SyntaxTree.Tree.firstToken? with
+          | some _ => false
+          | none => true
 
-def suffixInfixOperator (context : RuleContext) : Bool :=
-  match context.ancestors with
-  | parent :: _ =>
+def suffixProjectionMemberIn : List Frame → Bool
+  | [] => false
+  | parent :: ancestors =>
+      if parent.nodeKind? == some (.infixChain `Lean.Parser.Term.proj) then
+        parent.childIndex != 0
+      else
+        frameWrapsOnlySelectedChild parent && suffixProjectionMemberIn ancestors
+
+def suffixProjectionMember (context : RuleContext) : Bool :=
+  suffixProjectionMemberIn context.ancestors
+
+def suffixInfixOperatorIn : List Frame → Bool
+  | [] => false
+  | parent :: ancestors =>
       match parent.nodeKind? with
       | some (.infixChain _) => parent.childIndex % 2 == 1
-      | _ => false
-  | _ => false
+      | _ => frameWrapsOnlySelectedChild parent && suffixInfixOperatorIn ancestors
+
+def suffixInfixOperator (context : RuleContext) : Bool :=
+  suffixInfixOperatorIn context.ancestors
 
 def suffixTokenAction (context : RuleContext) (token : SyntaxTree.Token)
     : SuffixTokenAction :=

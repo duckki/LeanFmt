@@ -3817,6 +3817,32 @@ def assertNestedChildFitCountsInfixSuffix (env : Lean.Environment) : IO Unit := 
       { lineWidth := 100 }
   assertEq "nested child fit counts an enclosing infix suffix" expected formatted
 
+def assertNestedChildFitCountsProjectionMemberSuffix (env : Lean.Environment)
+    : IO Unit := do
+  let source :=
+    "theorem continuousAlternatingMapCoordChange_apply\n"
+    ++ "    : continuousAlternatingMapCoordChange 𝕜 ι e₁ e₁' e₂ e₂' b L\n"
+    ++ "      = (continuousAlternatingMap 𝕜 ι e₁' e₂' ⟨b, (continuousAlternatingMap 𝕜 ι e₁ e₂).symm b L⟩).2 := by\n"
+    ++ "  exact proof\n"
+  let expected :=
+    "theorem continuousAlternatingMapCoordChange_apply\n"
+    ++ "    : continuousAlternatingMapCoordChange 𝕜 ι e₁ e₁' e₂ e₂' b L\n"
+    ++ "      = (continuousAlternatingMap 𝕜 ι e₁' e₂'\n"
+    ++ "          ⟨b, (continuousAlternatingMap 𝕜 ι e₁ e₂).symm b L⟩).2 := by\n"
+    ++ "  exact proof\n"
+  let result ←
+    Formatter.formatSourceWithEnvDetailed env source
+      "nested-child-fit-projection-member-suffix.lean" { lineWidth := 100 }
+  assertTrue "projection-member suffix fit does not fall back" (!result.fellBack)
+  assertEq "nested child fit counts a projection member and declaration suffix"
+    expected result.formatted
+  assertTrue "projection-member suffix fit preserves code"
+    (← codePreservedIgnoringWhitespace env source result.formatted)
+  let formattedAgain ←
+    Formatter.formatSourceWithEnv env result.formatted
+      "nested-child-fit-projection-member-suffix-formatted.lean" { lineWidth := 100 }
+  assertEq "projection-member suffix fit is idempotent" result.formatted formattedAgain
+
 def assertLineFitCountsTrailingComment (env : Lean.Environment) : IO Unit := do
   let source :=
     "inductive Relation : Nat → Nat → Prop\n"
@@ -7315,6 +7341,7 @@ def runExpressionAndRendererTests (env : Lean.Environment) : IO Unit := do
   assertLogicalArrowBreaksBalanced env
   assertChildFitCountsParentSuffix env
   assertNestedChildFitCountsInfixSuffix env
+  assertNestedChildFitCountsProjectionMemberSuffix env
   assertLineFitCountsTrailingComment env
   assertColumnIndentationIsConservative
   assertCurrentLineFitChecksCompletedLines
