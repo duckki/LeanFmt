@@ -1251,7 +1251,10 @@ def breakPointPreservesTightTokenBoundary
     (segment : LineBreakRules.Segment) (breakPoint : LineBreakRules.BreakPoint)
     : Bool :=
   match tokenBoundaryAt? segment breakPoint.index with
-  | some (left, right) => !SpaceRules.preservesTightDotSpacing left right
+  | some (left, right) =>
+      !SpaceRules.preservesTightDotSpacing left right
+      && !(left.span.stop == right.span.start
+        && SpaceRules.preservesTightPostfixSpacing right)
   | none => true
 
 def normalizeBreakPoints

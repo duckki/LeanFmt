@@ -147,6 +147,27 @@ def assertSafeArrayIndexKeepsPostfixQuestion (env : Lean.Environment) : IO Unit 
     Formatter.formatSourceWithEnv env formatted "safe-array-index-formatted.lean"
   assertEq "safe array index formatting is idempotent" formatted formattedAgain
 
+def assertGetElemBracketStaysAttachedAcrossWrap (env : Lean.Environment)
+    : IO Unit := do
+  let source :=
+    "set_option linter.style.whitespace false in\n"
+    ++ "theorem getElemSpacing (l : List α) (n k : Nat) (hk : k < l.length)\n"
+    ++ "    : l[k] = ((l.rotate n)[(l.length - n % l.length + k) % l.length]'\n"
+    ++ "      ((Nat.mod_lt _ hk).trans_eq (List.length_rotate l n).symm)) := by\n"
+    ++ "  sorry\n"
+  let formatted ←
+    Formatter.formatSourceWithEnv env source "get-elem-tight-spacing.lean"
+  assertTextContains "get-element bracket stays attached to its receiver"
+    formatted "(l.rotate n)["
+  assertTextLacks "get-element bracket does not become a spaced argument"
+    formatted "(l.rotate n) ["
+  assertTrue "wrapped get-element notation preserves code"
+    (← codePreservedIgnoringWhitespace env source formatted)
+  let formattedAgain ←
+    Formatter.formatSourceWithEnv env formatted
+      "get-elem-tight-spacing-formatted.lean"
+  assertEq "wrapped get-element notation is idempotent" formatted formattedAgain
+
 def assertPostfixSuperscriptSpacingPreservesParse (env : Lean.Environment) : IO Unit := do
   let source :=
     "def applyInverse {G : Type} [Inv G] (f : G -> G -> G) (m n : G) :=\n"
@@ -5608,6 +5629,7 @@ def runSyntaxTreeTests (env : Lean.Environment) : IO Unit := do
 
 def runBasicFormattingTests (env : Lean.Environment) : IO Unit := do
   assertSafeArrayIndexKeepsPostfixQuestion env
+  assertGetElemBracketStaysAttachedAcrossWrap env
   assertPostfixSuperscriptSpacingPreservesParse env
   assertBlockCommentInternalWhitespacePreservedByFormatting env
   assertModuleDocInternalBlankLinesPreservedByFormatting env
