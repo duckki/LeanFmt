@@ -165,6 +165,27 @@ def assertTacticQuotationAntiquotationPreserved (env : Lean.Environment) : IO Un
   assertTrue "tactic quotation sequence hides nested tactic rule details"
     (Formatter.Diagnostics.missingRuleOccurrencesForModule elabRulesTree).isEmpty
 
+def assertFullyQualifiedQuotedNamesStayTight (env : Lean.Environment) : IO Unit := do
+  let source :=
+    "def quotedNames : List Name :=\n"
+    ++ "  [``Lean.Parser.Tactic.tacticSorry, ``Lean.Parser.Tactic.tacticRepeat_,\n"
+    ++ "    -- A comment between quoted names must not split either prefix.\n"
+    ++ "    ``Lean.Parser.Tactic.tacticSeq1Indented, ``Lean.Parser.Term.byTactic]\n"
+  let result ←
+    Formatter.formatSourceWithEnvDetailed env source "quoted-names.lean"
+      { lineWidth := 60 }
+  assertTrue "fully qualified quoted names do not fall back" (!result.fellBack)
+  assertTrue "fully qualified quoted names preserve code"
+    (← codePreservedIgnoringWhitespace env source result.formatted)
+  assertTextLacks "fully qualified quoted name prefix does not gain a space"
+    result.formatted "` `"
+  assertTextLacks "fully qualified quoted name prefix does not gain a line break"
+    result.formatted "`\n`"
+  let formattedAgain ←
+    Formatter.formatSourceWithEnv env result.formatted "quoted-names-formatted.lean"
+      { lineWidth := 60 }
+  assertEq "fully qualified quoted names are idempotent" result.formatted formattedAgain
+
 def assertOverlappingEmptySyntaxTokensRemoved (env : Lean.Environment) : IO Unit := do
   let source :=
     "syntax \"field \" str \"{\" term,* \"}\" : term\n" ++ "#check field \"empty\" {}\n"
@@ -6870,6 +6891,7 @@ def runSyntaxTreeTests (env : Lean.Environment) : IO Unit := do
   assertPreservationDetectsSyntaxChange env
   assertOverlappingQuotationTokensRemoved env
   assertTacticQuotationAntiquotationPreserved env
+  assertFullyQualifiedQuotedNamesStayTight env
   assertOverlappingEmptySyntaxTokensRemoved env
   assertGroupedApplication env
   assertGroupedInfixChain env

@@ -265,7 +265,8 @@ Important behavior:
 - Collapse excessive blank-line runs.
 - Preserve and reindent comment trivia.
 - Keep tight punctuation such as `(`, `)`, `[`, `]`, commas, semicolons, projection dots,
-  and compact `!value` when source adjacency requires it.
+  fully qualified name-quotation prefixes, and compact `!value` when source adjacency
+  requires it.
 - Insert a single space between ordinary adjacent code tokens.
 
 Space rules do not inspect `SyntaxTree.Tree`, line width, render state, or ancestors.

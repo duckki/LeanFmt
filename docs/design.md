@@ -259,6 +259,7 @@ The main punctuation rules are:
 - no space after `(`, `[`, `⟨`, `⟪`, `@`, or `@[`;
 - no space before `)`, `]`, `⟩`, `⟫`, `,`, `;`, or `@`;
 - dots stay tight in projections and qualified names;
+- the two-backtick prefix of fully qualified name quotations stays tight;
 - ordinary operators and declaration punctuation receive surrounding spaces;
 - compact `!value` remains compact when `!` and the following token were
   adjacent; otherwise `! value` retains a space.

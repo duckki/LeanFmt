@@ -1361,6 +1361,7 @@ def breakPointPreservesTightTokenBoundary
   match tokenBoundaryAt? segment breakPoint.index with
   | some (left, right) =>
       !SpaceRules.preservesTightDotSpacing left right
+      && !SpaceRules.preservesTightQuotedNameSpacing left right
       && !(left.span.stop == right.span.start
             && SpaceRules.preservesTightPostfixSpacing right)
   | none => true
