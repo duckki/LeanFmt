@@ -540,6 +540,18 @@ termination_by
   (fragments.length, sizeOf selection, 0)
 ```
 
+Declarations inside `mutual` remain peers at the mutual-body indentation even
+when a preceding declaration ends with a termination clause:
+
+```lean
+mutual
+  def first (n : Nat) : Nat := second n
+  termination_by n
+  def second (n : Nat) : Nat := first n
+  termination_by n
+end
+```
+
 ### Theorems and proofs
 
 Theorem headers use the same parameter and return-type rules as definitions.

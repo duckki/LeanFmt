@@ -1850,6 +1850,43 @@ def assertTerminationClausesUseDeclarationBase (env : Lean.Environment) : IO Uni
   assertEq "let-rec termination clause alignment is idempotent"
     letRecResult.formatted letRecFormattedAgain
 
+  let mutualSource :=
+    "mutual\n"
+    ++ "  @[implicit_reducible]\n"
+    ++ "  def first : Nat → Nat\n"
+    ++ "    | 0 => 0\n"
+    ++ "    | n + 1 => second n\n"
+    ++ "  termination_by n => n\n"
+    ++ "  @[implicit_reducible]\n"
+    ++ "  def second : Nat → Nat\n"
+    ++ "    | 0 => 0\n"
+    ++ "    | n + 1 => third n\n"
+    ++ "  termination_by n => n\n"
+    ++ "  @[implicit_reducible]\n"
+    ++ "  def third : Nat → Nat\n"
+    ++ "    | 0 => 0\n"
+    ++ "    | n + 1 => first n\n"
+    ++ "  termination_by n => n\n"
+    ++ "end\n"
+  let mutualResult ←
+    Formatter.formatSourceWithEnvDetailed env mutualSource
+      "mutual-termination-clauses.lean"
+  assertTrue "mutual termination clauses do not fall back" (!mutualResult.fellBack)
+  assertEq "mutual declarations keep their shared body base"
+    mutualSource mutualResult.formatted
+  assertTrue "mutual termination clause alignment preserves code"
+    (← codePreservedIgnoringWhitespace env mutualSource mutualResult.formatted)
+  let mutualModule ←
+    SyntaxTree.parseModuleStringWithEnv env mutualResult.formatted
+      "mutual-termination-clauses-formatted.lean"
+  assertTrue "mutual termination clauses avoid overflow"
+    (Formatter.Diagnostics.overflowOccurrences mutualModule).isEmpty
+  let mutualFormattedAgain ←
+    Formatter.formatSourceWithEnv env mutualResult.formatted
+      "mutual-termination-clauses-formatted-again.lean"
+  assertEq "mutual termination clause alignment is idempotent"
+    mutualResult.formatted mutualFormattedAgain
+
 def assertBasicDeclarationBreak (env : Lean.Environment) : IO Unit := do
   let source :=
     "def declarationTreeBodyBreak : Nat := veryLongIdentifierNameThatPushesTheDefinitionBodyPastTheWidthLimit\n"

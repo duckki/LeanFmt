@@ -1218,6 +1218,20 @@ def moduleCommandBreaks (context : RuleContext) (segment : Segment) : List Break
   else
     []
 
+def mutualCommandBreaks (context : RuleContext) (segment : Segment) : List BreakPoint :=
+  match context.ancestors with
+  | parent :: _ =>
+      if parent.rawKind? == some `Lean.Parser.Command.mutual
+          && parent.childIndex == 1 then
+        match nonemptyChildIndexes segment with
+        | []
+        | [_] => []
+        | _ :: rest =>
+            rest.filterMap fun index => boundaryBreak? segment index 0
+      else
+        []
+  | _ => []
+
 def exportBreaks (_context : RuleContext) (segment : Segment) : List BreakPoint :=
   let listBreak :=
     match boundaryBreak? segment 3 1 with
@@ -2247,6 +2261,7 @@ def nullBreaks (context : RuleContext) (segment : Segment) : List BreakPoint :=
   ++ doElseIfChainBreaks context segment
   ++ moduleImportBreaks context segment
   ++ moduleCommandBreaks context segment
+  ++ mutualCommandBreaks context segment
 
 def nullBreaksMandatory (context : RuleContext) (segment : Segment) : Bool :=
   !(structureFieldBreaks context segment).isEmpty
@@ -2260,6 +2275,7 @@ def nullBreaksMandatory (context : RuleContext) (segment : Segment) : Bool :=
   || !(doElseIfChainBreaks context segment).isEmpty
   || !(moduleImportBreaks context segment).isEmpty
   || !(moduleCommandBreaks context segment).isEmpty
+  || !(mutualCommandBreaks context segment).isEmpty
 
 -----------------------------------------------------------------------------------------
 -- Rule values

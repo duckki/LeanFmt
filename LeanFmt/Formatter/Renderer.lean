@@ -1859,388 +1859,395 @@ mutual
         else
           renderSegmentByRule state segment rule breakPoints
 
-partial def renderSegmentByRule (state : RenderState) (segment : LineBreakRules.Segment)
-    (rule : LineBreakRules.LineBreakRule)
-    (breakPoints : List LineBreakRules.BreakPoint)
-    : RenderState :=
-  let isFlow := rule.flow state.context segment
-  let useExistingBreaks := rule.useExistingBreaks state.context segment
-  if rule.atomic then
-    renderWithoutRuleBreaks state segment
-  else if rule.mandatory state.context segment && !breakPoints.isEmpty then
-    renderBalancedSegment state segment rule breakPoints
-  else if breakPoints.isEmpty && !isFlow then
-    renderChildren state segment
-  else if useExistingBreaks then
-    renderUsingExistingBreaks state segment rule breakPoints isFlow
-  else
-    let probe := measureLayout state segment false
-    if probe.acceptedForRule isFlow breakPoints then
-      state.commitLayoutProbe probe
-    else
-      renderAfterFlatFailure state segment rule breakPoints isFlow
-
-partial def renderRuleLayout
-    (state : RenderState) (segment : LineBreakRules.Segment)
-    (rule : LineBreakRules.LineBreakRule)
-    (breakPoints : List LineBreakRules.BreakPoint) (isFlow : Bool)
-    : RenderState :=
-  if isFlow then
-    renderFlowSegment state segment rule breakPoints
-  else
-    renderBalancedSegment state segment rule breakPoints
-
-partial def renderAfterFlatFailure
-    (state : RenderState) (segment : LineBreakRules.Segment)
-    (rule : LineBreakRules.LineBreakRule)
-    (breakPoints : List LineBreakRules.BreakPoint) (isFlow : Bool)
-    : RenderState :=
-  let fallback (_ : Unit) := renderRuleLayout state segment rule breakPoints isFlow
-  if !isFlow then
-    fallback ()
-  else
-    match sourceBreaksForRule? state segment rule with
-    | none => fallback ()
-    | some sourceBreaks =>
-        match renderFlowSegmentWithSourceBreaks? state segment sourceBreaks with
-        | some candidate =>
-            if renderedCandidateFits state candidate then candidate else fallback ()
-        | none => fallback ()
-
-partial def renderUsingExistingBreaks
-    (state : RenderState) (segment : LineBreakRules.Segment)
-    (rule : LineBreakRules.LineBreakRule)
-    (breakPoints : List LineBreakRules.BreakPoint) (isFlow : Bool)
-    : RenderState :=
-  let hasSourceBreaks :=
-    !(sourceBreaksAllowedByBreakPointsInState state segment breakPoints).isEmpty
-  if !isFlow && hasSourceBreaks then
-    renderBalancedSegment state segment rule breakPoints
-  else
-    match tryRenderSegmentWithSourceBreaks? state segment rule with
-    | some rendered => rendered
-    | none =>
-        let probe := measureLayout state segment false
-        if probe.acceptedForRule isFlow breakPoints then
-          state.commitLayoutProbe probe
-        else
-          renderAfterFlatFailure state segment rule breakPoints isFlow
-
-partial def renderNestedSegment
-    (state : RenderState) (segment : LineBreakRules.Segment) (index : Nat)
-    (child : SyntaxTree.Tree) (suffixStop? : Option Nat := none)
-    : RenderState :=
-  let emitOriginal := shouldEmitOriginalChild segment.parent index child
-  let state :=
-    if emitOriginal || treeStartsWithOriginalEmission child then
-      state
-    else
-      state.preserveBlankBoundaryBefore child
-  let childContext := state.context.push segment index
-  let childSegment := LineBreakRules.Segment.ofTree child
-  let childRule := LineBreakRules.formattingRuleFor child
-  let childBreakPoints :=
-    if emitOriginal then [] else ruleBreakPoints childContext childSegment childRule
-  let inheritsBase := childRule.inheritBase childContext childSegment
-  let startAlignment := childRule.startAlignment childContext childSegment
-  let suffixStop := suffixStop?.getD segment.stop
-  let lineFitSuffix := lineFitSuffixForChild state segment index suffixStop child
-  let state :=
-    if inheritsBase || startAlignment == .none then
-      state
-    else if nestedLayoutFits
-              { state with context := childContext, lineFitSuffixWidth := lineFitSuffix }
-              childSegment then
-      state
-    else if startAlignment == .preferred && !state.allowsStartAlignment then
-      state
-    else
-      let naturalStartColumn := state.segmentStartColumn childSegment
-      let alignedStartColumn := indentationPastColumn naturalStartColumn
-      state.appendOutput <| spaces (alignedStartColumn - naturalStartColumn)
-  let scope := ChildRenderScope.capture state
-  let childBase :=
-    if inheritsBase then
-      { column := state.segmentBaseColumn, indentation := state.segmentIndentation }
-    else
-      state.segmentStartBaseFor childSegment
-  let (sourceLayoutBaseColumn, outputLayoutBaseColumn) :=
-    let startsOnNewSourceLine :=
-      state.lastToken?.isNone || state.originalTreeStartsOnNewSourceLine child
-    if startsOnNewSourceLine then
-      match SyntaxTree.Tree.firstToken? child with
-      | some _ =>
-          let sourceColumn := state.originalTreeColumnAfterLineBreak child
-          let outputColumn :=
-            match state.pendingIndent? with
-            | some pendingIndent => pendingIndent
-            | none =>
-                shiftColumnByAnchor state.sourceLayoutBaseColumn
-                  state.outputLayoutBaseColumn sourceColumn
-          (sourceColumn, outputColumn)
-      | none => (state.sourceLayoutBaseColumn, state.outputLayoutBaseColumn)
-    else
-      (state.sourceLayoutBaseColumn, state.outputLayoutBaseColumn)
-  let childState :=
-    {
-      state with
-        context := childContext
-        segmentBaseColumn := childBase.column
-        segmentIndentation := childBase.indentation
-        sourceLayoutBaseColumn
-        outputLayoutBaseColumn
-        lineFitSuffixWidth := lineFitSuffix
-        trace := state.trace.pushPath index
-    }
-  let childState :=
-    if state.tailIndentationStop?.any fun stop => index < stop then
-      let anchorIndentation :=
-        match state.tailIndentationAnchors.find? fun anchor => index < anchor.stop with
-        | some anchor => anchor.indentation
-        | none => state.segmentIndentation
-      childState.extendTailIndentation childSegment anchorIndentation
-    else
-      childState
-  let rendered :=
-    if emitOriginal then
-      childState.emitOriginalTree child
-        (respectPendingIndent :=
-          isProofTree child
-          || !state.originalTreeStartsOnNewSourceLine child
-          || isProofLemmaCommand child
-          || state.pendingCommandBoundary?.isSome)
-    else
-      renderSegment childState childSegment (some (childRule, childBreakPoints))
-  scope.restore rendered
-
-partial def renderChildren (state : RenderState) (segment : LineBreakRules.Segment)
-    : RenderState :=
-  match segment.parent with
-  | .missing => state
-  | .leaf token => state.emitToken token
-  | .node _ _ =>
-      segment.indexes.foldl
-        (fun state index =>
-          match segment.child? index with
-          | some child => renderNestedSegment state segment index child
-          | none => state)
-        state
-
-partial def renderSegmentRange
-    (state : RenderState) (segment : LineBreakRules.Segment)
-    (start stop : Nat)
-    : RenderState :=
-  if start >= stop then
-    state
-  else if start == segment.start && stop == segment.stop then
-    renderChildren state (segment.slice start stop)
-  else
-    renderSegment state (segment.slice start stop)
-
-partial def renderSegmentWithSourceBreaks
-    (state : RenderState) (segment : LineBreakRules.Segment) (breaks : List SourceBreak)
-    : RenderState :=
-  let layout : SourceBreakLayout := { segment, breaks }
-  let rec loop (state : RenderState) (index : Nat)
+  partial def renderSegmentByRule (state : RenderState) (segment : LineBreakRules.Segment)
+      (rule : LineBreakRules.LineBreakRule)
+      (breakPoints : List LineBreakRules.BreakPoint)
       : RenderState :=
-    if index < segment.stop then
-      match segment.child? index with
-      | none => loop state (index + 1)
-      | some child =>
-          let state :=
-            match layout.breakAt? index with
-            | some sourceBreak => state.withPendingIndent sourceBreak.indent
-            | none => state
-          loop
-            (renderNestedSegment state segment index child
-              (some (layout.nextBreakIndex index)))
-            (index + 1)
+    let isFlow := rule.flow state.context segment
+    let useExistingBreaks := rule.useExistingBreaks state.context segment
+    if rule.atomic then
+      renderWithoutRuleBreaks state segment
+    else if rule.mandatory state.context segment && !breakPoints.isEmpty then
+      renderBalancedSegment state segment rule breakPoints
+    else if breakPoints.isEmpty && !isFlow then
+      renderChildren state segment
+    else if useExistingBreaks then
+      renderUsingExistingBreaks state segment rule breakPoints isFlow
     else
-      state
-  loop state segment.start
+      let probe := measureLayout state segment false
+      if probe.acceptedForRule isFlow breakPoints then
+        state.commitLayoutProbe probe
+      else
+        renderAfterFlatFailure state segment rule breakPoints isFlow
 
-partial def renderFlowSegmentWithSourceBreaks?
-    (state : RenderState) (segment : LineBreakRules.Segment) (breaks : List SourceBreak)
-    : Option RenderState :=
-  let layout : SourceBreakLayout := { segment, breaks }
-  let rec loop (state : RenderState) (index : Nat)
-      : Option RenderState :=
-    if index < segment.stop then
-      match segment.child? index with
-      | none => loop state (index + 1)
-      | some child =>
-          let state :=
-            match layout.breakAt? index with
-            | some sourceBreak => state.withPendingIndent sourceBreak.indent
-            | none => state
-          let before := state
-          let rendered :=
-            renderNestedSegment state segment index child
-              (some (layout.nextBreakIndex index))
-          if renderedTreeIsMultiline before rendered child
-              && (layout.breakAt? index).isNone then
-            none
-          else
-            loop rendered (index + 1)
+  partial def renderRuleLayout
+      (state : RenderState) (segment : LineBreakRules.Segment)
+      (rule : LineBreakRules.LineBreakRule)
+      (breakPoints : List LineBreakRules.BreakPoint) (isFlow : Bool)
+      : RenderState :=
+    if isFlow then
+      renderFlowSegment state segment rule breakPoints
     else
-      some state
-  loop state segment.start
+      renderBalancedSegment state segment rule breakPoints
 
-partial def tryRenderSegmentWithSourceBreaks?
-    (state : RenderState) (segment : LineBreakRules.Segment)
-    (rule : LineBreakRules.LineBreakRule)
-    : Option RenderState :=
-  match sourceBreaksForRule? state segment rule with
-  | none =>
-      none
-  | some breaks =>
-      let candidate := renderSegmentWithSourceBreaks state segment breaks
-      if renderedCandidateFits state candidate then
-        some candidate
-      else
-        none
+  partial def renderAfterFlatFailure
+      (state : RenderState) (segment : LineBreakRules.Segment)
+      (rule : LineBreakRules.LineBreakRule)
+      (breakPoints : List LineBreakRules.BreakPoint) (isFlow : Bool)
+      : RenderState :=
+    let fallback (_ : Unit) := renderRuleLayout state segment rule breakPoints isFlow
+    if !isFlow then
+      fallback ()
+    else
+      match sourceBreaksForRule? state segment rule with
+      | none => fallback ()
+      | some sourceBreaks =>
+          match renderFlowSegmentWithSourceBreaks? state segment sourceBreaks with
+          | some candidate =>
+              if renderedCandidateFits state candidate then candidate else fallback ()
+          | none => fallback ()
 
-partial def renderFlowSegment
-    (state : RenderState) (segment : LineBreakRules.Segment)
-    (rule : LineBreakRules.LineBreakRule)
-    (breakPoints : List LineBreakRules.BreakPoint)
-    : RenderState :=
-  match SyntaxTree.Tree.firstToken? segment.parent with
-  | none => renderChildren state segment
-  | some _ =>
-      let flow : FlowRenderContext := { segment, rule, breakPoints, entryState := state }
-      renderFlowChildren state flow segment.start false
-
-partial def renderFlowChildren
-    (state : RenderState) (flow : FlowRenderContext) (index : Nat)
-    (breakAfterPreviousChild : Bool)
-    : RenderState :=
-  if index >= flow.segment.stop then
-    state
-  else
-    match flow.segment.child? index with
-    | none => renderFlowChildren state flow (index + 1) breakAfterPreviousChild
-    | some child =>
-        let childSegment := LineBreakRules.Segment.ofTree child
-        let childContext := state.context.push flow.segment index
-        let childFit :=
-          flow.measureChild state index childContext childSegment
-            (index == flow.segment.start)
-        let pieceFit :=
-          if index == flow.segment.start || (flow.breakAt? index).isNone then
-            childFit
+  partial def renderUsingExistingBreaks
+      (state : RenderState) (segment : LineBreakRules.Segment)
+      (rule : LineBreakRules.LineBreakRule)
+      (breakPoints : List LineBreakRules.BreakPoint) (isFlow : Bool)
+      : RenderState :=
+    let hasSourceBreaks :=
+      !(sourceBreaksAllowedByBreakPointsInState state segment breakPoints).isEmpty
+    if !isFlow && hasSourceBreaks then
+      renderBalancedSegment state segment rule breakPoints
+    else
+      match tryRenderSegmentWithSourceBreaks? state segment rule with
+      | some rendered => rendered
+      | none =>
+          let probe := measureLayout state segment false
+          if probe.acceptedForRule isFlow breakPoints then
+            state.commitLayoutProbe probe
           else
-            flow.measurePiece state index
-        let renderNestedAndContinue (state : RenderState) :=
-          let before := state
-          let rendered :=
-            renderNestedSegment state flow.segment index child
-              (some (flow.nextBreakIndex index))
-          renderFlowChildren rendered flow (index + 1)
-            (renderedTreeIsMultiline before rendered child)
-        match flow.stateForForcedNestedChild? state index breakAfterPreviousChild
-                childFit pieceFit with
-        | some state => renderNestedAndContinue state
-        | none =>
-            if segmentHasRuleSourceBreaks state.source childContext childSegment then
-              renderNestedAndContinue state
-            else if childFit.fits then
-              renderFlowChildren (state.commitLayoutProbe childFit) flow (index + 1) false
-            else if flow.childFirstLineFits state index childContext child then
-              renderNestedAndContinue state
-            else
-              let state :=
-                match flow.breakAt? index with
-                | some breakPoint => flow.withBreak state breakPoint
-                | none =>
-                    state.withPendingIndent (state.segmentBaseIndent + indentationSpaces)
-              renderNestedAndContinue state
+            renderAfterFlatFailure state segment rule breakPoints isFlow
 
-partial def renderBalancedSegment
-    (state : RenderState) (segment : LineBreakRules.Segment)
-    (rule : LineBreakRules.LineBreakRule)
-    (breakPoints : List LineBreakRules.BreakPoint)
-    : RenderState :=
-  if breakPoints.isEmpty then
-    renderChildren state segment
-  else
-    let entryIndentation := state.segmentIndentation
-    let entryBaseColumn := state.segmentBaseColumn
-    let entryTailIndentation? := state.tailIndentation?
-    let stateForPiece (state : RenderState) (firstPiece : Bool)
-        : RenderState :=
-      if firstPiece then
-        { state with tailIndentation? := entryTailIndentation? }
+  partial def renderNestedSegment
+      (state : RenderState) (segment : LineBreakRules.Segment) (index : Nat)
+      (child : SyntaxTree.Tree) (suffixStop? : Option Nat := none)
+      : RenderState :=
+    let emitOriginal := shouldEmitOriginalChild segment.parent index child
+    let state :=
+      if emitOriginal || treeStartsWithOriginalEmission child then
+        state
       else
-        { state with tailIndentation? := none }
-    let renderPiece (state : RenderState) (start stop : Nat) (firstPiece : Bool)
-        (preserveSuffix : Bool := false)
-        : RenderState :=
-      let state := stateForPiece state firstPiece
-      let rendered :=
-        if preserveSuffix then
-          renderSegmentRange state segment start stop
-        else
-          renderSegmentRange { state with lineFitSuffixWidth := 0 } segment start stop
+        state.preserveBlankBoundaryBefore child
+    let childContext := state.context.push segment index
+    let childSegment := LineBreakRules.Segment.ofTree child
+    let childRule := LineBreakRules.formattingRuleFor child
+    let childBreakPoints :=
+      if emitOriginal then [] else ruleBreakPoints childContext childSegment childRule
+    let inheritsBase := childRule.inheritBase childContext childSegment
+    let startAlignment := childRule.startAlignment childContext childSegment
+    let suffixStop := suffixStop?.getD segment.stop
+    let lineFitSuffix := lineFitSuffixForChild state segment index suffixStop child
+    let state :=
+      if inheritsBase || startAlignment == .none then
+        state
+      else if nestedLayoutFits
+                {
+                  state with
+                    context := childContext, lineFitSuffixWidth := lineFitSuffix
+                }
+                childSegment then
+        state
+      else if startAlignment == .preferred && !state.allowsStartAlignment then
+        state
+      else
+        let naturalStartColumn := state.segmentStartColumn childSegment
+        let alignedStartColumn := indentationPastColumn naturalStartColumn
+        state.appendOutput <| spaces (alignedStartColumn - naturalStartColumn)
+    let scope := ChildRenderScope.capture state
+    let childBase :=
+      if inheritsBase then
+        { column := state.segmentBaseColumn, indentation := state.segmentIndentation }
+      else
+        state.segmentStartBaseFor childSegment
+    let (sourceLayoutBaseColumn, outputLayoutBaseColumn) :=
+      let startsOnNewSourceLine :=
+        state.lastToken?.isNone || state.originalTreeStartsOnNewSourceLine child
+      if startsOnNewSourceLine then
+        match SyntaxTree.Tree.firstToken? child with
+        | some _ =>
+            let sourceColumn := state.originalTreeColumnAfterLineBreak child
+            let outputColumn :=
+              match state.pendingIndent? with
+              | some pendingIndent => pendingIndent
+              | none =>
+                  shiftColumnByAnchor state.sourceLayoutBaseColumn
+                    state.outputLayoutBaseColumn sourceColumn
+            (sourceColumn, outputColumn)
+        | none => (state.sourceLayoutBaseColumn, state.outputLayoutBaseColumn)
+      else
+        (state.sourceLayoutBaseColumn, state.outputLayoutBaseColumn)
+    let childState :=
       {
-        rendered with
-          tailIndentation? := entryTailIndentation?
-          lineFitSuffixWidth := state.lineFitSuffixWidth
+        state with
+          context := childContext
+          segmentBaseColumn := childBase.column
+          segmentIndentation := childBase.indentation
+          sourceLayoutBaseColumn
+          outputLayoutBaseColumn
+          lineFitSuffixWidth := lineFitSuffix
+          trace := state.trace.pushPath index
       }
-    let stateAfterBreak (rendered : RenderState) (breakPoint : LineBreakRules.BreakPoint)
+    let childState :=
+      if state.tailIndentationStop?.any fun stop => index < stop then
+        let anchorIndentation :=
+          match state.tailIndentationAnchors.find? fun anchor => index < anchor.stop with
+          | some anchor => anchor.indentation
+          | none => state.segmentIndentation
+        childState.extendTailIndentation childSegment anchorIndentation
+      else
+        childState
+    let rendered :=
+      if emitOriginal then
+        childState.emitOriginalTree child
+          (respectPendingIndent :=
+            isProofTree child
+            || !state.originalTreeStartsOnNewSourceLine child
+            || isProofLemmaCommand child
+            || state.pendingCommandBoundary?.isSome)
+      else
+        renderSegment childState childSegment (some (childRule, childBreakPoints))
+    scope.restore rendered
+
+  partial def renderChildren (state : RenderState) (segment : LineBreakRules.Segment)
+      : RenderState :=
+    match segment.parent with
+    | .missing => state
+    | .leaf token => state.emitToken token
+    | .node _ _ =>
+        segment.indexes.foldl
+          (fun state index =>
+            match segment.child? index with
+            | some child => renderNestedSegment state segment index child
+            | none => state)
+          state
+
+  partial def renderSegmentRange
+      (state : RenderState) (segment : LineBreakRules.Segment)
+      (start stop : Nat)
+      : RenderState :=
+    if start >= stop then
+      state
+    else if start == segment.start && stop == segment.stop then
+      renderChildren state (segment.slice start stop)
+    else
+      renderSegment state (segment.slice start stop)
+
+  partial def renderSegmentWithSourceBreaks
+      (state : RenderState) (segment : LineBreakRules.Segment) (breaks : List SourceBreak)
+      : RenderState :=
+    let layout : SourceBreakLayout := { segment, breaks }
+    let rec loop (state : RenderState) (index : Nat)
         : RenderState :=
-      let base :=
-        ruleBreakBase rendered segment rule entryBaseColumn entryIndentation breakPoint
-      rendered.withRuleBreakIndent base.column base.indentation breakPoint
-    let rec renderOrdinaryPieces (state : RenderState) (start : Nat) (firstPiece : Bool)
-        : List LineBreakRules.BreakPoint → RenderState
-      | [] => renderPiece state start segment.stop firstPiece true
-      | breakPoint :: rest =>
-          let rendered := renderPiece state start breakPoint.index firstPiece
-          let rest := rest.dropWhile fun next => next.index == breakPoint.index
-          renderOrdinaryPieces (stateAfterBreak rendered breakPoint)
-            breakPoint.index false rest
-    let rec renderCommandPieces
-        (state : RenderState) (start : Nat) (firstPiece : Bool)
-        (sequenceKind : LineBreakRules.TopLevelCommandSequenceKind)
-        (previousKind? : Option LineBreakRules.TopLevelCommandKind)
-        (previousMultiline : Bool)
-        : List LineBreakRules.BreakPoint → RenderState
-      | breaks =>
-          let stop := breaks.head?.map (·.index) |>.getD segment.stop
-          let finalPiece := breaks.isEmpty
-          let currentTree? := segmentRangeFirstTree? segment start stop
-          let currentKind? := currentTree?.map LineBreakRules.topLevelCommandKind
-          let boundaryPlan :=
-            match previousKind?, currentKind? with
-            | some previousKind, some currentKind =>
-                commandBoundaryPlan sequenceKind previousKind currentKind
-                  previousMultiline
-            | _, _ => .preserve
-          let pieceState :=
-            match boundaryPlan with
-            | .fixed spacing => { state with pendingCommandBoundary? := some spacing }
-            | .preserve | .blankLineIfMultiline => state
-          let rendered := renderPiece pieceState start stop firstPiece finalPiece
-          let currentMultiline :=
-            match currentTree? with
-            | some tree => renderedTreeIsMultiline pieceState rendered tree
-            | none => false
-          let rendered :=
-            match boundaryPlan, currentMultiline, currentTree? with
-            | .blankLineIfMultiline, true, some tree =>
-                state.ensureBlankCommandBoundaryBeforeRenderedTree rendered tree
-            | _, _, _ => rendered
-          match breaks with
-          | [] => rendered
-          | breakPoint :: rest =>
-              let rest := rest.dropWhile fun next => next.index == breakPoint.index
-              renderCommandPieces (stateAfterBreak rendered breakPoint)
-                breakPoint.index false sequenceKind currentKind? currentMultiline rest
-    match LineBreakRules.topLevelCommandSequenceKind? state.context segment with
-    | some sequenceKind =>
-        renderCommandPieces state segment.start true sequenceKind none false breakPoints
-    | none => renderOrdinaryPieces state segment.start true breakPoints
+      if index < segment.stop then
+        match segment.child? index with
+        | none => loop state (index + 1)
+        | some child =>
+            let state :=
+              match layout.breakAt? index with
+              | some sourceBreak => state.withPendingIndent sourceBreak.indent
+              | none => state
+            loop
+              (renderNestedSegment state segment index child
+                (some (layout.nextBreakIndex index)))
+              (index + 1)
+      else
+        state
+    loop state segment.start
+
+  partial def renderFlowSegmentWithSourceBreaks?
+      (state : RenderState) (segment : LineBreakRules.Segment) (breaks : List SourceBreak)
+      : Option RenderState :=
+    let layout : SourceBreakLayout := { segment, breaks }
+    let rec loop (state : RenderState) (index : Nat)
+        : Option RenderState :=
+      if index < segment.stop then
+        match segment.child? index with
+        | none => loop state (index + 1)
+        | some child =>
+            let state :=
+              match layout.breakAt? index with
+              | some sourceBreak => state.withPendingIndent sourceBreak.indent
+              | none => state
+            let before := state
+            let rendered :=
+              renderNestedSegment state segment index child
+                (some (layout.nextBreakIndex index))
+            if renderedTreeIsMultiline before rendered child
+                && (layout.breakAt? index).isNone then
+              none
+            else
+              loop rendered (index + 1)
+      else
+        some state
+    loop state segment.start
+
+  partial def tryRenderSegmentWithSourceBreaks?
+      (state : RenderState) (segment : LineBreakRules.Segment)
+      (rule : LineBreakRules.LineBreakRule)
+      : Option RenderState :=
+    match sourceBreaksForRule? state segment rule with
+    | none =>
+        none
+    | some breaks =>
+        let candidate := renderSegmentWithSourceBreaks state segment breaks
+        if renderedCandidateFits state candidate then
+          some candidate
+        else
+          none
+
+  partial def renderFlowSegment
+      (state : RenderState) (segment : LineBreakRules.Segment)
+      (rule : LineBreakRules.LineBreakRule)
+      (breakPoints : List LineBreakRules.BreakPoint)
+      : RenderState :=
+    match SyntaxTree.Tree.firstToken? segment.parent with
+    | none => renderChildren state segment
+    | some _ =>
+        let flow : FlowRenderContext :=
+          { segment, rule, breakPoints, entryState := state }
+        renderFlowChildren state flow segment.start false
+
+  partial def renderFlowChildren
+      (state : RenderState) (flow : FlowRenderContext) (index : Nat)
+      (breakAfterPreviousChild : Bool)
+      : RenderState :=
+    if index >= flow.segment.stop then
+      state
+    else
+      match flow.segment.child? index with
+      | none => renderFlowChildren state flow (index + 1) breakAfterPreviousChild
+      | some child =>
+          let childSegment := LineBreakRules.Segment.ofTree child
+          let childContext := state.context.push flow.segment index
+          let childFit :=
+            flow.measureChild state index childContext childSegment
+              (index == flow.segment.start)
+          let pieceFit :=
+            if index == flow.segment.start || (flow.breakAt? index).isNone then
+              childFit
+            else
+              flow.measurePiece state index
+          let renderNestedAndContinue (state : RenderState) :=
+            let before := state
+            let rendered :=
+              renderNestedSegment state flow.segment index child
+                (some (flow.nextBreakIndex index))
+            renderFlowChildren rendered flow (index + 1)
+              (renderedTreeIsMultiline before rendered child)
+          match flow.stateForForcedNestedChild? state index breakAfterPreviousChild
+                  childFit pieceFit with
+          | some state => renderNestedAndContinue state
+          | none =>
+              if segmentHasRuleSourceBreaks state.source childContext childSegment then
+                renderNestedAndContinue state
+              else if childFit.fits then
+                renderFlowChildren (state.commitLayoutProbe childFit) flow (index + 1)
+                  false
+              else if flow.childFirstLineFits state index childContext child then
+                renderNestedAndContinue state
+              else
+                let state :=
+                  match flow.breakAt? index with
+                  | some breakPoint => flow.withBreak state breakPoint
+                  | none =>
+                      state.withPendingIndent
+                        (state.segmentBaseIndent + indentationSpaces)
+                renderNestedAndContinue state
+
+  partial def renderBalancedSegment
+      (state : RenderState) (segment : LineBreakRules.Segment)
+      (rule : LineBreakRules.LineBreakRule)
+      (breakPoints : List LineBreakRules.BreakPoint)
+      : RenderState :=
+    if breakPoints.isEmpty then
+      renderChildren state segment
+    else
+      let entryIndentation := state.segmentIndentation
+      let entryBaseColumn := state.segmentBaseColumn
+      let entryTailIndentation? := state.tailIndentation?
+      let stateForPiece (state : RenderState) (firstPiece : Bool)
+          : RenderState :=
+        if firstPiece then
+          { state with tailIndentation? := entryTailIndentation? }
+        else
+          { state with tailIndentation? := none }
+      let renderPiece (state : RenderState) (start stop : Nat) (firstPiece : Bool)
+          (preserveSuffix : Bool := false)
+          : RenderState :=
+        let state := stateForPiece state firstPiece
+        let rendered :=
+          if preserveSuffix then
+            renderSegmentRange state segment start stop
+          else
+            renderSegmentRange { state with lineFitSuffixWidth := 0 } segment start stop
+        {
+          rendered with
+            tailIndentation? := entryTailIndentation?
+            lineFitSuffixWidth := state.lineFitSuffixWidth
+        }
+      let stateAfterBreak (rendered : RenderState)
+          (breakPoint : LineBreakRules.BreakPoint)
+          : RenderState :=
+        let base :=
+          ruleBreakBase rendered segment rule entryBaseColumn entryIndentation breakPoint
+        rendered.withRuleBreakIndent base.column base.indentation breakPoint
+      let rec renderOrdinaryPieces (state : RenderState) (start : Nat) (firstPiece : Bool)
+          : List LineBreakRules.BreakPoint → RenderState
+        | [] => renderPiece state start segment.stop firstPiece true
+        | breakPoint :: rest =>
+            let rendered := renderPiece state start breakPoint.index firstPiece
+            let rest := rest.dropWhile fun next => next.index == breakPoint.index
+            renderOrdinaryPieces (stateAfterBreak rendered breakPoint)
+              breakPoint.index false rest
+      let rec renderCommandPieces
+          (state : RenderState) (start : Nat) (firstPiece : Bool)
+          (sequenceKind : LineBreakRules.TopLevelCommandSequenceKind)
+          (previousKind? : Option LineBreakRules.TopLevelCommandKind)
+          (previousMultiline : Bool)
+          : List LineBreakRules.BreakPoint → RenderState
+        | breaks =>
+            let stop := breaks.head?.map (·.index) |>.getD segment.stop
+            let finalPiece := breaks.isEmpty
+            let currentTree? := segmentRangeFirstTree? segment start stop
+            let currentKind? := currentTree?.map LineBreakRules.topLevelCommandKind
+            let boundaryPlan :=
+              match previousKind?, currentKind? with
+              | some previousKind, some currentKind =>
+                  commandBoundaryPlan sequenceKind previousKind currentKind
+                    previousMultiline
+              | _, _ => .preserve
+            let pieceState :=
+              match boundaryPlan with
+              | .fixed spacing => { state with pendingCommandBoundary? := some spacing }
+              | .preserve | .blankLineIfMultiline => state
+            let rendered := renderPiece pieceState start stop firstPiece finalPiece
+            let currentMultiline :=
+              match currentTree? with
+              | some tree => renderedTreeIsMultiline pieceState rendered tree
+              | none => false
+            let rendered :=
+              match boundaryPlan, currentMultiline, currentTree? with
+              | .blankLineIfMultiline, true, some tree =>
+                  state.ensureBlankCommandBoundaryBeforeRenderedTree rendered tree
+              | _, _, _ => rendered
+            match breaks with
+            | [] => rendered
+            | breakPoint :: rest =>
+                let rest := rest.dropWhile fun next => next.index == breakPoint.index
+                renderCommandPieces (stateAfterBreak rendered breakPoint)
+                  breakPoint.index false sequenceKind currentKind? currentMultiline rest
+      match LineBreakRules.topLevelCommandSequenceKind? state.context segment with
+      | some sequenceKind =>
+          renderCommandPieces state segment.start true sequenceKind none false breakPoints
+      | none => renderOrdinaryPieces state segment.start true breakPoints
 
 end
 
