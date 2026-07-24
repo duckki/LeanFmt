@@ -1645,6 +1645,27 @@ def assertWhereFormattingKeepsSuffix (env : Lean.Environment) : IO Unit := do
   let formatted ← Formatter.formatSourceWithEnv env source "where-formatting.lean"
   assertEq "where formatting keeps suffix" expected formatted
 
+def assertStructureValueWhereFormattingKeepsSuffix (env : Lean.Environment)
+    : IO Unit := do
+  let source :=
+    "structure Result where\n"
+    ++ "  field : Nat\n"
+    ++ "\n"
+    ++ "def make : Result where\n"
+    ++ "  field := helper\n"
+    ++ "where\n"
+    ++ "  helper := 1\n"
+  let result ←
+    Formatter.formatSourceWithEnvDetailed env source
+      "structure-value-where-formatting.lean"
+  assertTrue "structure-value where formatting does not fall back" (!result.fellBack)
+  assertEq "structure-value where formatting keeps suffix" source result.formatted
+  let formattedAgain ←
+    Formatter.formatSourceWithEnv env result.formatted
+      "structure-value-where-formatting-formatted.lean"
+  assertEq "structure-value where formatting is idempotent"
+    result.formatted formattedAgain
+
 def assertWhereFinallyKeepsHeaderAndProofBody (env : Lean.Environment) : IO Unit := do
   let source :=
     "def fillHole : Nat :=\n" ++ "  ?_\n" ++ "where finally\n" ++ "  exact 0\n"
@@ -7158,6 +7179,7 @@ def runBasicFormattingTests (env : Lean.Environment) : IO Unit := do
   assertAbbrevSourceBreakAfterAssign env
   assertMatchArmKeepsDoOnArrowLine env
   assertWhereFormattingKeepsSuffix env
+  assertStructureValueWhereFormattingKeepsSuffix env
   assertWhereFinallyKeepsHeaderAndProofBody env
   assertProofBodyUntouched env
   assertMovedProofBodiesKeepRelativeIndentation env

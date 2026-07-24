@@ -506,20 +506,50 @@ partial def flattenLakeRequireTree : Tree → Array Tree
 def regroupLakeRequireChildren (children : Array Tree) : Array Tree :=
   children.foldl (fun flattened child => flattened ++ flattenLakeRequireTree child) #[]
 
-def regroupDefinitionChildren (children : Array Tree) : Option (Array Tree) := do
-  let declVal ← children[3]?
-  match declVal with
-  | .node (.raw `Lean.Parser.Command.declValSimple) valueChildren =>
-      some
-      <| childrenRange children 0 3
-          ++ valueChildren
-          ++ childrenRange children 4 children.size
-  | _ => none
-
 def unwrapSingleNullTree : Tree → Tree
   | tree@(.node (.raw `null) children) =>
       if children.size == 1 then children[0]?.getD tree else tree
   | tree => tree
+
+def splitWhereStructInstTrailingWhereDecls? : Tree → Option (Tree × Tree)
+  | .node (.raw `Lean.Parser.Command.whereStructInst) children => do
+      let trailingIndex ←
+        children.findIdx?
+          fun child =>
+            rawKind? (unwrapSingleNullTree child) == some `Lean.Parser.Term.whereDecls
+      let trailing ← children[trailingIndex]?
+      some
+        (
+          .node (.raw `Lean.Parser.Command.whereStructInst)
+            (children.set! trailingIndex .missing),
+          unwrapSingleNullTree trailing
+        )
+  | _ => none
+
+def regroupDefinitionTrailingWhereDecls? (children : Array Tree) : Option (Array Tree) :=
+  match children.findIdx?
+          fun child =>
+            (splitWhereStructInstTrailingWhereDecls? child).isSome with
+  | some valueIndex =>
+      match children[valueIndex]? >>= splitWhereStructInstTrailingWhereDecls? with
+      | some (value, trailing) =>
+          some
+          <| childrenRange children 0 valueIndex
+              ++ #[value, trailing]
+              ++ childrenRange children (valueIndex + 1) children.size
+      | none => none
+  | none => none
+
+def regroupDefinitionChildren (children : Array Tree) : Option (Array Tree) := do
+  let declVal ← children[3]?
+  match declVal with
+  | .node (.raw `Lean.Parser.Command.declValSimple) valueChildren =>
+      let flattened :=
+        childrenRange children 0 3
+        ++ valueChildren
+        ++ childrenRange children 4 children.size
+      some <| (regroupDefinitionTrailingWhereDecls? flattened).getD flattened
+  | _ => regroupDefinitionTrailingWhereDecls? children
 
 def splitEquationTrailingClauses? : Tree → Option (Tree × Array Tree)
   | .node (.raw `Lean.Parser.Command.declValEqns) valueChildren => do
