@@ -72,6 +72,7 @@ inductive NodeKind where
   | ifThenElseChain
   | proofBody
   | derivingClause
+  | unifConstraints
 deriving BEq, Inhabited, Repr
 
 def nodeKindName : NodeKind → String
@@ -91,6 +92,7 @@ def nodeKindName : NodeKind → String
   | .ifThenElseChain => "LeanFmt.SyntaxTree.NodeKind.ifThenElseChain"
   | .proofBody => "LeanFmt.SyntaxTree.NodeKind.proofBody"
   | .derivingClause => "LeanFmt.SyntaxTree.NodeKind.derivingClause"
+  | .unifConstraints => "LeanFmt.SyntaxTree.NodeKind.unifConstraints"
 
 inductive Tree where
   | missing
@@ -336,9 +338,14 @@ def regroupSignatureParameters : Tree → Tree
   | tree => tree
 
 def regroupUnifHintChildren (children : Array Tree) : Array Tree :=
-  match children[4]? with
-  | some parameters => children.set! 4 (regroupSignatureParameters parameters)
-  | none => children
+  let children :=
+    match children[4]? with
+    | some parameters => children.set! 4 (regroupSignatureParameters parameters)
+    | none => children
+  match children[6]? with
+  | some (Tree.node (NodeKind.raw `null) constraints) =>
+      children.set! 6 (.node .unifConstraints constraints)
+  | _ => children
 
 def regroupMatchPatterns : Tree → Tree
   | .node (.raw `null) children =>

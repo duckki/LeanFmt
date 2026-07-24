@@ -1591,6 +1591,13 @@ def derivingClauseRule : LineBreakRule :=
     breakPoints := derivingClauseBreaks
   }
 
+def unifConstraintsRule : LineBreakRule :=
+  {
+    name := "unifConstraints"
+    mandatory := fun _ segment => 1 < segment.size
+    breakPoints := fun _ segment => childBoundaryBreaks segment 0
+  }
+
 def structureRule : LineBreakRule :=
   {
     name := "structure"
@@ -2404,6 +2411,7 @@ def ruleFor : SyntaxTree.Tree → Option LineBreakRule
   | .node (.raw `Lean.Parser.Command.declId) _ => some transparentRule
   | .node (.raw `Lean.Parser.Command.declValEqns) _ => some defaultRule
   | .node .derivingClause _ => some derivingClauseRule
+  | .node .unifConstraints _ => some unifConstraintsRule
   | .node (.raw `Lean.Parser.Command.optDeriving) _ => some defaultRule
   | .node (.raw `Lean.Parser.Command.deriving) _ => some defaultRule
   | .node (.raw `Lean.Parser.Command.derivingClass) _ => some defaultRule

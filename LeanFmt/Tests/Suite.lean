@@ -46,12 +46,19 @@ def assertSyntaxTreeWhereRoundTrip (env : Lean.Environment) : IO Unit := do
   let moduleTree ← SyntaxTree.parseModuleStringWithEnv env source "syntax-tree-where.lean"
   assertEq "syntax tree where reconstruction" source moduleTree.reconstruct
 
-def assertUnifHintParametersRegrouped : IO Unit := do
+def assertUnifHintChildrenRegrouped : IO Unit := do
   let parameters :=
     SyntaxTree.Tree.node (SyntaxTree.NodeKind.raw `null)
       #[
         .node (.raw `Lean.Parser.Term.implicitBinder) #[],
         .node (.raw `Lean.Parser.Term.explicitBinder) #[]
+      ]
+  let constraints :=
+    SyntaxTree.Tree.node (SyntaxTree.NodeKind.raw `null)
+      #[
+        .node (.raw `Lean.unifConstraintElem) #[],
+        .node (.raw `Lean.unifConstraintElem) #[],
+        .node (.raw `Lean.unifConstraintElem) #[]
       ]
   let raw :=
     SyntaxTree.Tree.node
@@ -63,21 +70,40 @@ def assertUnifHintParametersRegrouped : IO Unit := do
         .missing,
         parameters,
         .missing,
-        .missing,
+        constraints,
         .missing,
         .missing
       ]
   let regrouped := SyntaxTree.regroupTree raw
-  let parametersRegrouped :=
+  let (parametersRegrouped, constraintsTree?) :=
     match regrouped with
     | .node _ children =>
-        match children[4]? with
-        | some (SyntaxTree.Tree.node SyntaxTree.NodeKind.signatureParameters binders) =>
-            binders.size == 2
-        | _ => false
-    | _ => false
+        let parametersRegrouped :=
+          match children[4]? with
+          | some (SyntaxTree.Tree.node SyntaxTree.NodeKind.signatureParameters binders) =>
+              binders.size == 2
+          | _ => false
+        (parametersRegrouped, children[6]?)
+    | _ => (false, none)
   assertTrue "unification hint parameters are grouped as signature parameters"
     parametersRegrouped
+  let constraintsTree ←
+    match constraintsTree? with
+    | some tree@(.node .unifConstraints constraints) =>
+        assertTrue "unification hint constraints retain every syntax element"
+          (constraints.size == 3)
+        pure tree
+    | _ => throw <| IO.userError "unification hint constraints were not regrouped"
+  let rule ←
+    match Formatter.LineBreakRules.ruleFor constraintsTree with
+    | some rule => pure rule
+    | none => throw <| IO.userError "unification hint constraints have no rule"
+  let segment := Formatter.LineBreakRules.Segment.ofTree constraintsTree
+  assertTrue "unification hint constraint breaks are mandatory"
+    (rule.mandatory {} segment)
+  assertTrue "unification hint constraints break between elements"
+    (rule.breakPoints {} segment
+      == [{ index := 1, indentLevels := 0 }, { index := 2, indentLevels := 0 }])
 
 def assertPreservationDetectsSyntaxChange (env : Lean.Environment) : IO Unit := do
   let source :=
@@ -5619,7 +5645,7 @@ def assertCslibStyleCoreSyntaxHasRules (env : Lean.Environment) : IO Unit := do
 def runSyntaxTreeTests (env : Lean.Environment) : IO Unit := do
   assertSyntaxTreeRoundTrip env
   assertSyntaxTreeWhereRoundTrip env
-  assertUnifHintParametersRegrouped
+  assertUnifHintChildrenRegrouped
   assertPreservationDetectsSyntaxChange env
   assertOverlappingQuotationTokensRemoved env
   assertTacticQuotationAntiquotationPreserved env
