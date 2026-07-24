@@ -1275,6 +1275,37 @@ def assertDoControlWrapperRules (env : Lean.Environment) : IO Unit := do
   assertTrue "do control wrappers have complete rule coverage"
     (Formatter.Diagnostics.missingRuleOccurrencesForModule moduleTree).isEmpty
 
+def assertDoTrySuffixFollowsShiftedTry (env : Lean.Environment) : IO Unit := do
+  let source :=
+    "def tryFinallyAfterAssignment : IO Unit := do\n"
+    ++ "  let (firstResultWithLongName, secondResultWithLongName) ← try\n"
+    ++ "    computeResults\n"
+    ++ "  catch _ =>\n"
+    ++ "    fallbackResults\n"
+    ++ "  finally\n"
+    ++ "    cleanupResults\n"
+    ++ "  consumeResults firstResultWithLongName secondResultWithLongName\n"
+  let expected :=
+    "def tryFinallyAfterAssignment : IO Unit := do\n"
+    ++ "  let (firstResultWithLongName, secondResultWithLongName) ←\n"
+    ++ "    try\n"
+    ++ "      computeResults\n"
+    ++ "    catch _ =>\n"
+    ++ "      fallbackResults\n"
+    ++ "    finally cleanupResults\n"
+    ++ "  consumeResults firstResultWithLongName\n"
+    ++ "    secondResultWithLongName\n"
+  let formatted ←
+    Formatter.formatSourceWithEnv env source
+      "do-try-suffix-shift.lean" { lineWidth := 60 }
+  assertEq "do-try suffix follows a shifted try" expected formatted
+  assertTrue "shifted do-try suffix preserves code"
+    (← codePreservedIgnoringWhitespace env source formatted)
+  let formattedAgain ←
+    Formatter.formatSourceWithEnv env formatted
+      "do-try-suffix-shift-formatted.lean" { lineWidth := 60 }
+  assertEq "shifted do-try suffix is idempotent" formatted formattedAgain
+
 def assertReturnDoesNotBreakBeforeValue (env : Lean.Environment) : IO Unit := do
   let source :=
     "def returnAnonymousConstructor : Result := do\n"
@@ -1287,6 +1318,7 @@ def assertReturnDoesNotBreakBeforeValue (env : Lean.Environment) : IO Unit := do
 def assertShowAndDoWrapperRules (env : Lean.Environment) : IO Unit := do
   assertShowFromBreaksLikeAssignment env
   assertDoControlWrapperRules env
+  assertDoTrySuffixFollowsShiftedTry env
   assertReturnDoesNotBreakBeforeValue env
   assertDoLetElseBreaks env
   assertDbgTraceBodyUsesTermBase env

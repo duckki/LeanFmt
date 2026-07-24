@@ -1386,7 +1386,12 @@ def letRecEquationBreaks (_context : RuleContext) (segment : Segment) : List Bre
   | none => []
 
 def doTryBreaks (_context : RuleContext) (segment : Segment) : List BreakPoint :=
-  [boundaryBreak? segment 1 1, boundaryBreak? segment 2 0].filterMap id
+  let bodyBreak := [boundaryBreak? segment 1 1].filterMap id
+  let suffixBreaks :=
+    segment.indexes.filterMap
+      fun index =>
+        if 2 <= index then boundaryBreak? segment index 0 else none
+  bodyBreak ++ suffixBreaks
 
 def doCatchBreaks (_context : RuleContext) (segment : Segment) : List BreakPoint :=
   match boundaryBreak? segment 4 1 with

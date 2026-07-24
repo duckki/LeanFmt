@@ -1911,12 +1911,11 @@ mutual
       renderUsingExistingBreaks state segment rule breakPoints isFlow
     else
       let probe := measureLayout state segment false
-      let hasRetainedFlowSourceBreak :=
-        isFlow
-        && breakPoints.any
-            fun breakPoint =>
-              formattedWhitespaceKeepsSourceBreakAt state.source segment breakPoint.index
-      if probe.acceptedForRule isFlow breakPoints && !hasRetainedFlowSourceBreak then
+      let hasRetainedSourceBreak :=
+        breakPoints.any
+          fun breakPoint =>
+            formattedWhitespaceKeepsSourceBreakAt state.source segment breakPoint.index
+      if probe.acceptedForRule isFlow breakPoints && !hasRetainedSourceBreak then
         state.commitLayoutProbe probe
       else
         renderAfterFlatFailure state segment rule breakPoints isFlow
