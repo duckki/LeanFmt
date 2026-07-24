@@ -2173,6 +2173,30 @@ def matchAltsBreaks (_context : RuleContext) (segment : Segment) : List BreakPoi
 
 /-! ### Infix expressions and generic wrappers -/
 
+def barSeparatedSequence (segment : Segment) : Bool :=
+  let indexes := nonemptyChildIndexes segment
+  3 <= indexes.length
+  && indexes.length % 2 == 1
+  && indexes.zipIdx.all
+      fun (index, offset) =>
+        if offset % 2 == 1 then
+          childStartsWithLexeme segment index "|"
+        else
+          !childStartsWithLexeme segment index "|"
+
+def childIsBarSeparatedSequence (segment : Segment) (index : Nat) : Bool :=
+  match segment.child? index with
+  | some tree@(.node (.raw `null) _) =>
+      barSeparatedSequence (Segment.ofTree tree)
+  | _ => false
+
+def infixAlternativeRhsBreak? (segment : Segment) : Option BreakPoint := do
+  let rhsIndex ← (nonemptyChildIndexes segment).getLast?
+  if childIsBarSeparatedSequence segment rhsIndex then
+    boundaryBreak? segment rhsIndex 1
+  else
+    none
+
 def infixBreaks (_context : RuleContext) (segment : Segment) : List BreakPoint :=
   match segment.parent with
   | .node (.infixChain `Lean.Parser.Term.proj) _ => []
@@ -2193,7 +2217,8 @@ def infixBreaks (_context : RuleContext) (segment : Segment) : List BreakPoint :
                 none
 
 def infixRuleBreaks (context : RuleContext) (segment : Segment) : List BreakPoint :=
-  let breaks := infixBreaks context segment
+  let breaks :=
+    infixBreaks context segment ++ [infixAlternativeRhsBreak? segment].filterMap id
   if infixAttachedBodyAssignmentValue context segment then
     breaks.map
       fun breakPoint =>
@@ -2283,6 +2308,29 @@ def arrowInfixLogicalContext (context : RuleContext) : Bool :=
 def infixFlow (context : RuleContext) (segment : Segment) : Bool :=
   arrowInfixSegment segment && !arrowInfixLogicalContext context
 
+def infixAlternativeSequence (context : RuleContext) (segment : Segment) : Bool :=
+  barSeparatedSequence segment
+  && match context.ancestors with
+      | parent :: _ =>
+          parent.nodeKind?.any
+            fun
+            | .infixChain _ =>
+                (nonemptyChildIndexes parent.segment).getLast? == some parent.childIndex
+            | _ => false
+      | [] => false
+
+def infixAlternativeBreaks (context : RuleContext) (segment : Segment)
+    : List BreakPoint :=
+  if infixAlternativeSequence context segment then
+    segment.indexes.filterMap
+      fun index =>
+        if childStartsWithLexeme segment index "|" then
+          boundaryBreak? segment index 0
+        else
+          none
+  else
+    []
+
 def binderTacticBreaks (_context : RuleContext) (segment : Segment) : List BreakPoint :=
   [breakBeforeLexeme? segment "by" 2].filterMap id
 
@@ -2301,6 +2349,7 @@ def nullBreaks (context : RuleContext) (segment : Segment) : List BreakPoint :=
   ++ exportItemBreaks context segment
   ++ doSeqItemBreaks context segment
   ++ doLetArrowFallbackTailBreaks context segment
+  ++ infixAlternativeBreaks context segment
   ++ doElseBreaks context segment
   ++ doElseIfBreaks context segment
   ++ doElseIfChainBreaks context segment
@@ -2342,6 +2391,7 @@ def nullRule : LineBreakRule :=
         || !(commandAttributeIdentifierBreaks context segment).isEmpty
         || !(assertNotExistsIdentifierBreaks context segment).isEmpty
         || !(exportItemBreaks context segment).isEmpty
+        || !(infixAlternativeBreaks context segment).isEmpty
     inheritBase := nullInheritBase
     breakPoints := nullBreaks
   }

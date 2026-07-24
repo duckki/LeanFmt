@@ -1078,6 +1078,20 @@ else
   loop options (FilePath.mk arg :: files) rest
 ```
 
+An infix-like condition with a bar-separated right operand, such as `matches`,
+flows at the right operand and its bars. Alternatives are packed while they fit
+and continue at the same indentation:
+
+```lean
+if kind
+    matches
+    `Monotone | `Antitone | `StrictMono
+    | `StrictAnti | `MonotoneOn then
+  true
+else
+  false
+```
+
 ## Match expressions and equation arms
 
 Match alternatives start on their own lines and align with the `match` keyword:

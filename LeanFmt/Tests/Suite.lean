@@ -3884,6 +3884,36 @@ def assertInfixLeftDepth (env : Lean.Environment) : IO Unit := do
   let formatted ← Formatter.formatSourceWithEnv env source "infix-left-depth.lean"
   assertEq "infix-left-depth formatting" expected formatted
 
+def assertInfixAlternativeSequenceFlows (env : Lean.Environment) : IO Unit := do
+  let source :=
+    "def isMonotoneKind (kind : Name) : Bool :=\n"
+    ++ "  if kind matches `Monotone | `Antitone | `StrictMono | `StrictAnti | `MonotoneOn | `AntitoneOn | `StrictMonoOn | `StrictAntiOn then true else false\n"
+  let expected :=
+    "def isMonotoneKind (kind : Name) : Bool :=\n"
+    ++ "  if kind\n"
+    ++ "      matches\n"
+    ++ "      `Monotone | `Antitone | `StrictMono | `StrictAnti\n"
+    ++ "      | `MonotoneOn | `AntitoneOn | `StrictMonoOn\n"
+    ++ "      | `StrictAntiOn then\n"
+    ++ "    true\n"
+    ++ "  else\n"
+    ++ "    false\n"
+  let formatted ←
+    Formatter.formatSourceWithEnv env source "infix-alternative-sequence.lean"
+      { lineWidth := 60 }
+  assertEq "infix RHS alternatives flow before bars" expected formatted
+  assertTrue "infix RHS alternative formatting preserves code"
+    (← codePreservedIgnoringWhitespace env source formatted)
+  let moduleTree ←
+    SyntaxTree.parseModuleStringWithEnv env formatted
+      "infix-alternative-sequence-formatted.lean"
+  assertTrue "infix RHS alternative formatting avoids overflow"
+    (Formatter.Diagnostics.overflowOccurrences moduleTree { lineWidth := 60 }).isEmpty
+  let formattedAgain ←
+    Formatter.formatSourceWithEnv env formatted
+      "infix-alternative-sequence-formatted.lean" { lineWidth := 60 }
+  assertEq "infix RHS alternative formatting is idempotent" formatted formattedAgain
+
 def assertInfixIgnoresFittingSourceBreaks (env : Lean.Environment) : IO Unit := do
   let source :=
     "def sourceBreakInfix : Prop :=\n" ++ "  firstCondition\n" ++ "  ∧ secondCondition\n"
@@ -7084,6 +7114,7 @@ def runExpressionAndRendererTests (env : Lean.Environment) : IO Unit := do
   assertOffColumnArrayRoundsOneLevel env
   assertInstanceWhereStaysWithHeader env
   assertInfixLeftDepth env
+  assertInfixAlternativeSequenceFlows env
   assertInfixIgnoresFittingSourceBreaks env
   assertInfixIgnoresArbitrarySourceBreaks env
   assertInfixRhsFitsBeforeSourceBreaks env

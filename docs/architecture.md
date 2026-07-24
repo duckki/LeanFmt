@@ -830,7 +830,10 @@ shape.
 Infix chains are kept for balanced peer-operator breaks. Raw binary infix trees are
 locally usable, but a long chain needs one rule decision over all peer operators. The
 `.infixChain` node keeps that syntax reasoning in rules and leaves indentation math in
-the renderer.
+the renderer. If an infix chain's right operand is an alternating `term | term | ...`
+sequence, the infix rule exposes the right-operand boundary and the generic wrapper rule
+flows at its bars. This is a shape classification rather than a rule-name or syntax-kind
+special case.
 
 ### Why rule and renderer separation?
 
