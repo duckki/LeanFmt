@@ -536,10 +536,33 @@ where
 
 Termination clauses follow the same ownership rule. `termination_by` and
 `decreasing_by` return to the base column of the declaration they modify. A
-termination measure may wrap one level beneath its keyword. When a mutual
-termination measure names its parameters before `=>`, the names flow across
-lines and `=>` remains attached to the final parameter. The tactic after
-`decreasing_by` retains its source layout, rebased beneath the formatted clause.
+fitting `termination_by` parameter lambda and measure stay on one line:
+
+```lean
+termination_by patternList => body
+```
+
+When the clause does not fit, the first break is after `=>`; the measure is
+indented one level:
+
+```lean
+termination_by patternList =>
+  body
+```
+
+If the parameter header still does not fit, its names flow at two indentation
+levels. The first names remain after `termination_by`, and `=>` remains attached
+to the final parameter. The four-space parameter continuation is deliberately
+distinct from the two-space measure:
+
+```lean
+termination_by firstPattern secondPattern thirdPattern
+    fourthPattern =>
+  body
+```
+
+The tactic after `decreasing_by` retains its source layout, rebased beneath the
+formatted clause.
 
 ```lean
 def outer (n : Nat) : Nat :=
@@ -555,9 +578,8 @@ where
 ```
 
 ```lean
-termination_by
-  _schema _variableDefinitions fragments _parentType selection _field _hvalid _hbodies
-    _hfield =>
+termination_by _schema _variableDefinitions fragments _parentType selection _field _hvalid
+    _hbodies _hfield =>
   (fragments.length, sizeOf selection, 0)
 ```
 

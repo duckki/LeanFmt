@@ -2052,6 +2052,43 @@ def assertTerminationProofSuffixDoesNotAccumulateIndent (env : Lean.Environment)
       "termination-proof-suffix-stable-indent-formatted.lean"
   assertEq "termination proof suffix indentation is idempotent" formatted formattedAgain
 
+def assertTerminationByBreakPriority (env : Lean.Environment) : IO Unit := do
+  let source :=
+    "def flatTermination := value\n"
+    ++ "termination_by n => n\n"
+    ++ "\n"
+    ++ "def bodyBreakTermination := value\n"
+    ++ "termination_by leftPattern rightPattern => veryLongTerminationMeasureName\n"
+    ++ "\n"
+    ++ "def patternFlowTermination := value\n"
+    ++ "termination_by firstPattern secondPattern thirdPattern fourthPattern => measure\n"
+  let expected :=
+    "def flatTermination :=\n"
+    ++ "  value\n"
+    ++ "termination_by n => n\n"
+    ++ "\n"
+    ++ "def bodyBreakTermination :=\n"
+    ++ "  value\n"
+    ++ "termination_by leftPattern rightPattern =>\n"
+    ++ "  veryLongTerminationMeasureName\n"
+    ++ "\n"
+    ++ "def patternFlowTermination :=\n"
+    ++ "  value\n"
+    ++ "termination_by firstPattern secondPattern thirdPattern\n"
+    ++ "    fourthPattern =>\n"
+    ++ "  measure\n"
+  let result ←
+    Formatter.formatSourceWithEnvDetailed env source "termination-by-break-priority.lean"
+      { lineWidth := 60 }
+  assertTrue "termination_by break priority does not fall back" (!result.fellBack)
+  assertEq "termination_by breaks body before flowing patterns" expected result.formatted
+  assertTrue "termination_by break priority preserves code"
+    (← codePreservedIgnoringWhitespace env source result.formatted)
+  let formattedAgain ←
+    Formatter.formatSourceWithEnv env result.formatted
+      "termination-by-break-priority-formatted.lean" { lineWidth := 60 }
+  assertEq "termination_by break priority is idempotent" result.formatted formattedAgain
+
 def assertTerminationClausesUseDeclarationBase (env : Lean.Environment) : IO Unit := do
   let simpleSource :=
     "def outer (n : Nat) : Nat :=\n"
@@ -2131,9 +2168,8 @@ def assertTerminationClausesUseDeclarationBase (env : Lean.Environment) : IO Uni
   let parameterExpected :=
     "def recurse : Nat :=\n"
     ++ "  recurse\n"
-    ++ "termination_by\n"
-    ++ "  _schema _variableDefinitions fragments _parentType selection _field _hvalid _hbodies\n"
-    ++ "    _hfield =>\n"
+    ++ "termination_by _schema _variableDefinitions fragments _parentType selection _field _hvalid\n"
+    ++ "    _hbodies _hfield =>\n"
     ++ "  (fragments.length, sizeOf selection, 0)\n"
     ++ "decreasing_by exact proof\n"
   let parameterResult ←
@@ -7518,6 +7554,7 @@ def runBasicFormattingTests (env : Lean.Environment) : IO Unit := do
   assertInstanceContainingProofUntouched env
   assertTerminationProofSuffixUntouched env
   assertTerminationProofSuffixDoesNotAccumulateIndent env
+  assertTerminationByBreakPriority env
   assertTerminationClausesUseDeclarationBase env
   assertDocumentedMutualCommandsKeepBase env
   assertMovedDocumentedDoLetRecRebasesCommentedArms env
