@@ -3313,6 +3313,7 @@ def ruleFor : SyntaxTree.Tree → Option LineBreakRule
   | .node (.raw `attrContinuity) _ => some defaultRule
   | .node (.raw `Mathlib.Tactic.ToAdditive.to_additive) _ => some defaultRule
   | .node (.raw `Lean.Elab.Command.irredDefLemma) _ => some defaultRule
+  | .node (.raw `Lean.Elab.Command.aux_def) _ => some defaultRule
   | .node (.raw `Mathlib.Tactic.MkIff.mkIff) _ => some defaultRule
   | .node (.raw `Mathlib.Tactic.Translate.attrArgs) _ => some defaultRule
   | .node (.raw `ArithmeticFunction.attrArith_mult) _ => some defaultRule

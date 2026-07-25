@@ -6963,6 +6963,7 @@ def assertMathlibLowRiskSyntaxKindsHaveRules : IO Unit := do
       `Lean.Elab.ConfigEval.configEntryHandler,
       `Lean.Elab.ConfigEval.configEntryHandlerKey,
       `Lean.Elab.ConfigEval.configEntryHandlerKeyPrefix,
+      `Lean.Elab.Command.aux_def,
       `adaptationNoteTermStx,
       `commandSuppress_compilation,
       `notation_class,
