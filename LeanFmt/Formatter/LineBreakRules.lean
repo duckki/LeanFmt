@@ -1548,18 +1548,29 @@ def letIdDeclBreaks (context : RuleContext) (segment : Segment) : List BreakPoin
     match segment.child? 0 with
     | some identifier => (treeFirstLexeme? identifier).isSome
     | none => false
+  let valueBreak := declarationValueBreak? segment
+  let valueStartsOnSourceLine :=
+    match valueBreak with
+    | some breakPoint =>
+        match segment.child? breakPoint.index >>= SyntaxTree.Tree.firstToken? with
+        | some token => SpaceRules.hasLineStructure token.leading.text
+        | none => false
+    | none => false
   let returnBreak :=
-    match segment.child? 1 with
-    | some parameters =>
-        if treeHasContent parameters
-            || (hasIdentifier
-                && (grandparentIsRawKind context `Lean.Parser.Term.have
-                    || grandparentIsRawKind context `Lean.Parser.Term.haveI)) then
-          breakBeforeLexeme? segment ":" 2
-        else
-          none
-    | none => none
-  [returnBreak, declarationValueBreak? segment].filterMap id
+    if valueStartsOnSourceLine then
+      none
+    else
+      match segment.child? 1 with
+      | some parameters =>
+          if treeHasContent parameters
+              || (hasIdentifier
+                  && (grandparentIsRawKind context `Lean.Parser.Term.have
+                      || grandparentIsRawKind context `Lean.Parser.Term.haveI)) then
+            breakBeforeLexeme? segment ":" 2
+          else
+            none
+      | none => none
+  [returnBreak, valueBreak].filterMap id
 
 def letPatternDeclBreaks (_context : RuleContext) (segment : Segment) : List BreakPoint :=
   [breakAfterLexeme? segment ":=" 1].filterMap id
