@@ -667,16 +667,18 @@ subtree that begins on a new source line inherits the source-to-output layout-ba
 translation established by its enclosing formatted segment. The output-side anchor is
 the column where that segment actually starts, including when a child that began a source
 line now follows a formatted prefix such as `:`. Every protected line moves by the same
-delta. This keeps a block proof one level beneath its owning `have` rather than beneath a
-wrapped type continuation. When a multiline proof begins inline after `by`, its later
-source lines use that introducer's source-to-output movement, clamped to the structural
-proof indentation, rather than treating the far-right first tactic as an indentation
-anchor. Module and declaration documentation comments are also emitted from their
-original source slices so their internal whitespace cannot be changed. This protects
-tactic scripts, term proof layout, and comment text while declarations around them can
-still be formatted. When an original-source child followed its previous token on the
-same source line, it honors a pending boundary selected by its parent rule; an existing
-source-line boundary and the child's internal layout remain unchanged.
+delta, but a proof island cannot move left of its structural proof indentation. This
+keeps a block proof one level beneath its owning `have` rather than beneath a wrapped type
+continuation or outside its declaration. When a multiline proof or quotation begins
+inline, its later source lines use the introducer's source-to-output movement, clamped to
+the island's structural indentation, rather than treating the far-right first token as
+an indentation anchor. Module and declaration documentation comments are also emitted
+from their original source slices so their internal whitespace cannot be changed. This
+protects tactic scripts, term proof layout, quotation bodies, and comment text while
+declarations around them can still be formatted. When an original-source child followed
+its previous token on the same source line, it honors a pending boundary selected by its
+parent rule; an existing source-line boundary and the child's internal layout remain
+unchanged.
 
 The escape hatch is intentionally narrow. If a non-proof syntax form is unsafe, prefer a
 specific transparent/default rule or a grouping change before adding another original

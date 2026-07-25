@@ -187,6 +187,32 @@ def assertTacticQuotationAntiquotationPreserved (env : Lean.Environment) : IO Un
     Formatter.formatSourceWithEnv env movedResult.formatted
       "moved-command-quotation-formatted.lean" { lineWidth := 60 }
   assertEq "moved command quotation is idempotent" movedResult.formatted movedAgain
+  let inlineMultilineSource :=
+    "scoped macro (name := transfer_rw) \"transfer_rw\" : tactic => `(tactic|\n"
+    ++ "    (repeat first | rw [← to_nat_inj] | rw [← lt_to_nat] | rw [← le_to_nat]\n"
+    ++ "     repeat first | rw [add_to_nat] | rw [mul_to_nat] | rw [cast_one] | rw [cast_zero]))\n"
+  let inlineMultilineExpected :=
+    "scoped\n"
+    ++ "macro (name := transfer_rw) \"transfer_rw\"\n"
+    ++ "  : tactic =>\n"
+    ++ "    `(tactic|\n"
+    ++ "    (repeat first | rw [← to_nat_inj] | rw [← lt_to_nat] | rw [← le_to_nat]\n"
+    ++ "     repeat first | rw [add_to_nat] | rw [mul_to_nat] | rw [cast_one] | rw [cast_zero]))\n"
+  let inlineMultilineResult ←
+    Formatter.formatSourceWithEnvDetailed env inlineMultilineSource
+      "moved-inline-multiline-quotation.lean"
+  assertTrue "moved inline multiline quotation does not fall back"
+    (!inlineMultilineResult.fellBack)
+  assertEq "moved inline multiline quotation keeps structural indentation"
+    inlineMultilineExpected inlineMultilineResult.formatted
+  assertTrue "moved inline multiline quotation preserves code"
+    (← codePreservedIgnoringWhitespace env inlineMultilineSource
+        inlineMultilineResult.formatted)
+  let inlineMultilineAgain ←
+    Formatter.formatSourceWithEnv env inlineMultilineResult.formatted
+      "moved-inline-multiline-quotation-formatted.lean"
+  assertEq "moved inline multiline quotation is idempotent"
+    inlineMultilineResult.formatted inlineMultilineAgain
 
 def assertFullyQualifiedQuotedNamesStayTight (env : Lean.Environment) : IO Unit := do
   let source :=
@@ -1841,6 +1867,29 @@ def assertProofBodyUntouched (env : Lean.Environment) : IO Unit := do
   assertEq "proof body untouched" source formatted
 
 def assertMovedProofBodiesKeepRelativeIndentation (env : Lean.Environment) : IO Unit := do
+  let outdentedSource :=
+    "theorem originalProofIslandOutdentsFromNestedValue : True :=\n"
+    ++ "    id <| by\n"
+    ++ "  exact True.intro\n"
+  let outdentedExpected :=
+    "theorem originalProofIslandOutdentsFromNestedValue : True :=\n"
+    ++ "  id <| by\n"
+    ++ "  exact True.intro\n"
+  let outdentedResult ←
+    Formatter.formatSourceWithEnvDetailed env outdentedSource
+      "outdented-proof-layout-island.lean"
+  assertTrue "outdented proof layout island does not fall back"
+    (!outdentedResult.fellBack)
+  assertEq "outdented proof layout island keeps its structural indentation"
+    outdentedExpected outdentedResult.formatted
+  assertTrue "outdented proof layout island preserves code"
+    (← codePreservedIgnoringWhitespace env outdentedSource outdentedResult.formatted)
+  let outdentedAgain ←
+    Formatter.formatSourceWithEnv env outdentedResult.formatted
+      "outdented-proof-layout-island-formatted.lean"
+  assertEq "outdented proof layout island is idempotent"
+    outdentedResult.formatted outdentedAgain
+
   let lambdaSource :=
     "def proofUnderMovedLambda :=\n"
     ++ "  fun ⟨x, hx⟩ =>\n"

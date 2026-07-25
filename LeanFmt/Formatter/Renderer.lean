@@ -895,12 +895,14 @@ def RenderState.emitOriginalTree
       let sourceText :=
         SyntaxTree.sourceText state.source firstToken.span.start lastToken.span.stop
       let sourceColumn := originalColumnAt state.source firstToken.span.start
-      let inlineMultilineProof :=
-        isProofTree tree
+      let retainsRelativeLayout :=
+        isProofTree tree || isProofWidgetsJsxSyntaxTree tree || isQuotationTree tree
+      let inlineMultilineLayoutIsland :=
+        retainsRelativeLayout
         && treeHasLineBreakTrivia tree
         && !SpaceRules.hasLineStructure originalLeading
-      let inlineProofContinuationColumns? :=
-        if !inlineMultilineProof then
+      let inlineContinuationColumns? :=
+        if !inlineMultilineLayoutIsland then
           none
         else
           match originalContinuationIndent? sourceText, state.lastToken? with
@@ -909,16 +911,20 @@ def RenderState.emitOriginalTree
               let outputAnchor := lineWidth state.currentLine - leftToken.lexeme.length
               let movedIndent :=
                 shiftColumnByAnchor sourceAnchor outputAnchor sourceIndent
-              let structuralIndent := (state.segmentIndentation + 1) * indentationSpaces
+              let structuralIndent :=
+                if isProofTree tree then
+                  (state.segmentIndentation + 1) * indentationSpaces
+                else if usesPendingIndent then
+                  leadingColumn
+                else
+                  state.currentIndent
               some (sourceIndent, max movedIndent structuralIndent)
           | _, _ => none
       let sourceColumnRebasedFromLayoutBase :=
         shiftColumnByAnchor state.sourceLayoutBaseColumn
           state.outputLayoutBaseColumn sourceColumn
-      let retainsRelativeLayout :=
-        isProofTree tree || isProofWidgetsJsxSyntaxTree tree || isQuotationTree tree
       let layoutTargetColumn? :=
-        if !retainsRelativeLayout || inlineMultilineProof then
+        if !retainsRelativeLayout || inlineMultilineLayoutIsland then
           none
         else if usesPendingIndent then
           some leadingColumn
@@ -928,6 +934,13 @@ def RenderState.emitOriginalTree
           none
       let targetColumn? :=
         rebaseSourceTextTargetColumn?.orElse fun _ => layoutTargetColumn?
+      let targetColumn? :=
+        if isProofTree tree && SpaceRules.hasLineStructure originalLeading then
+          targetColumn?.map
+            fun targetColumn =>
+              max (state.segmentIndentation * indentationSpaces) targetColumn
+        else
+          targetColumn?
       let leading :=
         match targetColumn? with
         | some targetColumn =>
@@ -936,18 +949,18 @@ def RenderState.emitOriginalTree
               targetColumn leading
         | none => leading
       let sourceText :=
-        match rebaseSourceTextTargetColumn?, inlineProofContinuationColumns?,
+        match inlineContinuationColumns?, rebaseSourceTextTargetColumn?,
               targetColumn? with
-        | some targetColumn, _, _ =>
-            if sourceColumn == targetColumn then
-              sourceText
-            else
-              rebaseOriginalTreeText state.source tree sourceColumn targetColumn
-        | none, some (sourceIndent, targetIndent), _ =>
+        | some (sourceIndent, targetIndent), _, _ =>
             if sourceIndent == targetIndent then
               sourceText
             else
               rebaseOriginalTreeText state.source tree sourceIndent targetIndent
+        | none, some targetColumn, _ =>
+            if sourceColumn == targetColumn then
+              sourceText
+            else
+              rebaseOriginalTreeText state.source tree sourceColumn targetColumn
         | none, none, some targetColumn =>
             if sourceColumn == targetColumn then
               sourceText
