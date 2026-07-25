@@ -593,13 +593,21 @@ def isLeanJsonSyntaxTree : SyntaxTree.Tree → Bool
       (SyntaxTree.nodeKindName kind).startsWith "Lean.Json."
   | _ => false
 
+def isBatteriesLibraryNoteSyntaxTree : SyntaxTree.Tree → Bool
+  | .node kind _ =>
+      (SyntaxTree.nodeKindName kind).startsWith "Batteries.Util.LibraryNote."
+  | _ => false
+
 def isLayoutSensitiveCommand : SyntaxTree.Tree → Bool
   | .node (.raw `Lean.Parser.Command.syntax) _ => true
   | .node (.raw `Lean.Parser.Command.syntaxAbbrev) _ => true
   | .node (.raw `Lean.Parser.Command.macro_rules) _ => true
   | .node (.raw `Lean.Parser.Command.elab) _ => true
+  | .node (.raw `Lean.Parser.Command.elab_rules) _ => true
   | .node (.raw `Lean.Parser.«command_Simproc_decl_(_):=_») _ => true
   | .node (.raw `Lean.Parser.«command__Simproc__[_]_(_):=_») _ => true
+  | .node (.raw `Batteries.Tactic.Alias.alias) _ => true
+  | .node (.raw `Batteries.Tactic.Alias.aliasLR) _ => true
   | _ => false
 
 def isMathlibTacticSyntaxTree : SyntaxTree.Tree → Bool
@@ -733,6 +741,7 @@ def shouldEmitOriginalTree (tree : SyntaxTree.Tree) : Bool :=
   || isQqSyntaxTree tree
   || isProofWidgetsJsxSyntaxTree tree
   || isLeanJsonSyntaxTree tree
+  || isBatteriesLibraryNoteSyntaxTree tree
   || isLayoutSensitiveCommand tree
   || isMathlibTacticSyntaxTree tree
   || isCustomBracedTermSyntaxTree tree
