@@ -1028,12 +1028,22 @@ def assertCommandAttributeBracketPayloadStaysAttached (env : Lean.Environment)
   let source :=
     "attribute [local instance] hasColimitsOfShape_of_finallySmall IsFiltered.isSifted FinallySmall.preservesColimitsOfShape_of_isFiltered\n"
   let expected :=
-    "attribute [local instance]\n"
-    ++ "  hasColimitsOfShape_of_finallySmall IsFiltered.isSifted\n"
-    ++ "    FinallySmall.preservesColimitsOfShape_of_isFiltered\n"
+    "attribute [local instance] hasColimitsOfShape_of_finallySmall IsFiltered.isSifted\n"
+    ++ "  FinallySmall.preservesColimitsOfShape_of_isFiltered\n"
   let formatted ←
     Formatter.formatSourceWithEnv env source "command-attribute-bracket-payload.lean"
-  assertEq "command attribute keeps bracket payload attached" expected formatted
+  assertEq "command attribute arguments flow after bracket payload" expected formatted
+
+  let mathlibSource :=
+    "attribute [local instance] Pre.hasCoeGenerator Pre.hasCoeSemiring Pre.hasMul Pre.hasAdd Pre.hasZero Pre.hasOne Pre.hasSMul\n"
+  let mathlibExpected :=
+    "attribute [local instance] Pre.hasCoeGenerator Pre.hasCoeSemiring Pre.hasMul Pre.hasAdd Pre.hasZero\n"
+    ++ "  Pre.hasOne Pre.hasSMul\n"
+  let mathlibFormatted ←
+    Formatter.formatSourceWithEnv env mathlibSource "command-attribute-flow.lean"
+      { lineWidth := 100 }
+  assertEq "command attribute arguments fill the first line"
+    mathlibExpected mathlibFormatted
 
   let classSource :=
     "structure Normal : Prop where\n"

@@ -694,6 +694,7 @@ def nullInheritBase (context : RuleContext) (segment : Segment) : Bool :=
   || parentIsRawKind context `Lean.Parser.Term.structInstFields
   || parentIsRawKind context `Lean.Parser.Term.letRecDecls
   || parentIsRawKind context `Lean.Parser.Term.letRecDecl
+  || commandAttributeIdentifierList context
   || assertNotExistsIdentifierList context
   || wrappedByDoLetFallbackSequence context
 
@@ -783,15 +784,6 @@ def declarationValueHasNestedProofBody (segment : Segment) : Bool :=
   match contentIndexAfterLexeme? segment ":=" with
   | some valueIndex => childHasNestedProofBody segment valueIndex
   | none => false
-
-def commandAttributeBreaks (_context : RuleContext) (segment : Segment)
-    : List BreakPoint :=
-  match contentIndexAfterLexeme? segment "]" with
-  | some index =>
-      match boundaryBreak? segment index 1 with
-      | some breakPoint => [breakPoint]
-      | none => []
-  | none => []
 
 /-! ### Declarations, structures, and collections -/
 
@@ -1167,8 +1159,9 @@ def commandAttributeIdentifierBreaks (context : RuleContext) (segment : Segment)
   if commandAttributeIdentifierList context then
     match nonemptyChildIndexes segment with
     | [] => []
-    | [_] => []
-    | _ :: rest => rest.filterMap fun index => boundaryBreak? segment index 1
+    | first :: rest =>
+        [leadingBreak? segment first 1].filterMap id
+        ++ rest.filterMap fun index => boundaryBreak? segment index 1
   else
     []
 
@@ -2519,10 +2512,7 @@ def declarationRule : LineBreakRule :=
   { name := "declaration" }
 
 def commandAttributeRule : LineBreakRule :=
-  {
-    name := "commandAttribute"
-    breakPoints := commandAttributeBreaks
-  }
+  { name := "commandAttribute" }
 
 def variableCommandRule : LineBreakRule :=
   { name := "variableCommand" }
