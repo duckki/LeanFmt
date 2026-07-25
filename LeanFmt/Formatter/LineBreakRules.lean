@@ -2978,7 +2978,7 @@ def ruleFor : SyntaxTree.Tree → Option LineBreakRule
   | .node (.raw `Lean.Parser.Command.initializeKeyword) _ => some defaultRule
   | .node (.raw `Lean.runCmd) _ => some transparentRule
   | .node (.raw `Lean.includeStr) _ => some defaultRule
-  | .node (.raw `Lean.Option.registerOption) _ => some transparentRule
+  | .node (.raw `Lean.Option.registerOption) _ => some declarationValueRule
   | .node (.raw `Lean.Parser.Command.namedName) _ => some defaultRule
   | .node (.raw `Lean.Parser.Command.macroArg) _ => some defaultRule
   | .node (.raw `Lean.Parser.Command.macroTail) _ => some defaultRule
