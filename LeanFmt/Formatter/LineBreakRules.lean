@@ -2954,6 +2954,17 @@ def matchAltsRule : LineBreakRule :=
 -- Rule dispatch
 -----------------------------------------------------------------------------------------
 
+def isGeneratedMathlibCrossRefKind (kind : Lean.SyntaxNodeKind) : Bool :=
+  let name := toString kind
+  [
+    ".Mathlib.CrossRef.wikidataTag",
+    ".Mathlib.CrossRef.stacksTag",
+    ".Mathlib.CrossRef.stacksTagDBStacks",
+    ".Mathlib.CrossRef.stacksTagDBKerodon",
+    ".Mathlib.CrossRef.lmfdbTag"
+  ].any
+    fun suffix => name.endsWith suffix
+
 def ruleFor : SyntaxTree.Tree → Option LineBreakRule
   | .missing => some defaultRule
   | .leaf _ => some defaultRule
@@ -3585,7 +3596,8 @@ def ruleFor : SyntaxTree.Tree → Option LineBreakRule
       if isSymmetricDelimitedGeneratedTerm kind children
           || isGeneratedPostfixTerm kind children then
         some transparentRule
-      else if isGeneratedLocalNotationKind kind then
+      else if isGeneratedLocalNotationKind kind
+              || isGeneratedMathlibCrossRefKind kind then
         some defaultRule
       else
         none
