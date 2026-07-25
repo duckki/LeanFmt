@@ -195,29 +195,32 @@ def noSpaceAfterToken (lexeme : String) : Bool :=
 def allowsHorizontalAlignmentAfterToken (lexeme : String) : Bool :=
   lexeme != "(" && lexeme != ":"
 
-def charCodeIn (char : Char) (lower upper : Nat) : Bool :=
-  lower <= char.toNat && char.toNat <= upper
+def isTrailingSeparatorToken (lexeme : String) : Bool :=
+  stringIn lexeme [",", ",*", ";"]
 
-def isPostfixMarkerStart (char : Char) : Bool :=
-  charCodeIn char 0x2070 0x209F
-  || charCodeIn char 0x1D00 0x1D7F
-  || charCodeIn char 0x1D80 0x1DBF
-
-def isPostfixMarkerChar (char : Char) : Bool :=
-  isPostfixMarkerStart char
-  || char.toNat == 0x00B9
-  || char.toNat == 0x00B2
-  || char.toNat == 0x00B3
-
-def isPostfixMarkerToken (lexeme : String) : Bool :=
-  match lexeme.toList with
-  | [] => false
-  | chars => chars.all isPostfixMarkerChar
+def isClosingDelimiterToken (lexeme : String) : Bool :=
+  stringStartsWithAny lexeme [")", "]", "⟩", "⟫", "⦄"]
 
 def noSpaceBeforeToken (lexeme : String) : Bool :=
-  stringIn lexeme [",", ",*", ";"]
-  || stringStartsWithAny lexeme [")", "]", "⟩", "⟫", "⦄"]
-  || isPostfixMarkerToken lexeme
+  isTrailingSeparatorToken lexeme || isClosingDelimiterToken lexeme
+
+def isPlainIdentifierTail (char : Char) : Bool :=
+  char.isAlphanum || char == '_' || char == '\''
+
+def isDelimiterCloserToken (lexeme : String) : Bool :=
+  stringStartsWithAny lexeme [")", "]", "}", "⟩", "⟫", "⦄"]
+
+def isOperatorLikeToken (lexeme : String) : Bool :=
+  match lexeme.toList.reverse with
+  | [] => false
+  | last :: _ =>
+      !isPlainIdentifierTail last
+      && last != '"'
+      && !isTrailingSeparatorToken lexeme
+      && !isDelimiterCloserToken lexeme
+
+def preservesSourceSpaceBeforeClosingToken (left right : SyntaxTree.Token) : Bool :=
+  isClosingDelimiterToken right.lexeme && isOperatorLikeToken left.lexeme
 
 def preservesTightBraceSpacing (left right : SyntaxTree.Token) : Bool :=
   left.lexeme == "{" || right.lexeme == "}"
@@ -271,6 +274,8 @@ def interTokenWhitespace
     cleanTrivia trivia
   else if trivia.isEmpty then
     ""
+  else if preservesSourceSpaceBeforeClosingToken left right then
+    " "
   else
     spaceBetweenTokens left right
 
