@@ -4419,6 +4419,21 @@ def assertInfixAlternativeSequenceFlows (env : Lean.Environment) : IO Unit := do
       "infix-alternative-sequence-formatted.lean" { lineWidth := 60 }
   assertEq "infix RHS alternative formatting is idempotent" formatted formattedAgain
 
+def assertBigOperatorBodyBreaksAfterComma (_env : Lean.Environment) : IO Unit := do
+  let env ← SyntaxTree.importEnvironment #[{ module := `LeanFmt.Tests.ProjectSyntax }]
+  let source :=
+    "def longSum :=\n"
+    ++ "  ∑ gh ∈ Finset.SMulAntidiagonal p (veryLongFiniteSupportArgumentName x), f.coeff gh.1 • x gh.2\n"
+  let expected :=
+    "def longSum :=\n"
+    ++ "  ∑ gh ∈ Finset.SMulAntidiagonal p\n"
+    ++ "          (veryLongFiniteSupportArgumentName x),\n"
+    ++ "    f.coeff gh.1 • x gh.2\n"
+  let formatted ←
+    Formatter.formatSourceWithEnv env source "big-operator-body-break.lean"
+      { lineWidth := 60 }
+  assertEq "big operator body breaks after its comma" expected formatted
+
 def assertInfixIgnoresFittingSourceBreaks (env : Lean.Environment) : IO Unit := do
   let source :=
     "def sourceBreakInfix : Prop :=\n" ++ "  firstCondition\n" ++ "  ∧ secondCondition\n"
@@ -5088,9 +5103,9 @@ def assertBreakNeverPrecedesTrailingSeparator (env : Lean.Environment) : IO Unit
   let expected :=
     "def separatorBreak (values : List Nat) : Prop :=\n"
     ++ "  ∀ value ∈\n"
-    ++ "            values.filter\n"
-    ++ "              (fun candidate => candidate = candidate), value\n"
-    ++ "                                                        = value\n"
+    ++ "    values.filter\n"
+    ++ "      (fun candidate => candidate = candidate), value\n"
+    ++ "                                                = value\n"
   let formatted ←
     Formatter.formatSourceWithEnv env source "trailing-separator-break.lean"
       { lineWidth := 55 }
@@ -7752,6 +7767,7 @@ def runExpressionAndRendererTests (env : Lean.Environment) : IO Unit := do
   assertInstanceWhereStaysWithHeader env
   assertInfixLeftDepth env
   assertInfixAlternativeSequenceFlows env
+  assertBigOperatorBodyBreaksAfterComma env
   assertInfixIgnoresFittingSourceBreaks env
   assertInfixIgnoresArbitrarySourceBreaks env
   assertInfixRhsFitsBeforeSourceBreaks env

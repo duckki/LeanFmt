@@ -694,6 +694,7 @@ def nullInheritBase (context : RuleContext) (segment : Segment) : Bool :=
   || parentIsRawKind context `Lean.Parser.Term.structInstFields
   || parentIsRawKind context `Lean.Parser.Term.letRecDecls
   || parentIsRawKind context `Lean.Parser.Term.letRecDecl
+  || parentIsRawKind context `BigOperators.bigOpBinder
   || commandAttributeIdentifierList context
   || assertNotExistsIdentifierList context
   || wrappedByDoLetFallbackSequence context
@@ -2438,6 +2439,9 @@ def infixAlternativeBreaks (context : RuleContext) (segment : Segment)
   else
     []
 
+def bigOperatorBreaks (_context : RuleContext) (segment : Segment) : List BreakPoint :=
+  [breakAfterLexeme? segment "," 1].filterMap id
+
 def binderTacticBreaks (_context : RuleContext) (segment : Segment) : List BreakPoint :=
   [breakBeforeLexeme? segment "by" 2].filterMap id
 
@@ -2652,6 +2656,19 @@ def binderTacticRule : LineBreakRule :=
     name := "binderTactic"
     inheritBase := fun _ _ => true
     breakPoints := binderTacticBreaks
+  }
+
+def bigOperatorRule : LineBreakRule :=
+  {
+    name := "bigOperator"
+    breakPoints := bigOperatorBreaks
+  }
+
+def binderPredicateRule : LineBreakRule :=
+  {
+    name := "binderPredicate"
+    inheritBase := fun _ _ => true
+    breakPoints := defaultChildBreaks
   }
 
 def commandInChainRule : LineBreakRule :=
@@ -3236,13 +3253,13 @@ def ruleFor : SyntaxTree.Tree → Option LineBreakRule
   | .node (.raw `Lean.modCast) _ => some defaultRule
   | .node (.raw `Lean.«term∀__,_») _ => some defaultRule
   | .node (.raw `Lean.«term∃__,_») _ => some defaultRule
-  | .node (.raw `Lean.«binderPred∈_») _ => some defaultRule
-  | .node (.raw `Lean.«binderPred<_») _ => some defaultRule
-  | .node (.raw `Lean.«binderPred>_») _ => some defaultRule
-  | .node (.raw `Lean.«binderPred≤_») _ => some defaultRule
-  | .node (.raw `Lean.«binderPred≥_») _ => some defaultRule
-  | .node (.raw `Lean.«binderPred≠_») _ => some defaultRule
-  | .node (.raw `Lean.«binderPred∉_») _ => some defaultRule
+  | .node (.raw `Lean.«binderPred∈_») _ => some binderPredicateRule
+  | .node (.raw `Lean.«binderPred<_») _ => some binderPredicateRule
+  | .node (.raw `Lean.«binderPred>_») _ => some binderPredicateRule
+  | .node (.raw `Lean.«binderPred≤_») _ => some binderPredicateRule
+  | .node (.raw `Lean.«binderPred≥_») _ => some binderPredicateRule
+  | .node (.raw `Lean.«binderPred≠_») _ => some binderPredicateRule
+  | .node (.raw `Lean.«binderPred∉_») _ => some binderPredicateRule
   | .node (.raw `Mathlib.Meta.SetNotationForOrder.«binderPred⊆_») _ =>
       some defaultRule
   | .node (.raw `Mathlib.Meta.SetNotationForOrder.«binderPred⊂_») _ =>
@@ -3250,11 +3267,11 @@ def ruleFor : SyntaxTree.Tree → Option LineBreakRule
   | .node (.raw `Mathlib.Meta.SetNotationForOrder.«binderPred⊇_») _ =>
       some defaultRule
   | .node (.raw `termDepIfThenElse) _ => some defaultRule
-  | .node (.raw `BigOperators.bigsum) _ => some defaultRule
-  | .node (.raw `BigOperators.bigprod) _ => some defaultRule
-  | .node (.raw `BigOperators.bigexpect) _ => some defaultRule
+  | .node (.raw `BigOperators.bigsum) _ => some bigOperatorRule
+  | .node (.raw `BigOperators.bigprod) _ => some bigOperatorRule
+  | .node (.raw `BigOperators.bigexpect) _ => some bigOperatorRule
   | .node (.raw `BigOperators.bigOpBinders) _ => some defaultRule
-  | .node (.raw `BigOperators.bigOpBinder) _ => some defaultRule
+  | .node (.raw `BigOperators.bigOpBinder) _ => some transparentRule
   | .node (.raw `BigOperators.bigOpBinderCollection) _ => some defaultRule
   | .node (.raw `BigOperators.bigOpBinderParenthesized) _ => some defaultRule
   | .node (.raw `ArithmeticFunction.bigproddvd) _ => some defaultRule
