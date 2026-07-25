@@ -330,7 +330,7 @@ A published repository can be consumed with Lake's Git dependency form:
 [[require]]
 name = "leanfmt"
 git = "https://github.com/duckki/leanfmt.git"
-rev = "v0.2.4"
+rev = "v0.2.5"
 ```
 
 Resolve it without replacing the downstream project's Lean version:
