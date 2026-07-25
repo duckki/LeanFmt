@@ -102,11 +102,45 @@ deriving BEq, Inhabited, Repr
 
 namespace Tree
 
-partial def tokens : Tree → Array Token
-  | Tree.missing => #[]
-  | Tree.leaf token => #[token]
+private partial def appendTokens (tokens : Array Token) : Tree → Array Token
+  | Tree.missing => tokens
+  | Tree.leaf token => tokens.push token
+  | Tree.node _ children => children.foldl appendTokens tokens
+
+def tokens (tree : Tree) : Array Token :=
+  appendTokens #[] tree
+
+private inductive TokenCardinality where
+  | empty
+  | single (token : Token)
+  | multiple
+deriving Inhabited
+
+private def TokenCardinality.combine (left right : TokenCardinality) : TokenCardinality :=
+  match left, right with
+  | .multiple, _
+  | _, .multiple
+  | .single _, .single _ => .multiple
+  | .single token, .empty
+  | .empty, .single token => .single token
+  | .empty, .empty => .empty
+
+private partial def tokenCardinality : Tree → TokenCardinality
+  | Tree.missing => .empty
+  | Tree.leaf token => .single token
   | Tree.node _ children =>
-      children.foldl (fun acc child => acc ++ child.tokens) #[]
+      children.foldl
+        (fun cardinality child =>
+          match cardinality with
+          | .multiple => .multiple
+          | _ => cardinality.combine (tokenCardinality child))
+        .empty
+
+def singleToken? (tree : Tree) : Option Token :=
+  match tokenCardinality tree with
+  | .single token => some token
+  | .empty
+  | .multiple => none
 
 partial def firstToken? : Tree → Option Token
   | Tree.missing => none

@@ -708,15 +708,20 @@ partial def treeContainsDoLetFallback : SyntaxTree.Tree → Bool
       || children.any treeContainsDoLetFallback
   | .node _ children => children.any treeContainsDoLetFallback
 
+def nestedInDoSequence (context : RuleContext) : Bool :=
+  context.ancestors.any fun frame => frame.rawKind? == some `Lean.Parser.Term.doSeqIndent
+
 def canRetainOriginalLayoutForOverflow (context : RuleContext) : SyntaxTree.Tree → Bool
   | tree@(.node (.raw `Lean.Parser.Term.doSeqIndent) _) =>
-      !inDoLetFallback context
+      !nestedInDoSequence context
+      && !inDoLetFallback context
       && !wrappedByDoLetFallbackSequence context
       && !treeContainsDoLetFallback tree
   | _ => false
 
-def canRetainParentRelativeOriginalLayoutForOverflow : SyntaxTree.Tree → Bool
-  | .node (.raw `Lean.Parser.Term.doSeqIndent) _ => true
+def canRetainParentRelativeOriginalLayoutForOverflow (context : RuleContext)
+    : SyntaxTree.Tree → Bool
+  | .node (.raw `Lean.Parser.Term.doSeqIndent) _ => !nestedInDoSequence context
   | _ => false
 
 def infixAttachedBodyAssignmentValue (context : RuleContext) (segment : Segment) : Bool :=

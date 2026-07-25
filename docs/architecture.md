@@ -661,16 +661,19 @@ boundary, same-line comment trivia preceding that boundary still contributes to 
 Proof subtrees and extensible attribute payloads are not reformatted. When the renderer reaches a recognized proof or attribute node, it
 emits the original source slice, adjusted only for indentation when needed. A protected
 subtree that begins on a new source line inherits the source-to-output layout-base
-translation established by its enclosing formatted segment; every line moves by the same
-delta. When a multiline proof begins inline after `by`, its later source lines use that
-introducer's source-to-output movement, clamped to the structural proof indentation,
-rather than treating the far-right first tactic as an indentation anchor. Module and
-declaration documentation comments are also emitted from their original source slices so
-their internal whitespace cannot be changed. This protects tactic scripts, term proof
-layout, and comment text while declarations around them can still be formatted. When an
-original-source child followed its previous token on the same source line, it honors a
-pending boundary selected by its parent rule; an existing source-line boundary and the
-child's internal layout remain unchanged.
+translation established by its enclosing formatted segment. The output-side anchor is
+the column where that segment actually starts, including when a child that began a source
+line now follows a formatted prefix such as `:`. Every protected line moves by the same
+delta. This keeps a block proof one level beneath its owning `have` rather than beneath a
+wrapped type continuation. When a multiline proof begins inline after `by`, its later
+source lines use that introducer's source-to-output movement, clamped to the structural
+proof indentation, rather than treating the far-right first tactic as an indentation
+anchor. Module and declaration documentation comments are also emitted from their
+original source slices so their internal whitespace cannot be changed. This protects
+tactic scripts, term proof layout, and comment text while declarations around them can
+still be formatted. When an original-source child followed its previous token on the
+same source line, it honors a pending boundary selected by its parent rule; an existing
+source-line boundary and the child's internal layout remain unchanged.
 
 The escape hatch is intentionally narrow. If a non-proof syntax form is unsafe, prefer a
 specific transparent/default rule or a grouping change before adding another original
@@ -684,18 +687,20 @@ is rebased when the surrounding formatted layout moves it; leaving a JSX tag at 
 absolute column can change which tokens Lean's layout parser assigns to the element.
 When the formatter-selected rebase would newly overflow an atomic JSX line, the renderer
 also measures the source layout translated only by its parent layout's movement and uses
-that candidate when it has fewer overflows. The same parent-relative comparison applies
-to `do` bodies: it can avoid shifting atomic strings and comments merely to satisfy a
-preferred indentation, while preserving the body's offside relationships. Rebased
-original text is reconstructed token by token so whitespace inside string and other
-atomic token lexemes is never changed.
+that candidate when it has fewer overflows. For `do` bodies, token emission records only
+new atomic overflow caused by moving a source-line token away from a column where it fit.
+The outermost eligible `do` sequence considers a source-layout candidate only when that
+signal is present. This avoids both repeated nested recovery and reconstructing large
+`do` bodies for pre-existing overflow that recovery cannot improve. Rebased original text
+is reconstructed token by token so whitespace inside string and other atomic token
+lexemes is never changed.
 An original-source island whose own source slice is single-line still participates in
 ordinary flat-fit checks, so inline extension syntax does not force its parent to break.
 Syntax-authoring commands (`syntax`, `macro_rules`, `elab`, and `elab_rules`), Batteries
 alias and library-note commands, and other explicitly cataloged extension-owned commands
 are layout islands for the same reason.
 
-If a quoted single-token value already starts on a source line and moving it to the
+If a single-token value already starts on a source line and moving it to the
 preferred indentation would create an otherwise avoidable overflow, the renderer keeps
 the source column translated by the parent layout's movement. Multiline atomic tokens and
 unwrappable comment trivia use the analogous source-fitting column check. Structural

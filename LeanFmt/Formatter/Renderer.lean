@@ -20,6 +20,14 @@ def indentationSpaces : Nat :=
 def lineWidth (text : String) : Nat :=
   text.length
 
+def firstLineAppendWidth (text : String) : Nat × Bool :=
+  let rec loop : List Char → Nat → Nat × Bool
+    | [], width => (width, false)
+    | '\n' :: _, width
+    | '\r' :: _, width => (width, true)
+    | _ :: rest, width => loop rest (width + 1)
+  loop text.toList 0
+
 def lineFits (text : String) (limit : Nat := maxLineWidth) : Bool :=
   lineWidth text <= limit
 
@@ -128,28 +136,31 @@ def rebaseOriginalLines (sourceColumn targetColumn : Nat)
       adjusted :: rebaseOriginalLines sourceColumn targetColumn blockCommentDepth rest
 
 def rebaseOriginalTextIndent (sourceColumn targetColumn : Nat) (text : String) : String :=
-  match (SpaceRules.normalizeLineEndings text).splitOn "\n" with
-  | [] => text
-  | first :: rest =>
-      String.intercalate "\n"
-      <| first
-          :: rebaseOriginalLines sourceColumn targetColumn
-              (SpaceRules.blockCommentDepthAfterLine 0 first) rest
+  if sourceColumn == targetColumn then
+    text
+  else
+    match (SpaceRules.normalizeLineEndings text).splitOn "\n" with
+    | [] => text
+    | first :: rest =>
+        String.intercalate "\n"
+        <| first
+            :: rebaseOriginalLines sourceColumn targetColumn
+                (SpaceRules.blockCommentDepthAfterLine 0 first) rest
 
 def rebaseOriginalTreeText
     (source : String) (tree : SyntaxTree.Tree)
     (sourceColumn targetColumn : Nat)
     : String :=
-  let rec loop (previous : SyntaxTree.Token) (output : String)
-      : List SyntaxTree.Token → String
-    | [] => output
+  let rec loop (previous : SyntaxTree.Token) (parts : List String)
+      : List SyntaxTree.Token → List String
+    | [] => parts
     | token :: rest =>
         let trivia := SyntaxTree.sourceText source previous.span.stop token.span.start
         let trivia := rebaseOriginalTextIndent sourceColumn targetColumn trivia
-        loop token (output ++ trivia ++ token.lexeme) rest
+        loop token (token.lexeme :: trivia :: parts) rest
   match tree.tokens.toList with
   | [] => ""
-  | first :: rest => loop first first.lexeme rest
+  | first :: rest => String.join <| (loop first [first.lexeme] rest).reverse
 
 def originalContinuationIndent? (text : String) : Option Nat :=
   (SpaceRules.normalizeLineEndings text).splitOn "\n" |>.drop 1
@@ -185,6 +196,7 @@ structure RenderState where
   output : String := ""
   outputLineBreakCount : Nat := 0
   completedLineOverflowCount : Nat := 0
+  introducedAtomicOverflowCount : Nat := 0
   currentLine : String := ""
   lastToken? : Option SyntaxTree.Token := none
   pendingIndent? : Option Nat := none
@@ -486,9 +498,31 @@ def RenderState.emitToken (state : RenderState) (token : SyntaxTree.Token)
   if token.lexeme.isEmpty then
     state
   else
+    let whitespace := state.defaultWhitespace token preserveLines
+    let introducedAtomicOverflow :=
+      match state.pendingIndent? with
+      | none => false
+      | some _ =>
+          let tokenWidth := (firstLineAppendWidth token.lexeme).1
+          let outputColumn :=
+            lineWidth <| currentLineAfterAppend state.currentLine whitespace
+          if state.options.lineWidth < outputColumn + tokenWidth then
+            let sourceLeading :=
+              match state.lastToken? with
+              | some leftToken =>
+                  SyntaxTree.sourceText state.source leftToken.span.stop token.span.start
+              | none => token.leading.text
+            if SpaceRules.hasLineStructure sourceLeading then
+              let sourceColumn := lineWidth <| charsAfterLastNewline sourceLeading
+              sourceColumn + tokenWidth <= state.options.lineWidth
+            else
+              false
+          else
+            false
     {
-      state.appendOutput
-          (state.defaultWhitespace token preserveLines ++ token.lexeme) with
+      state.appendOutput (whitespace ++ token.lexeme) with
+        introducedAtomicOverflowCount :=
+          state.introducedAtomicOverflowCount + if introducedAtomicOverflow then 1 else 0
         lastToken? := some token
         pendingIndent? := none
         pendingCommandBoundary? := none
@@ -598,6 +632,7 @@ def RenderState.forFitProbe (state : RenderState) : RenderState :=
       output := ""
       outputLineBreakCount := 0
       completedLineOverflowCount := 0
+      introducedAtomicOverflowCount := 0
   }
 
 def RenderState.hasBlankBoundaryBefore (state : RenderState) (tree : SyntaxTree.Tree)
@@ -856,22 +891,10 @@ def RenderState.emitOriginalTree
           state.defaultWhitespace firstToken true
         else
           originalLeading
-      let preliminaryLeadingColumn :=
-        lineWidth <| currentLineAfterAppend state.currentLine leading
-      let leading :=
-        match rebaseSourceTextTargetColumn? with
-        | some targetColumn =>
-            rebaseOriginalTextIndent preliminaryLeadingColumn targetColumn leading
-        | none => leading
       let leadingColumn := lineWidth <| currentLineAfterAppend state.currentLine leading
       let sourceText :=
         SyntaxTree.sourceText state.source firstToken.span.start lastToken.span.stop
       let sourceColumn := originalColumnAt state.source firstToken.span.start
-      let sourceText :=
-        match rebaseSourceTextTargetColumn? with
-        | some targetColumn =>
-            rebaseOriginalTreeText state.source tree sourceColumn targetColumn
-        | none => sourceText
       let inlineMultilineProof :=
         isProofTree tree
         && treeHasLineBreakTrivia tree
@@ -892,8 +915,10 @@ def RenderState.emitOriginalTree
       let sourceColumnRebasedFromLayoutBase :=
         shiftColumnByAnchor state.sourceLayoutBaseColumn
           state.outputLayoutBaseColumn sourceColumn
-      let originalLayoutTargetColumn? :=
-        if !(isProofWidgetsJsxSyntaxTree tree || isQuotationTree tree) then
+      let retainsRelativeLayout :=
+        isProofTree tree || isProofWidgetsJsxSyntaxTree tree || isQuotationTree tree
+      let layoutTargetColumn? :=
+        if !retainsRelativeLayout || inlineMultilineProof then
           none
         else if usesPendingIndent then
           some leadingColumn
@@ -901,48 +926,34 @@ def RenderState.emitOriginalTree
           some sourceColumnRebasedFromLayoutBase
         else
           none
-      let proofTargetColumn? :=
-        if !isProofTree tree then
-          none
-        else if usesPendingIndent then
-          some leadingColumn
-        else if treeHasLineBreakTrivia tree then
-          let layoutColumn :=
-            if SpaceRules.hasLineStructure originalLeading then
-              sourceColumnRebasedFromLayoutBase
-            else
-              leadingColumn
-          some <| max layoutColumn ((state.segmentIndentation + 1) * indentationSpaces)
-        else
-          none
+      let targetColumn? :=
+        rebaseSourceTextTargetColumn?.orElse fun _ => layoutTargetColumn?
       let leading :=
-        match proofTargetColumn? with
+        match targetColumn? with
         | some targetColumn =>
-            if !usesPendingIndent || SpaceRules.hasLineStructure originalLeading then
-              rebaseOriginalTextIndent
-                (if usesPendingIndent then leadingColumn else sourceColumn)
-                targetColumn leading
-            else
-              leading
-        | none =>
-            match originalLayoutTargetColumn? with
-            | some targetColumn =>
-                rebaseOriginalTextIndent
-                  (if usesPendingIndent then leadingColumn else sourceColumn)
-                  targetColumn leading
-            | none => leading
+            rebaseOriginalTextIndent
+              (if usesPendingIndent then leadingColumn else sourceColumn)
+              targetColumn leading
+        | none => leading
       let sourceText :=
-        match proofTargetColumn? with
-        | some targetColumn =>
-            match inlineProofContinuationColumns? with
-            | some (sourceIndent, targetIndent) =>
-                rebaseOriginalTextIndent sourceIndent targetIndent sourceText
-            | none => rebaseOriginalTextIndent sourceColumn targetColumn sourceText
-        | none =>
-            match originalLayoutTargetColumn? with
-            | some targetColumn =>
-                rebaseOriginalTextIndent sourceColumn targetColumn sourceText
-            | none => sourceText
+        match rebaseSourceTextTargetColumn?, inlineProofContinuationColumns?,
+              targetColumn? with
+        | some targetColumn, _, _ =>
+            if sourceColumn == targetColumn then
+              sourceText
+            else
+              rebaseOriginalTreeText state.source tree sourceColumn targetColumn
+        | none, some (sourceIndent, targetIndent), _ =>
+            if sourceIndent == targetIndent then
+              sourceText
+            else
+              rebaseOriginalTreeText state.source tree sourceIndent targetIndent
+        | none, none, some targetColumn =>
+            if sourceColumn == targetColumn then
+              sourceText
+            else
+              rebaseOriginalTreeText state.source tree sourceColumn targetColumn
+        | none, none, none => sourceText
       {
         state.appendOutput <| leading ++ sourceText with
           lastToken? := some lastToken
@@ -950,28 +961,6 @@ def RenderState.emitOriginalTree
           pendingCommandBoundary? := none
       }
   | _, _ => state
-
-def RenderState.originalTreeStartsOnNewSourceLine
-    (state : RenderState) (tree : SyntaxTree.Tree)
-    : Bool :=
-  match state.lastToken?, SyntaxTree.Tree.firstToken? tree with
-  | some leftToken, some firstToken =>
-      SpaceRules.hasLineStructure
-        (SyntaxTree.sourceText state.source leftToken.span.stop firstToken.span.start)
-  | _, _ => false
-
-def RenderState.originalTreeColumnAfterLineBreak
-    (state : RenderState) (tree : SyntaxTree.Tree)
-    : Nat :=
-  match SyntaxTree.Tree.firstToken? tree with
-  | some firstToken =>
-      let leading :=
-        match state.lastToken? with
-        | some leftToken =>
-            SyntaxTree.sourceText state.source leftToken.span.stop firstToken.span.start
-        | none => firstToken.leading.text
-      lineWidth <| charsAfterLastNewline leading
-  | none => 0
 
 def originalTreeHasLineStructure (source : String) (tree : SyntaxTree.Tree) : Bool :=
   match SyntaxTree.Tree.firstToken? tree, SyntaxTree.Tree.lastToken? tree with
@@ -1084,14 +1073,6 @@ def widthAfterAppend (currentLineWidth : Nat) (text : String) : Nat :=
     | '\r' :: rest, _ => loop rest 0
     | _ :: rest, width => loop rest (width + 1)
   loop text.toList currentLineWidth
-
-def firstLineAppendWidth (text : String) : Nat × Bool :=
-  let rec loop : List Char → Nat → Nat × Bool
-    | [], width => (width, false)
-    | '\n' :: _, width => (width, true)
-    | '\r' :: _, width => (width, true)
-    | _ :: rest, width => loop rest (width + 1)
-  loop text.toList 0
 
 def WidthState.defaultWhitespace (state : WidthState) (token : SyntaxTree.Token)
     (preserveLines : Bool := false)
@@ -1596,6 +1577,8 @@ def RenderState.commitLayoutProbe (state : RenderState) (probe : LayoutProbe)
             state.outputLineBreakCount + rendered.outputLineBreakCount
           completedLineOverflowCount :=
             state.completedLineOverflowCount + rendered.completedLineOverflowCount
+          introducedAtomicOverflowCount :=
+            state.introducedAtomicOverflowCount + rendered.introducedAtomicOverflowCount
           currentLine := rendered.currentLine
           lastToken? := rendered.lastToken?
           pendingIndent? := rendered.pendingIndent?
@@ -2112,26 +2095,39 @@ mutual
         let naturalStartColumn := state.segmentStartColumn childSegment
         let alignedStartColumn := indentationPastColumn naturalStartColumn
         state.appendOutput <| spaces (alignedStartColumn - naturalStartColumn)
-    let parentRelativeOriginalColumn? :=
-      if state.lastToken?.isNone || state.originalTreeStartsOnNewSourceLine child then
-        SyntaxTree.Tree.firstToken? child
-        |>.map
-            fun _ =>
-              let sourceColumn := state.originalTreeColumnAfterLineBreak child
+    let firstToken? := SyntaxTree.Tree.firstToken? child
+    let sourceLeading :=
+      match state.lastToken?, firstToken? with
+      | some leftToken, some firstToken =>
+          SyntaxTree.sourceText state.source leftToken.span.stop firstToken.span.start
+      | none, some firstToken => firstToken.leading.text
+      | _, none => ""
+    let startsOnNewSourceLine :=
+      state.lastToken?.isNone || SpaceRules.hasLineStructure sourceLeading
+    let sourceLayoutStart? :=
+      if startsOnNewSourceLine then
+        firstToken?.map
+          fun _ =>
+            let sourceColumn := lineWidth <| charsAfterLastNewline sourceLeading
+            let parentRelativeColumn :=
               shiftColumnByAnchor state.sourceLayoutBaseColumn
                 state.outputLayoutBaseColumn sourceColumn
+            (sourceColumn, parentRelativeColumn)
       else
         none
+    let parentRelativeOriginalColumn? := sourceLayoutStart?.map (·.2)
     let state :=
-      match child.tokens.toList, state.pendingIndent?, parentRelativeOriginalColumn? with
-      | [token], some desiredIndent, some targetColumn =>
-          if token.lexeme.startsWith "\""
-              && desiredIndent + token.lexeme.length > state.options.lineWidth
-              && targetColumn + token.lexeme.length <= state.options.lineWidth then
-            { state with pendingIndent? := some targetColumn }
-          else
-            state
-      | _, _, _ => state
+      match state.pendingIndent?, parentRelativeOriginalColumn? with
+      | some desiredIndent, some targetColumn =>
+          match child.singleToken? with
+          | some token =>
+              if desiredIndent + token.lexeme.length > state.options.lineWidth
+                  && targetColumn + token.lexeme.length <= state.options.lineWidth then
+                { state with pendingIndent? := some targetColumn }
+              else
+                state
+          | none => state
+      | _, _ => state
     let scope := ChildRenderScope.capture state
     let childBase :=
       if inheritsBase then
@@ -2139,22 +2135,10 @@ mutual
       else
         state.segmentStartBaseFor childSegment
     let (sourceLayoutBaseColumn, outputLayoutBaseColumn) :=
-      let startsOnNewSourceLine :=
-        state.lastToken?.isNone || state.originalTreeStartsOnNewSourceLine child
-      if startsOnNewSourceLine then
-        match SyntaxTree.Tree.firstToken? child with
-        | some _ =>
-            let sourceColumn := state.originalTreeColumnAfterLineBreak child
-            let outputColumn :=
-              match state.pendingIndent? with
-              | some pendingIndent => pendingIndent
-              | none =>
-                  shiftColumnByAnchor state.sourceLayoutBaseColumn
-                    state.outputLayoutBaseColumn sourceColumn
-            (sourceColumn, outputColumn)
-        | none => (state.sourceLayoutBaseColumn, state.outputLayoutBaseColumn)
-      else
-        (state.sourceLayoutBaseColumn, state.outputLayoutBaseColumn)
+      match sourceLayoutStart? with
+      | some (sourceColumn, _) =>
+          (sourceColumn, state.segmentStartColumn childSegment)
+      | none => (state.sourceLayoutBaseColumn, state.outputLayoutBaseColumn)
     let childState :=
       {
         state with
@@ -2180,7 +2164,7 @@ mutual
         childState.emitOriginalTree child
           (respectPendingIndent :=
             isProofTree child
-            || !state.originalTreeStartsOnNewSourceLine child
+            || !startsOnNewSourceLine
             || isProofLemmaCommand child
             || state.pendingCommandBoundary?.isSome)
       else
@@ -2199,7 +2183,10 @@ mutual
             preferCandidateWithFewerOverflows childState rendered original
     let rendered :=
       if emitOriginal
-          || !LineBreakRules.canRetainParentRelativeOriginalLayoutForOverflow child then
+          || rendered.introducedAtomicOverflowCount
+              == childState.introducedAtomicOverflowCount
+          || !LineBreakRules.canRetainParentRelativeOriginalLayoutForOverflow
+                childContext child then
         rendered
       else
         match parentRelativeOriginalColumn? with
@@ -2212,20 +2199,24 @@ mutual
             preferCandidateWithFewerOverflows childState rendered original
     let rendered :=
       if emitOriginal
+          || rendered.introducedAtomicOverflowCount
+              == childState.introducedAtomicOverflowCount
           || !LineBreakRules.canRetainOriginalLayoutForOverflow childContext child then
         rendered
       else
-        let original :=
-          childState.emitOriginalTree child
-            (respectPendingIndent := true)
-            (rebaseSourceTextTargetColumn? :=
-              SyntaxTree.Tree.firstToken? child
-              |>.map
-                  fun _ =>
-                    childState.originalTreeColumnAfterLineBreak child
-                    |> shiftColumnByAnchor childState.sourceLayoutBaseColumn
-                        childState.outputLayoutBaseColumn)
-        preferCandidateWithFewerOverflows childState rendered original
+        let targetColumn? :=
+          sourceLayoutStart?.map
+            fun (sourceColumn, _) =>
+              shiftColumnByAnchor childState.sourceLayoutBaseColumn
+                childState.outputLayoutBaseColumn sourceColumn
+        if targetColumn? == parentRelativeOriginalColumn? then
+          rendered
+        else
+          let original :=
+            childState.emitOriginalTree child
+              (respectPendingIndent := true)
+              (rebaseSourceTextTargetColumn? := targetColumn?)
+          preferCandidateWithFewerOverflows childState rendered original
     scope.restore rendered
 
   partial def renderChildren (state : RenderState) (segment : LineBreakRules.Segment)
