@@ -3092,14 +3092,10 @@ def assertCliSelfFormattingRegressions (env : Lean.Environment) : IO Unit := do
     ++ "  match action with\n"
     ++ "  | .help => IO.println usage;\n"
     ++ "      pure 0\n"
-  let semicolonSequenceExpected :=
-    "def runMain := do\n"
-    ++ "  match action with\n"
-    ++ "  | .help => IO.println usage; pure 0\n"
   let semicolonSequenceFormatted ←
     Formatter.formatSourceWithEnv env semicolonSequence "semicolon-sequence.lean"
-  assertEq "fitting semicolon sequence stays on one line"
-    semicolonSequenceExpected semicolonSequenceFormatted
+  assertEq "semicolon sequence keeps its parsed statement boundary"
+    semicolonSequence semicolonSequenceFormatted
 
   let sourceBrokenIf :=
     "def parse arg :=\n"
@@ -6134,6 +6130,26 @@ def assertFormattingExceptionChecks (env : Lean.Environment) : IO Unit := do
     (← codePreservedIgnoringWhitespace env
         "def value := f <| { invFun := g }\n"
         "def value := f <| {\n  invFun := g\n}\n")
+  let fallbackSource :=
+    "def fallbackLayout : IO Nat := do\n"
+    ++ "  let some value := some 1 | failure\n"
+    ++ "  return value\n"
+  let absorbedContinuation :=
+    "def fallbackLayout : IO Nat := do\n"
+    ++ "  let some value := some 1 |\n"
+    ++ "    failure\n"
+    ++ "    return value\n"
+  let fallbackSourceModule ←
+    SyntaxTree.parseModuleStringWithEnv env fallbackSource "fallback-layout-source.lean"
+  let absorbedContinuationModule ←
+    SyntaxTree.parseModuleStringWithEnv env absorbedContinuation
+      "fallback-layout-absorbed.lean"
+  assertTrue "fallback layout example keeps the same code fragments"
+    (Formatter.Diagnostics.preservationFragments fallbackSourceModule
+      == Formatter.Diagnostics.preservationFragments absorbedContinuationModule)
+  assertTrue "fallback layout syntax change is not preservation"
+    (!Formatter.Diagnostics.preservesCodeIgnoringWhitespace
+        fallbackSourceModule absorbedContinuationModule)
   assertTrue "module-doc whitespace is preserved" (!(← codePreservedIgnoringWhitespace env
           "namespace X\n/-! keep  spaces -/\nend X\n"
           "namespace X\n/-!\n  keep  spaces -/\nend X\n"))

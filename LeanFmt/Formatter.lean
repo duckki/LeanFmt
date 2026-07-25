@@ -170,15 +170,18 @@ partial def convergeModuleWithEnv
         let formattedModule ← parseModuleWithEnv env formatted fileName
         let sourceFragments := Diagnostics.preservationFragments moduleTree
         let formattedFragments := Diagnostics.preservationFragments formattedModule
-        if sourceFragments == formattedFragments then
+        if Diagnostics.preservesCodeIgnoringWhitespace moduleTree formattedModule then
           convergeModuleWithEnv env formattedModule fileName (passesRemaining - 1)
             (source :: seen) fallback options
-        else
+        else if sourceFragments != formattedFragments then
           let mismatch :=
             Diagnostics.firstPreservationFragmentMismatch?
               sourceFragments formattedFragments
           warnConvergenceFallback fileName
             s!"an intermediate result dropped or changed source tokens: {repr mismatch}"
+          pure { formatted := fallback, fellBack := true }
+        else
+          warnConvergenceFallback fileName "an intermediate result changed parsed syntax"
           pure { formatted := fallback, fellBack := true }
       catch _ =>
         warnConvergenceFallback fileName "an intermediate result did not parse"
