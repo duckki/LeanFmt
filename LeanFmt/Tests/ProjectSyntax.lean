@@ -9,3 +9,5 @@ syntax bigOpBinders := bigOpBinder
 syntax (name := bigsum) "∑ " bigOpBinders ", " term:67 : term
 
 end BigOperators
+
+syntax (name := projectIndexedSup) "⨆ " ident " : " term ", " term : term

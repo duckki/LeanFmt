@@ -608,6 +608,25 @@ def rawKindIsQuantifier (kind : Lean.SyntaxNodeKind) : Bool :=
   || kind == `Lean.«term∃__,_»
   || kind == `«term∃_,_»
 
+def binderOperatorLexeme (lexeme : String) : Bool :=
+  ["∀", "∃", "⨆", "⨅", "∑", "∏", "∑'", "∏'", "𝔼", "∫", "∮"].contains lexeme
+
+def treeHasBinderBodySeparator (tree : SyntaxTree.Tree) : Bool :=
+  let segment := Segment.ofTree tree
+  match (nonemptyChildIndexes segment).getLast? with
+  | some bodyIndex =>
+      segment.indexes.any
+        fun index => index < bodyIndex && childStartsWithLexeme segment index ","
+  | none => false
+
+def treeIsBinderOperatorTerm (tree : SyntaxTree.Tree) : Bool :=
+  match tree with
+  | .node (.raw kind) _ =>
+      rawKindIsQuantifier kind
+      || ((treeFirstLexeme? tree).any binderOperatorLexeme
+          && treeHasBinderBodySeparator tree)
+  | _ => false
+
 def quantifierBinderSequence (context : RuleContext) : Bool :=
   match context.ancestors with
   | parent :: rest =>
@@ -2183,9 +2202,6 @@ def matchExpressionBreaks (_context : RuleContext) (segment : Segment)
       | none => []
   | none => []
 
-def quantifierKind (kind : Lean.SyntaxNodeKind) : Bool :=
-  rawKindIsQuantifier kind
-
 def quantifierBodyIndex? (segment : Segment) : Option Nat :=
   (segment.parentIndexes.filter
     fun index =>
@@ -2194,23 +2210,16 @@ def quantifierBodyIndex? (segment : Segment) : Option Nat :=
       | none => false).getLast?
 
 def quantifierBreaks (_context : RuleContext) (segment : Segment) : List BreakPoint :=
-  match segment.parent with
-  | .node (.raw kind) _ =>
-      match quantifierBodyIndex? segment with
-      | some bodyIndex =>
-          if quantifierKind kind then
-            let bodyIsSameQuantifier :=
-              match segment.child? bodyIndex with
-              | some (.node (.raw childKind) _) => childKind == kind
-              | _ => false
-            match boundaryBreak? segment bodyIndex
-                    (if bodyIsSameQuantifier then 0 else 1) with
-            | some breakPoint => [breakPoint]
-            | none => []
-          else
-            []
+  match quantifierBodyIndex? segment with
+  | some bodyIndex =>
+      let bodyIsSameQuantifier :=
+        match segment.parent, segment.child? bodyIndex with
+        | .node (.raw kind) _, some (.node (.raw childKind) _) => childKind == kind
+        | _, _ => false
+      match boundaryBreak? segment bodyIndex (if bodyIsSameQuantifier then 0 else 1) with
+      | some breakPoint => [breakPoint]
       | none => []
-  | _ => []
+  | none => []
 
 def basicFunBreaks (_context : RuleContext) (segment : Segment) : List BreakPoint :=
   match boundaryBreak? segment 3 1 with
@@ -2397,10 +2406,8 @@ def frameIsTheoremContext (frame : Frame) : Bool :=
   | _ => false
 
 def frameIsQuantifierBody (frame : Frame) : Bool :=
-  match frame.segment.parent with
-  | .node (.raw kind) _ =>
-      quantifierKind kind && quantifierBodyIndex? frame.segment == some frame.childIndex
-  | _ => false
+  treeIsBinderOperatorTerm frame.segment.parent
+  && quantifierBodyIndex? frame.segment == some frame.childIndex
 
 def frameIsLogicalContext (frame : Frame) : Bool :=
   frameIsTheoremContext frame
@@ -3358,7 +3365,6 @@ def ruleFor : SyntaxTree.Tree → Option LineBreakRule
   | .node (.raw `«term_→ₐ[_]_») _ => some defaultRule
   | .node (.raw `«term_≡_[MOD_]») _ => some defaultRule
   | .node (.raw `«term_≡_[ZMOD_]») _ => some defaultRule
-  | .node (.raw `«term⨆_,_») _ => some defaultRule
   | .node (.raw `PiNotation.piNotation) _ => some defaultRule
   | .node (.raw `coeFunNotation) _ => some defaultRule
   | .node (.raw `Mathlib.Meta.setBuilder) _ => some defaultRule
@@ -3617,6 +3623,8 @@ def ruleFor : SyntaxTree.Tree → Option LineBreakRule
       if isSymmetricDelimitedGeneratedTerm kind children
           || isGeneratedPostfixTerm kind children then
         some transparentRule
+      else if treeIsBinderOperatorTerm (.node (.raw kind) children) then
+        some quantifierRule
       else if isGeneratedLocalNotationKind kind
               || isGeneratedMathlibCrossRefKind kind then
         some defaultRule

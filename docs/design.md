@@ -981,6 +981,15 @@ one untyped binder sequence.
 Source breaks between fitting adjacent quantifiers are not preserved merely
 because they appeared in the input.
 
+Binder operators such as `⨆`, `⨅`, `∑`, and `∫` use the same comma/body
+layout. This rule is recognized from the operator token and syntax shape, so
+generated notation node names do not need individual mappings.
+
+```lean
+⨆ p : Index,
+  ∑ i ∈ Finset.range p.size, value p i
+```
+
 A lambda breaks after `=>` and indents its body one level:
 
 ```lean

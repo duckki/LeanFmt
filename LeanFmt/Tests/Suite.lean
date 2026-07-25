@@ -5112,6 +5112,20 @@ def assertBreakNeverPrecedesTrailingSeparator (env : Lean.Environment) : IO Unit
       { lineWidth := 55 }
   assertEq "line breaks are not inserted immediately before separators" expected formatted
 
+def assertGeneratedBinderOperatorBreaksBeforeBody (_env : Lean.Environment)
+    : IO Unit := do
+  let env ← SyntaxTree.importEnvironment #[{ module := `LeanFmt.Tests.ProjectSyntax }]
+  let source :=
+    "def generatedBinderOperator := ⨆ value : SomeTypeWithALongName, longBodyFunction value anotherArgument\n"
+  let expected :=
+    "def generatedBinderOperator :=\n"
+    ++ "  ⨆ value : SomeTypeWithALongName,\n"
+    ++ "    longBodyFunction value anotherArgument\n"
+  let formatted ←
+    Formatter.formatSourceWithEnv env source "generated-binder-operator.lean"
+      { lineWidth := 60 }
+  assertEq "generated binder operator breaks before its body" expected formatted
+
 def assertQuantifierIdentifierSequenceFlows (env : Lean.Environment) : IO Unit := do
   let source :=
     "def quantifiedPrefixes : Prop := ∃ leftPrefixFields leftPrefixErrors "
@@ -7830,6 +7844,7 @@ def runControlFlowTests (env : Lean.Environment) : IO Unit := do
   assertLambdaBinderSequenceBreaksBetweenBinders env
   assertQuantifierBreaksAfterComma env
   assertBreakNeverPrecedesTrailingSeparator env
+  assertGeneratedBinderOperatorBreaksBeforeBody env
   assertQuantifierIdentifierSequenceFlows env
   assertArrowQuantifierKeepsQuantifierOnArrowLine env
   assertArrowMatchKeepsMatchOnArrowLine env
