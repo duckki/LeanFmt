@@ -604,6 +604,8 @@ def singletonArrayItemWrapper (context : RuleContext) (segment : Segment) : Bool
 def rawKindIsQuantifier (kind : Lean.SyntaxNodeKind) : Bool :=
   kind == `Lean.Parser.Term.forall
   || kind == `Lean.Parser.Term.exists
+  || kind == `Lean.«term∀__,_»
+  || kind == `Lean.«term∃__,_»
   || kind == `«term∃_,_»
 
 def quantifierBinderSequence (context : RuleContext) : Bool :=
@@ -3251,8 +3253,8 @@ def ruleFor : SyntaxTree.Tree → Option LineBreakRule
   | .node (.raw `Lean.calcSteps) _ => some defaultRule
   | .node (.raw `Lean.calcFirstStep) _ => some defaultRule
   | .node (.raw `Lean.modCast) _ => some defaultRule
-  | .node (.raw `Lean.«term∀__,_») _ => some defaultRule
-  | .node (.raw `Lean.«term∃__,_») _ => some defaultRule
+  | .node (.raw `Lean.«term∀__,_») _ => some quantifierRule
+  | .node (.raw `Lean.«term∃__,_») _ => some quantifierRule
   | .node (.raw `Lean.«binderPred∈_») _ => some binderPredicateRule
   | .node (.raw `Lean.«binderPred<_») _ => some binderPredicateRule
   | .node (.raw `Lean.«binderPred>_») _ => some binderPredicateRule

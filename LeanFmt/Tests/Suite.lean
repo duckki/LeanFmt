@@ -5105,8 +5105,8 @@ def assertBreakNeverPrecedesTrailingSeparator (env : Lean.Environment) : IO Unit
     "def separatorBreak (values : List Nat) : Prop :=\n"
     ++ "  ∀ value ∈\n"
     ++ "    values.filter\n"
-    ++ "      (fun candidate => candidate = candidate), value\n"
-    ++ "                                                = value\n"
+    ++ "      (fun candidate => candidate = candidate),\n"
+    ++ "    value = value\n"
   let formatted ←
     Formatter.formatSourceWithEnv env source "trailing-separator-break.lean"
       { lineWidth := 55 }
