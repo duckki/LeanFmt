@@ -2746,6 +2746,26 @@ def assertGeneratedPostfixMarkersStayAttached (env : Lean.Environment) : IO Unit
   assertEq "generated percent postfix marker formatting is idempotent"
     percentResult.formatted percentFormattedAgain
 
+  let parenthesizedSource :=
+    "syntax \"q\" \"(\" term \")\" : term\n"
+    ++ "\n"
+    ++ "def generatedParenthesizedPostfixMarkerStaysAttached :=\n"
+    ++ "  return .done <| mkSetLiteralQ q(VeryLongTypeConstructorName alphaArgument betaArgument) <| remainingValue\n"
+  let parenthesizedResult ←
+    Formatter.formatSourceWithEnvDetailed env parenthesizedSource
+      "generated-parenthesized-postfix-marker.lean"
+  assertTrue "generated parenthesized postfix marker does not change code"
+    (!parenthesizedResult.fellBack)
+  assertTextContains "generated parenthesized postfix marker stays attached"
+    parenthesizedResult.formatted "q("
+  assertTextLacks "generated parenthesized postfix marker is not split"
+    parenthesizedResult.formatted "q\n"
+  let parenthesizedFormattedAgain ←
+    Formatter.formatSourceWithEnv env parenthesizedResult.formatted
+      "generated-parenthesized-postfix-marker-formatted.lean"
+  assertEq "generated parenthesized postfix marker formatting is idempotent"
+    parenthesizedResult.formatted parenthesizedFormattedAgain
+
 def assertNotExistsIdentifiersFlow (env : Lean.Environment) : IO Unit := do
   let source :=
     "assert_not_exists FirstLongDeclarationName SecondLongDeclarationName ThirdLongDeclarationName FourthLongDeclarationName FifthLongDeclarationName\n"
