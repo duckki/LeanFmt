@@ -205,6 +205,7 @@ def grandparentIsRawKind (context : RuleContext) (kind : Lean.SyntaxNodeKind) : 
 structure LineBreakRule where
   name : String
   atomic : Bool := false
+  preferChildLayouts : RuleContext → Segment → Bool := fun _ _ => false
   useExistingBreaks : RuleContext → Segment → Bool := fun _ _ => false
   mandatory : RuleContext → Segment → Bool := fun _ _ => false
   flow : RuleContext → Segment → Bool := fun _ _ => false
@@ -1945,6 +1946,10 @@ def unifConstraintsRule : LineBreakRule :=
 def structureRule : LineBreakRule :=
   {
     name := "structure"
+    preferChildLayouts :=
+      fun context segment =>
+        (breakBeforeLexeme? segment "extends" 2).isSome
+        && (derivingBreaks context segment).isEmpty
     useExistingBreaks := fun _ _ => true
     flow := fun context segment => !(structureBreaks context segment).isEmpty
     inheritBase :=

@@ -1927,6 +1927,22 @@ mutual
             formattedWhitespaceKeepsSourceBreakAt state.source segment breakPoint.index
       if probe.acceptedForRule isFlow breakPoints && !hasRetainedSourceBreak then
         state.commitLayoutProbe probe
+      else if rule.preferChildLayouts state.context segment
+              && !hasRetainedSourceBreak then
+        let childLayout := renderChildren state segment
+        let prefixStaysFlat :=
+          match breakPoints.head? with
+          | some breakPoint =>
+              let prefixStop := min segment.stop (breakPoint.index + 1)
+              let prefixSegment := segment.slice segment.start prefixStop
+              let prefixRendered :=
+                renderSegmentRange state segment segment.start prefixStop
+              !renderedSegmentIsMultiline state prefixRendered prefixSegment
+          | none => true
+        if prefixStaysFlat && renderedCandidateFits state childLayout then
+          childLayout
+        else
+          renderAfterFlatFailure state segment rule breakPoints isFlow
       else
         renderAfterFlatFailure state segment rule breakPoints isFlow
 
@@ -1973,6 +1989,21 @@ mutual
           let probe := measureLayout state segment false
           if probe.acceptedForRule isFlow breakPoints then
             state.commitLayoutProbe probe
+          else if rule.preferChildLayouts state.context segment && !hasSourceBreaks then
+            let childLayout := renderChildren state segment
+            let prefixStaysFlat :=
+              match breakPoints.head? with
+              | some breakPoint =>
+                  let prefixStop := min segment.stop (breakPoint.index + 1)
+                  let prefixSegment := segment.slice segment.start prefixStop
+                  let prefixRendered :=
+                    renderSegmentRange state segment segment.start prefixStop
+                  !renderedSegmentIsMultiline state prefixRendered prefixSegment
+              | none => true
+            if prefixStaysFlat && renderedCandidateFits state childLayout then
+              childLayout
+            else
+              renderAfterFlatFailure state segment rule breakPoints isFlow
           else
             renderAfterFlatFailure state segment rule breakPoints isFlow
 
