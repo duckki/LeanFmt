@@ -299,6 +299,7 @@ inductive StartAlignment where
 structure LineBreakRule where
   name : String
   atomic : Bool := false
+  preferChildLayouts : RuleContext -> Segment -> Bool := fun _ _ => false
   useExistingBreaks : RuleContext -> Segment -> Bool := fun _ _ => false
   mandatory : RuleContext -> Segment -> Bool := fun _ _ => false
   flow : RuleContext -> Segment -> Bool := fun _ _ => false
@@ -345,6 +346,10 @@ Rule methods mean:
 - `atomic`: the segment is always rendered flat internally. Its parent still measures
   its complete width and may break before it. Interpolated strings use this so `s!` and
   interpolation contents cannot split independently.
+- `preferChildLayouts`: after the complete flat form fails, try the children's legal
+  layouts before activating this segment's own break points. Structure headers use this
+  only when a fitting `extends` child can remain flat; mandatory field breaks then do
+  not force an otherwise fitting header to break.
 - `mandatory`: returned breaks are structural and are applied without a flat attempt.
 - `flow`: returned breaks are candidates; flat layout is tried first, then accepted
   source breaks, then computed wrapping. Structure headers use flow so a mandatory
@@ -445,9 +450,11 @@ For each segment:
    For non-flow rules, any accepted source break applies all rule breaks. For flow rules,
    try the accepted source-break candidate before computed wrapping.
 9. Try flat rendering when allowed.
-10. For flow rules, try accepted source breaks after flat failure, then computed flow
+10. For rules that prefer child layouts, try the recursively rendered children when
+    the rule-specific prefix remains flat and the complete child layout fits.
+11. For flow rules, try accepted source breaks after flat failure, then computed flow
    wrapping.
-11. For non-flow rules with break points, apply all returned breaks simultaneously.
+12. For non-flow rules with break points, apply all returned breaks simultaneously.
 
 Fit measurement is speculative. The renderer emits into an empty probe while retaining
 the current line and pending boundary state, then records two facts from that one result:
@@ -675,8 +682,24 @@ extension-owned DSL whose braces may carry domain-specific structure.
 ProofWidgets JSX remains an original-source island, but its complete relative indentation
 is rebased when the surrounding formatted layout moves it; leaving a JSX tag at its old
 absolute column can change which tokens Lean's layout parser assigns to the element.
+When the formatter-selected rebase would newly overflow an atomic JSX line, the renderer
+also measures the source layout translated only by its parent layout's movement and uses
+that candidate when it has fewer overflows. The same parent-relative comparison applies
+to `do` bodies: it can avoid shifting atomic strings and comments merely to satisfy a
+preferred indentation, while preserving the body's offside relationships. Rebased
+original text is reconstructed token by token so whitespace inside string and other
+atomic token lexemes is never changed.
 An original-source island whose own source slice is single-line still participates in
 ordinary flat-fit checks, so inline extension syntax does not force its parent to break.
+Syntax-authoring commands (`syntax`, `macro_rules`, `elab`, and `elab_rules`), Batteries
+alias and library-note commands, and other explicitly cataloged extension-owned commands
+are layout islands for the same reason.
+
+If a quoted single-token value already starts on a source line and moving it to the
+preferred indentation would create an otherwise avoidable overflow, the renderer keeps
+the source column translated by the parent layout's movement. Multiline atomic tokens and
+unwrappable comment trivia use the analogous source-fitting column check. Structural
+indentation of the following code remains unchanged.
 
 ## Diagnostics and formatter exceptions
 

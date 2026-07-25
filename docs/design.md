@@ -524,6 +524,16 @@ where
   inner : Nat := 0
 ```
 
+For a nested declaration whose value already begins on the next source line,
+the assignment boundary is tried before splitting its fitting signature:
+
+```lean
+def outer : Nat := helper 0
+where
+  helper (n : Nat) : Nat → Nat :=
+    computeLongResult n anotherArgument
+```
+
 Termination clauses follow the same ownership rule. `termination_by` and
 `decreasing_by` return to the base column of the declaration they modify. A
 termination measure may wrap one level beneath its keyword. When a mutual
@@ -608,6 +618,13 @@ line:
 
 ```lean
 structure Candidate extends CandidateKey where
+  occurrenceCount : Nat
+```
+
+This also applies to fitting parameterized headers:
+
+```lean
+structure ParameterizedCandidate (α : Type) extends CandidateKey α where
   occurrenceCount : Nat
 ```
 
