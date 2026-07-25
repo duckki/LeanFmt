@@ -5930,6 +5930,23 @@ def assertEnvironmentCacheBound (env : Lean.Environment) : IO Unit := do
   disabledCache.rememberEnvironment "ignored" env
   assertTrue "disabled environment cache remains empty" (← disabledEntries.get).isEmpty
 
+def assertParserReservoirIsolatesExactImports : IO Unit := do
+  let projectImports : Array Lean.Import := #[{ module := `LeanFmt.Tests.ProjectSyntax }]
+  let reservoir : LeanFmt.Driver.ParserEnvironmentReservoir :=
+    { environment :=
+        ← SyntaxTree.importEnvironment projectImports }
+  let projectEnv ← reservoir.environmentForImports projectImports
+  let source := "#check project_syntax\n"
+  let projectModule ←
+    SyntaxTree.parseModuleStringWithEnv projectEnv source "project-parser-reservoir.lean"
+  assertTrue "shared module reservoir includes exact imported parser syntax"
+    (projectModule.tree.containsNodeKind (.raw `projectSyntax))
+  let leanEnv ← reservoir.environmentForImports #[{ module := `Lean }]
+  let leanModule ←
+    SyntaxTree.parseModuleStringWithEnv leanEnv source "lean-parser-reservoir.lean"
+  assertTrue "shared module reservoir excludes syntax outside the exact imports"
+    (!leanModule.tree.containsNodeKind (.raw `projectSyntax))
+
 def assertDefaultEnvironmentPartition (env : Lean.Environment) : IO Unit := do
   IO.FS.withTempDir
     fun root =>
@@ -7806,6 +7823,7 @@ def runCliAndArchitectureTests (env : Lean.Environment) : IO Unit := do
     { default := env, maxEntries := 1, entries }
   assertCliParsing
   assertEnvironmentCacheBound env
+  assertParserReservoirIsolatesExactImports
   assertDefaultEnvironmentPartition env
   assertWorkersUseInputLakeRoot
   assertImportFilesGroupByHeader

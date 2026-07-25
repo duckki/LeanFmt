@@ -1182,9 +1182,9 @@ def extractTree
 
 /-! ## Lean module parsing -/
 
-def importEnvironment (imports : Array Import) : IO Environment := do
+def importEnvironment (imports : Array Import) (leakEnv := false) : IO Environment := do
   unsafe enableInitializersExecution
-  importModules (loadExts := true) imports {} 0
+  importModules (leakEnv := leakEnv) (loadExts := true) imports {} 0
 
 def importLeanEnvironment : IO Environment := do
   importEnvironment #[{ module := `Lean }]

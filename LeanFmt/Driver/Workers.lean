@@ -341,7 +341,7 @@ def runMixedWorkerBatches
       pure 0
     else
       profileLine options
-        s!"import-groups: files={importFiles.length} strategy=exact-per-file elapsed=0ms"
+        s!"import-groups: files={importFiles.length} strategy=shared-modules-exact-parser elapsed=0ms"
       let exactGroups ← exactImportFileGroups importFiles
       let orderedFiles := exactGroups.flatMap (·.files)
       runExactEnvironmentWorkerBatches options cwd? orderedFiles
