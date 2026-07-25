@@ -296,20 +296,20 @@ def isDoLetFallbackKind (kind : Lean.SyntaxNodeKind) : Bool :=
   || kind == `Lean.Parser.Term.doLet
   || kind == `Lean.Parser.Term.doLetElse
 
-def frameSelectsDoLetElseFallback (frame : Frame) : Bool :=
+def frameSelectsDoLetFallback (frame : Frame) : Bool :=
   frame.rawKind?.any isDoLetFallbackKind
   && (List.range frame.childIndex).any
       fun index =>
         childStartsWithLexeme frame.segment index "|"
 
-def inDoLetElseFallback (context : RuleContext) : Bool :=
-  context.ancestors.head?.any frameSelectsDoLetElseFallback
+def inDoLetFallback (context : RuleContext) : Bool :=
+  context.ancestors.head?.any frameSelectsDoLetFallback
 
-def wrappedByDoLetElseFallbackSequence (context : RuleContext) : Bool :=
+def wrappedByDoLetFallbackSequence (context : RuleContext) : Bool :=
   match context.ancestors with
   | parent :: grandparent :: _ =>
       parent.rawKind? == some `Lean.Parser.Term.doSeqIndent
-      && frameSelectsDoLetElseFallback grandparent
+      && frameSelectsDoLetFallback grandparent
   | _ => false
 
 def previousContentIndex? (segment : Segment) (index : Nat) : Option Nat :=
@@ -695,7 +695,7 @@ def nullInheritBase (context : RuleContext) (segment : Segment) : Bool :=
   || parentIsRawKind context `Lean.Parser.Term.letRecDecls
   || parentIsRawKind context `Lean.Parser.Term.letRecDecl
   || assertNotExistsIdentifierList context
-  || wrappedByDoLetElseFallbackSequence context
+  || wrappedByDoLetFallbackSequence context
 
 def attachedBodyStart (segment : Segment) (index : Nat) : Bool :=
   childStartsWithLexeme segment index "do" || childStartsWithLexeme segment index "by"
@@ -710,8 +710,8 @@ partial def treeContainsDoLetFallback : SyntaxTree.Tree → Bool
 
 def canRetainOriginalLayoutForOverflow (context : RuleContext) : SyntaxTree.Tree → Bool
   | tree@(.node (.raw `Lean.Parser.Term.doSeqIndent) _) =>
-      !inDoLetElseFallback context
-      && !wrappedByDoLetElseFallbackSequence context
+      !inDoLetFallback context
+      && !wrappedByDoLetFallbackSequence context
       && !treeContainsDoLetFallback tree
   | _ => false
 
@@ -1775,7 +1775,7 @@ def doLetExprRule : LineBreakRule :=
 def doSeqIndentRule : LineBreakRule :=
   {
     name := "doSeqIndent"
-    inheritBase := fun context _ => inDoLetElseFallback context
+    inheritBase := fun context _ => inDoLetFallback context
   }
 
 def doIdDeclRule : LineBreakRule :=
