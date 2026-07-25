@@ -5470,6 +5470,25 @@ def assertTypedStructInstanceBreaksBalanced (env : Lean.Environment) : IO Unit :
   assertEq "typed structure constructor breaks braces and keeps ascribed type together"
     expected formatted
 
+def assertStructInstanceFieldEquationsUseFieldBase (env : Lean.Environment)
+    : IO Unit := do
+  let source :=
+    "structure EquationField where\n"
+    ++ "  evaluate : Nat → Nat\n"
+    ++ "\n"
+    ++ "def equationFieldInstance : EquationField where\n"
+    ++ "  evaluate | 0 => 0\n"
+  let expected :=
+    "structure EquationField where\n"
+    ++ "  evaluate : Nat → Nat\n"
+    ++ "\n"
+    ++ "def equationFieldInstance : EquationField where\n"
+    ++ "  evaluate\n"
+    ++ "    | 0 => 0\n"
+  let formatted ←
+    Formatter.formatSourceWithEnv env source "struct-instance-field-equations.lean"
+  assertEq "structure field equations use the field base" expected formatted
+
 def assertStructInstanceFieldBindersPreserved (env : Lean.Environment) : IO Unit := do
   let source :=
     "instance : Coe Nat Nat where\n"
@@ -7726,6 +7745,7 @@ def runCollectionAndDeclarationTests (env : Lean.Environment) : IO Unit := do
   assertStructInstanceFieldsBreakMandatoryBetweenFields env
   assertStructInstanceFieldsBreakBalanced env
   assertTypedStructInstanceBreaksBalanced env
+  assertStructInstanceFieldEquationsUseFieldBase env
   assertStructInstanceFieldBindersPreserved env
   assertStructUpdateWithFieldsBreaks env
   assertTupleBreakBalanced env

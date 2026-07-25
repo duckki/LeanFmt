@@ -972,17 +972,24 @@ def structInstFieldBreaks (context : RuleContext) (segment : Segment) : List Bre
   else
     []
 
-def structInstFieldValueBreaks (_context : RuleContext) (segment : Segment)
+def structInstFieldBodyBreaks (_context : RuleContext) (segment : Segment)
     : List BreakPoint :=
-  match segment.indexes.find? fun index => childStartsWithLexeme segment index ":=" with
-  | some assignmentIndex =>
-      match (nonemptyChildIndexes segment).find? fun index => assignmentIndex < index with
-      | some valueIndex =>
-          match boundaryBreak? segment valueIndex 1 with
-          | some breakPoint => [breakPoint]
-          | none => []
-      | none => []
-  | none => []
+  let assignmentBreak :=
+    match segment.indexes.find? fun index => childStartsWithLexeme segment index ":=" with
+    | some assignmentIndex =>
+        match (nonemptyChildIndexes segment).find?
+                fun index => assignmentIndex < index with
+        | some valueIndex => [boundaryBreak? segment valueIndex 1].filterMap id
+        | none => []
+    | none => []
+  let equationBreak :=
+    match segment.indexes.find?
+            fun index =>
+              segment.child? index
+              |>.any (treeContainsRawKind `Lean.Parser.Term.structInstFieldEqns) with
+    | some equationIndex => [boundaryBreak? segment equationIndex 1].filterMap id
+    | none => []
+  assignmentBreak ++ equationBreak
 
 def delimitedItemIndexes (segment : Segment) : List Nat :=
   match nonemptyChildIndexes segment with
@@ -2111,7 +2118,7 @@ def structInstFieldRule : LineBreakRule :=
   {
     name := "structInstField"
     useExistingBreaks := fun _ _ => true
-    breakPoints := structInstFieldValueBreaks
+    breakPoints := structInstFieldBodyBreaks
   }
 
 def structFieldsRule : LineBreakRule :=
