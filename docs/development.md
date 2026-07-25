@@ -151,8 +151,10 @@ output. A format fallback has no candidate and keeps the source unchanged. The
 formatter also processes the remaining files, then prints counts for every exception
 kind at the end.
 
-`--check-idempotent` remains separate because it performs another complete formatting
-pass. Non-idempotence is a hard exception and is included in the final exception counts.
+`--check-idempotent` remains separate because changed output requires another complete
+formatting pass. Output that already equals its source is a fixed point and does not need
+to be recomputed. Non-idempotence is a hard exception and is included in the final
+exception counts.
 
 When `--check` is combined with either diagnostic option, it becomes a dry-run switch:
 files are not rewritten, but merely needing formatting does not make the command fail.
@@ -435,8 +437,8 @@ scripts/validate-external-projects.sh \
   mathlib=$HOME/work/lean-libs/mathlib4
 ```
 
-Formatter execution remains serial even though the CLI isolates work in worker
-processes. Each batch writes its formatter output to
+Formatter execution remains serial even though the CLI isolates imported-syntax work in
+a worker process. Each batch writes its formatter output to
 `.scratch/external-validation/logs/PROJECT/batch-N.log` and updates the adjacent
 `state` file with the running, passed, or failed batch, so interrupted runs can
 be diagnosed and resumed without overlapping formatter invocations.
@@ -461,8 +463,11 @@ the corresponding existing clone there. Set
 `LEANFMT_VALIDATION_FORMATTER_BATCH_SIZE` passes `--worker-batch-size` to
 LeanFmt to override its automatic worker batch choice. Multi-file package formatter
 invocations first format files that parse in LeanFmt's default Lean environment, then
-group files that need imported syntax by import header so each imported environment is
-reused within a short-lived worker process. Set
+combine the distinct header imports of files that need imported syntax in one
+short-lived worker. This avoids selecting a costly umbrella module merely because its
+import closure covers every source file. Supplying a worker batch size instead groups
+files under covering environments and processes bounded batches, trading more
+environment loads for lower peak memory. Set
 `LEANFMT_VALIDATION_LINE_WIDTH=N` to pass a project-specific line width to every
 formatter invocation.
 

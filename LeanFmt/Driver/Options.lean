@@ -13,6 +13,7 @@ structure Options where
   recursive : Bool := false
   includeHidden : Bool := false
   worker : Bool := false
+  workerEnvironmentFromInputs : Bool := false
   workerEnvironment? : Option FilePath := none
   formatterOptions : Formatter.Options := {}
   workerBatchSize? : Option Nat := none

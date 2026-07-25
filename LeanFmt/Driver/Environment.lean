@@ -151,12 +151,27 @@ def EnvironmentCache.environmentForSourceProfiled
               s!"{fileName}: environment.normalize={normalizeMs}ms default-parse={defaultParseMs}ms failed import-header={headerMs}ms import-env={importMs}ms cache=miss remember={rememberMs}ms"
             pure env
 
-def environmentForWorkerEnvironmentFile
-    (cache : EnvironmentCache) (_options : Options) (path : FilePath)
+def appendDistinctImports (collected imports : Array Lean.Import) : Array Lean.Import :=
+  imports.foldl
+    (fun collected importDecl =>
+      if collected.any fun existing => importKey existing == importKey importDecl then
+        collected
+      else
+        collected.push importDecl)
+    collected
+
+def importsForEnvironmentFiles (paths : List FilePath) : IO (Array Lean.Import) := do
+  let mut imports := #[]
+  for path in paths do
+    let source ← IO.FS.readFile path
+    let normalized := Formatter.Internal.normalizeSource source
+    imports := appendDistinctImports imports (← importsForSource normalized path.toString)
+  pure imports
+
+def environmentForWorkerEnvironmentFiles
+    (cache : EnvironmentCache) (_options : Options) (paths : List FilePath)
     : IO Lean.Environment := do
-  let source ← IO.FS.readFile path
-  let normalized := Formatter.Internal.normalizeSource source
-  let imports ← importsForSource normalized path.toString
+  let imports ← importsForEnvironmentFiles paths
   cache.environmentForImports imports
 
 def relativePathFromComponents (base path : List String) : Option FilePath :=

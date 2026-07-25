@@ -112,10 +112,13 @@ def runDiagnosticChecks
   let exceptions ←
     if options.checkException then
       let normalized := Formatter.Internal.normalizeSource source
-      let sourceModule ←
-        Formatter.Internal.parseModuleWithEnv env normalized path.toString
       let formattedModule ←
         Formatter.Internal.parseModuleWithEnv env formatted path.toString
+      let sourceModule ←
+        if normalized == formatted then
+          pure formattedModule
+        else
+          Formatter.Internal.parseModuleWithEnv env normalized path.toString
       pure
       <| Formatter.Diagnostics.formattingExceptions sourceModule formattedModule
           options.formatterOptions
@@ -133,7 +136,7 @@ def runDiagnosticChecks
     exceptionCounts := exceptionCounts.addFormattingException exception
     if let some availability := leanFormatter? then
       exceptionCounts := exceptionCounts.addMissingRuleAudit availability
-  if options.checkIdempotent then
+  if options.checkIdempotent && formatted != source then
     let formattedAgain ←
       Formatter.formatSourceWithEnv env formatted path.toString options.formatterOptions
     if formattedAgain != formatted then
@@ -217,6 +220,8 @@ def Options.workerArgs (options : Options) (files : List FilePath) : Array Strin
         args := args.push "--import-env-first"
       if options.includeHidden then
         args := args.push "--include-hidden"
+      if options.workerEnvironmentFromInputs then
+        args := args.push "--worker-env-from-inputs"
       if let some envFile := options.workerEnvironment? then
         args := args.push "--worker-env"
         args := args.push envFile.toString
@@ -296,6 +301,34 @@ def runWorkerBatch
     s!"worker-batch: env={group.environmentFile} files={group.files.length} elapsed={elapsedMs}ms"
   pure exitCode
 
+def runCombinedWorkerBatch
+    (options : Options) (cwd? : Option FilePath) (inputFiles : List FilePath)
+    : IO UInt32 := do
+  let executable ← workerExecutable
+  let files ← pathsForWorkerCwd cwd? inputFiles
+  let childOptions :=
+    {
+      options with
+        workerEnvironmentFromInputs := true
+        workerEnvironment? := none
+    }
+  let (exitCode, elapsedMs) ←
+    timeIO <| do
+      let child ←
+        IO.Process.spawn
+          {
+            cmd := "lake"
+            args := #["env", executable.toString] ++ childOptions.workerArgs files
+            cwd := cwd?
+            stdin := .null
+            stdout := .inherit
+            stderr := .inherit
+          }
+      child.wait
+  profileLine options
+    s!"worker-batch: envs=inputs files={files.length} elapsed={elapsedMs}ms"
+  pure exitCode
+
 partial def runWorkerBatches
     (options : Options) (cwd? : Option FilePath) (group : ImportWorkerGroup)
     : IO UInt32 := do
@@ -322,16 +355,16 @@ def summarizeOutcomes (options : Options) (outcomes : List FileOutcome) : IO UIn
   pure <| if failed || formattingDifferenceFailed then 1 else 0
 
 def formatFilesWithWorkerEnvironment
-    (cache : EnvironmentCache) (options : Options) (envFile : FilePath)
+    (cache : EnvironmentCache) (options : Options) (envFiles : List FilePath)
     (files : List FilePath)
     : IO UInt32 := do
   let (env, environmentMs) ←
-    timeIO <| environmentForWorkerEnvironmentFile cache options envFile
+    timeIO <| environmentForWorkerEnvironmentFiles cache options envFiles
   profileLine options
-    s!"worker-env: {envFile}: files={files.length} environment={environmentMs}ms"
+    s!"worker-env: envs={envFiles.length} files={files.length} environment={environmentMs}ms"
   let (outcomes, formatMs) ← timeIO <| files.mapM (formatFileWithEnv env options)
   profileLine options
-    s!"worker-env-files: {envFile}: files={files.length} format={formatMs}ms"
+    s!"worker-env-files: envs={envFiles.length} files={files.length} format={formatMs}ms"
   summarizeOutcomes options outcomes
 
 def formatDefaultEnvironmentFiles
@@ -362,11 +395,21 @@ def runMixedWorkerBatches
   profileLine options
     s!"partition: files={files.length} default={defaultFiles.length} import={importFiles.length} elapsed={partitionMs}ms"
   let defaultExitCode ← formatDefaultEnvironmentFiles cache options defaultFiles
-  let (importGroups, groupMs) ←
-    timeIO <| importFileGroupsWithEnvironmentCandidates cwd? files importFiles
-  profileLine options
-    s!"import-groups: files={importFiles.length} groups={importGroups.length} elapsed={groupMs}ms"
-  let importExitCode ← runImportWorkerGroups options cwd? importGroups
+  let importExitCode ←
+    match options.workerBatchSize? with
+    | none =>
+        profileLine options
+          s!"import-groups: files={importFiles.length} strategy=input-union elapsed=0ms"
+        if importFiles.isEmpty then
+          pure 0
+        else
+          runCombinedWorkerBatch options cwd? importFiles
+    | some _ =>
+        let (importGroups, groupMs) ←
+          timeIO <| importFileGroupsWithEnvironmentCandidates cwd? files importFiles
+        profileLine options
+          s!"import-groups: files={importFiles.length} groups={importGroups.length} elapsed={groupMs}ms"
+        runImportWorkerGroups options cwd? importGroups
   pure <| if defaultExitCode != 0 || importExitCode != 0 then 1 else 0
 
 end LeanFmt.Driver

@@ -76,9 +76,12 @@ Formatting a file follows this pipeline:
    term parser at application-argument precedence and retain the result as a parser
    fact. The CLI first tries the default environment, then loads an import-specific
    environment when project syntax requires it. Multi-file package formatting first
-   handles files that parse in the default environment, then groups the remaining files
-   by import header so each imported environment is reused within one short-lived worker
-   process.
+   handles files that parse in the default environment. By default, one short-lived
+   worker then imports the distinct header imports of every remaining file and reuses
+   that combined parser environment for the whole set. This avoids both loading an
+   umbrella module's compiled declarations and starting one process per import shape.
+   An explicit worker batch size instead retains bounded covering-environment groups to
+   limit peak memory.
 3. Convert Lean `Syntax` to a `SyntaxTree.Tree` of tokens and raw parser nodes.
 4. Regroup selected raw nodes into logical `SyntaxTree.NodeKind` nodes.
 5. Render the resulting tree using line-break rules and space rules.
@@ -836,7 +839,9 @@ possible structural break unresolved.
 
 The CLI reports each exception at its file, continues processing later files, and
 aggregates per-kind counts for a final summary. Non-idempotence participates in that CLI
-summary even though its extra formatting pass is enabled separately. With diagnostic
+summary even though its extra formatting pass is enabled separately. A file whose first
+formatting result equals its source is already a fixed point, so the driver runs the
+extra idempotency pass only when formatting changed the text. With diagnostic
 checking enabled, `--check` controls writing only; diagnostic exceptions, rather than
 ordinary formatting differences, determine failure.
 

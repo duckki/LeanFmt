@@ -5740,6 +5740,16 @@ def assertCliParsing : IO Unit := do
       throw
       <| IO.userError
           s!"CLI parser should accept --worker-batch-size and files: {repr result}"
+  match LeanFmt.Cli.parseArgs
+          ["--worker-env-from-inputs", "GraphQL.lean", "Tests.lean"] with
+  | .run options =>
+      assertTrue "CLI input environment flag" options.workerEnvironmentFromInputs
+      assertTrue "CLI input environment files"
+        (options.files.map toString == ["GraphQL.lean", "Tests.lean"])
+  | result =>
+      throw
+      <| IO.userError
+          s!"CLI parser should accept --worker-env-from-inputs and files: {repr result}"
   match LeanFmt.Cli.parseArgs ["--line-width", "100", "GraphQL.lean"] with
   | .run options =>
       assertTrue "CLI line-width flag" (options.formatterOptions.lineWidth == 100)
@@ -5855,6 +5865,22 @@ def assertEnvironmentCacheBound (env : Lean.Environment) : IO Unit := do
     { default := env, maxEntries := 0, entries := disabledEntries }
   disabledCache.rememberEnvironment "ignored" env
   assertTrue "disabled environment cache remains empty" (← disabledEntries.get).isEmpty
+
+def assertWorkerEnvironmentImportsAreCombined : IO Unit := do
+  IO.FS.withTempDir
+    fun root =>
+      do
+        let first := root / "First.lean"
+        let second := root / "Second.lean"
+        IO.FS.writeFile first "import Lean\nimport Init\n"
+        IO.FS.writeFile second "import Init\nimport Lean\n"
+        let imports ← LeanFmt.Driver.importsForEnvironmentFiles [first, second]
+        let expected :=
+          "Init|all=false|exported=true|meta=false\n"
+          ++ "Init|all=false|exported=true|meta=true\n"
+          ++ "Lean|all=false|exported=true|meta=false"
+        assertEq "worker input environments deduplicate their header imports"
+          expected (LeanFmt.Driver.importsKey imports)
 
 def assertDefaultEnvironmentPartition (env : Lean.Environment) : IO Unit := do
   IO.FS.withTempDir
@@ -7704,6 +7730,7 @@ def runCliAndArchitectureTests (env : Lean.Environment) : IO Unit := do
     { default := env, maxEntries := 1, entries }
   assertCliParsing
   assertEnvironmentCacheBound env
+  assertWorkerEnvironmentImportsAreCombined
   assertDefaultEnvironmentPartition env
   assertWorkersUseInputLakeRoot
   assertImportFilesGroupByHeader
