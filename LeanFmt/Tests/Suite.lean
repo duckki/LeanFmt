@@ -2722,6 +2722,30 @@ def assertGeneratedPostfixMarkersStayAttached (env : Lean.Environment) : IO Unit
   assertEq "generated postfix marker formatting is idempotent"
     result.formatted formattedAgain
 
+  let percentSource :=
+    "syntax \"fast_instance%\" term : term\n"
+    ++ "\n"
+    ++ "def generatedPercentPostfixMarkerStaysAttached\n"
+    ++ "    : LinearOrder (Lex (NonemptyInterval α)) :=\n"
+    ++ "  fast_instance% { LinearOrder.lift' veryLongFunctionNameForPostfixMarkerLayout with\n"
+    ++ "    toDecidableEq := inferInstance\n"
+    ++ "    toDecidableLT := inferInstance\n"
+    ++ "    toDecidableLE := inferInstance }\n"
+  let percentResult ←
+    Formatter.formatSourceWithEnvDetailed env percentSource
+      "generated-percent-postfix-marker.lean" { lineWidth := 100 }
+  assertTrue "generated percent postfix marker does not change code"
+    (!percentResult.fellBack)
+  assertTextContains "generated percent postfix marker stays attached"
+    percentResult.formatted "fast_instance%"
+  assertTextLacks "generated percent postfix marker is not split"
+    percentResult.formatted "fast_instance\n"
+  let percentFormattedAgain ←
+    Formatter.formatSourceWithEnv env percentResult.formatted
+      "generated-percent-postfix-marker-formatted.lean" { lineWidth := 100 }
+  assertEq "generated percent postfix marker formatting is idempotent"
+    percentResult.formatted percentFormattedAgain
+
 def assertNotExistsIdentifiersFlow (env : Lean.Environment) : IO Unit := do
   let source :=
     "assert_not_exists FirstLongDeclarationName SecondLongDeclarationName ThirdLongDeclarationName FourthLongDeclarationName FifthLongDeclarationName\n"
