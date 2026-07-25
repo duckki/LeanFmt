@@ -1,6 +1,7 @@
 import LeanFmt
 import LeanFmt.Cli
 import LeanFmt.Tests.Cli
+import LeanFmt.Tests.ExportedModuleSyntax
 import LeanFmt.Tests.ProjectSyntax
 
 open System
@@ -5972,6 +5973,21 @@ def assertSourceImportsUseLeanHeaderLevel : IO Unit := do
     LeanFmt.Driver.importEnvironmentSpecForSource "import Lean\n" "script-header.lean"
   assertTrue "script headers import private olean data" (scriptImports.level == .private)
 
+def assertExportedReservoirSkipsPrivateTransitiveImports : IO Unit := do
+  let imports : Array Lean.Import := #[{ module := `LeanFmt.Tests.ExportedModuleSyntax }]
+  let environment ← SyntaxTree.importEnvironment imports (level := .exported)
+  assertTrue "exported environment excludes private transitive imports"
+    (environment.getModuleIdx? `LeanFmt.Tests.PrivateModuleDependency).isNone
+  let reservoir : LeanFmt.Driver.ParserEnvironmentReservoir :=
+    { exported? := some environment }
+  let exactEnvironment ← reservoir.environmentForImports imports (level := .exported)
+  let source := "#check exported_module_syntax\n"
+  let parsed ←
+    SyntaxTree.parseModuleStringWithEnv exactEnvironment source
+      "exported-module-syntax.lean"
+  assertTrue "exported parser syntax remains available"
+    (parsed.tree.containsNodeKind (.raw `exportedModuleSyntax))
+
 def assertDefaultEnvironmentPartition (env : Lean.Environment) : IO Unit := do
   IO.FS.withTempDir
     fun root =>
@@ -7851,6 +7867,7 @@ def runCliAndArchitectureTests (env : Lean.Environment) : IO Unit := do
   assertEnvironmentCacheBound env
   assertParserReservoirIsolatesExactImports
   assertSourceImportsUseLeanHeaderLevel
+  assertExportedReservoirSkipsPrivateTransitiveImports
   assertDefaultEnvironmentPartition env
   assertWorkersUseInputLakeRoot
   assertImportFilesGroupByHeader

@@ -123,23 +123,44 @@ def loadParserEnvironmentReservoir (files : List FilePath)
 
 partial def moduleIndicesForImports
     (environment : Lean.Environment) (imports : Array Lean.Import)
+    (level : Lean.OLeanLevel := .private)
     : IO (Array Lean.ModuleIdx) := do
-  let visitedRef ← IO.mkRef ({} : Lean.NameSet)
+  let requirementsRef ← IO.mkRef ({} : Lean.NameMap (Bool × Bool))
   let indicesRef ← IO.mkRef (#[] : Array Lean.ModuleIdx)
-  let rec visit (moduleName : Lean.Name)
+  let rec visitImports
+      (moduleImports : Array Lean.Import)
+      (importAll isExported needsData : Bool)
       : IO Unit := do
-        let visited ← visitedRef.get
-        unless visited.contains moduleName do
-          visitedRef.set <| visited.insert moduleName
-          let some moduleIndex := environment.getModuleIdx? moduleName
+        for imported in moduleImports do
+          let importedNeedsData := needsData && (imported.isExported || importAll)
+          let importedImportAll := level == .private || importAll && imported.importAll
+          let importedIsExported := isExported && imported.isExported
+          unless importedNeedsData do
+            continue
+          let requirements ← requirementsRef.get
+          let previous? := requirements.find? imported.module
+          let effectiveImportAll := importedImportAll || previous?.any (·.1)
+          let effectiveIsExported := importedIsExported || previous?.any (·.2)
+          let changed :=
+            previous?.isNone
+            || previous?.any
+                fun previous =>
+                  previous.1 != effectiveImportAll || previous.2 != effectiveIsExported
+          unless changed do
+            continue
+          requirementsRef.set
+          <| requirements.insert imported.module (effectiveImportAll, effectiveIsExported)
+          let some moduleIndex := environment.getModuleIdx? imported.module
           | throw
-            <| IO.userError s!"shared parser environment is missing module {moduleName}"
+            <| IO.userError
+                s!"shared parser environment is missing module {imported.module}"
           let moduleData := environment.header.moduleData[moduleIndex]!
-          for imported in moduleData.imports do
-            visit imported.module
-          indicesRef.modify (·.push moduleIndex)
-  for imported in imports do
-    visit imported.module
+          visitImports moduleData.imports effectiveImportAll
+            effectiveIsExported importedNeedsData
+          if previous?.isNone then
+            indicesRef.modify (·.push moduleIndex)
+  visitImports imports (importAll := true)
+    (isExported := level < .private) (needsData := true)
   indicesRef.get
 
 def ParserEnvironmentReservoir.environmentForImports
@@ -155,7 +176,7 @@ def ParserEnvironmentReservoir.environmentForImports
   | throw
     <| IO.userError
         s!"shared parser environment has no {importLevelKey level} module reservoir"
-  let moduleIndices ← moduleIndicesForImports environment imports
+  let moduleIndices ← moduleIndicesForImports environment imports level
   let importedEntries :=
     moduleIndices.map
       fun moduleIndex =>
