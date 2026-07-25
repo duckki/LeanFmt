@@ -156,6 +156,8 @@ def assertTacticQuotationAntiquotationPreserved (env : Lean.Environment) : IO Un
     Formatter.formatSourceWithEnvDetailed env elabRulesSource
       "tactic-quotation-sequence.lean"
   assertTrue "tactic quotation sequence does not fall back" (!elabRulesResult.fellBack)
+  assertEq "elab_rules retains its layout-sensitive source" elabRulesSource
+    elabRulesResult.formatted
   assertTextContains "tactic quotation sequence keeps its source layout"
     elabRulesResult.formatted
     "`(tactic|\n      refine And.intro ?_ ?_;\n      exact $goal)"
@@ -296,6 +298,113 @@ def assertBlockCommentInternalWhitespacePreservedByFormatting (env : Lean.Enviro
     Formatter.formatSourceWithEnv env nestedSource "nested-block-comment-spacing.lean"
   assertEq "nested block comment whitespace is preserved" nestedSource nestedFormatted
 
+def assertIndentedCommentTriviaDoesNotPadBlankLines : IO Unit := do
+  let trivia := "\n\n          -- Search through the local context.\n          "
+  let expected := "\n\n    -- Search through the local context.\n    "
+  let formatted := Formatter.SpaceRules.commentTriviaForBreak trivia "    "
+  assertEq "indented comment trivia leaves blank lines empty" expected formatted
+  assertEq "indented comment trivia has no trailing whitespace on completed lines"
+    formatted (Formatter.SpaceRules.stripWhitespaceBeforeNewlines formatted)
+  let comment := "-- " ++ String.ofList (List.replicate 93 'x')
+  let longTrivia := "\n    " ++ comment ++ "\n    "
+  let commentIndent :=
+    Formatter.spaces <| Formatter.SpaceRules.commentIndentForWidth longTrivia 12 100
+  let widthLimited :=
+    Formatter.SpaceRules.commentTriviaForBreakWithFollowingIndent longTrivia commentIndent
+      "            "
+  let widthLimitedExpected := "\n    " ++ comment ++ "\n            "
+  assertEq "unwrappable comments retain a fitting indentation"
+    widthLimitedExpected widthLimited
+  assertTrue "unwrappable comment indentation respects the line width"
+    (Formatter.SpaceRules.commentIndentForWidth longTrivia 12 100 == 4)
+  let overflowingTrivia := "\n    " ++ comment ++ "xx\n    "
+  assertTrue "existing comment overflow is not disguised by deindentation"
+    (Formatter.SpaceRules.commentIndentForWidth overflowingTrivia 12 100 == 12)
+
+def assertAtomicTokenRetainsFittingSourceColumn (env : Lean.Environment) : IO Unit := do
+  let firstLine := "\"" ++ String.ofList (List.replicate 98 'x')
+  let source :=
+    "def multilineAtomicText :=\n"
+    ++ "  { value :=\n"
+    ++ firstLine
+    ++ "\n"
+    ++ "tail\" }\n"
+  let formatted ←
+    Formatter.formatSourceWithEnv env source "multiline-atomic-text.lean"
+      { lineWidth := 100 }
+  assertTextContains "multiline atomic token retains its fitting source column"
+    formatted ("\n" ++ firstLine ++ "\n")
+  assertTrue "moving a multiline atomic token does not introduce overflow"
+    (Formatter.linesFit formatted 100)
+  assertTrue "multiline atomic token formatting preserves code"
+    (← codePreservedIgnoringWhitespace env source formatted)
+  let stringToken := "\"" ++ String.ofList (List.replicate 98 'x') ++ "\""
+  let stringSource := "def singleLineAtomicText : String :=\n" ++ stringToken ++ "\n"
+  let stringFormatted ←
+    Formatter.formatSourceWithEnv env stringSource "single-line-atomic-text.lean"
+      { lineWidth := 100 }
+  assertTextContains "single-line atomic token retains its fitting parent-relative column"
+    stringFormatted ("\n" ++ stringToken ++ "\n")
+  assertTrue "single-line atomic token formatting avoids introduced overflow"
+    (Formatter.linesFit stringFormatted 100)
+  assertTrue "single-line atomic token formatting preserves code"
+    (← codePreservedIgnoringWhitespace env stringSource stringFormatted)
+
+def assertDoBodyRetainsSourceLayoutToAvoidOverflow (env : Lean.Environment)
+    : IO Unit := do
+  let message := "\"" ++ String.ofList (List.replicate 50 'x') ++ "\""
+  let source :=
+    "def f := do\n"
+    ++ "  match value with\n"
+    ++ "  | some item =>\n"
+    ++ "    if condition then\n"
+    ++ "      logError\n"
+    ++ "        "
+    ++ message
+    ++ "\n"
+    ++ "  | none => pure ()\n"
+  let formatted ←
+    Formatter.formatSourceWithEnv env source "do-body-atomic-overflow.lean"
+      { lineWidth := 60 }
+  assertTrue "do body source layout avoids introduced atomic overflow"
+    (Formatter.linesFit formatted 60)
+  assertTrue "do body source layout fallback preserves code"
+    (← codePreservedIgnoringWhitespace env source formatted)
+
+def assertRegisterOptionValueUsesDeclarationLayout (env : Lean.Environment)
+    : IO Unit := do
+  let source :=
+    "register_option linter.sample : Bool := {\n"
+    ++ "  defValue := true\n"
+    ++ "  descr := \"A sample option description that should remain within the configured line width.\"\n"
+    ++ "}\n"
+  let expected :=
+    "register_option linter.sample : Bool :=\n"
+    ++ "  {\n"
+    ++ "    defValue := true\n"
+    ++ "    descr :=\n"
+    ++ "      \"A sample option description that should remain within the configured line width.\"\n"
+    ++ "  }\n"
+  let formatted ←
+    Formatter.formatSourceWithEnv env source "register-option-layout.lean"
+      { lineWidth := 90 }
+  assertEq "register_option values use declaration layout" expected formatted
+  assertTrue "register_option values stay within the configured width"
+    (Formatter.linesFit formatted 90)
+
+def assertAliasCommandRetainsSourceLayout (env : Lean.Environment) : IO Unit := do
+  let source :=
+    "alias ⟨_root_.Function.Injective.surjective_of_finite,\n"
+    ++ "    _root_.Function.Surjective.injective_of_finite⟩ :=\n"
+    ++ "  injective_iff_surjective_of_equiv\n"
+  let result ←
+    Formatter.formatSourceWithEnvDetailed env source "alias-command-layout.lean"
+      { lineWidth := 100 }
+  assertTrue "alias command source layout does not fall back" (!result.fellBack)
+  assertEq "alias command retains its source layout" source result.formatted
+  assertTrue "alias command source layout stays within the configured width"
+    (Formatter.linesFit result.formatted 100)
+
 def assertModuleDocInternalBlankLinesPreservedByFormatting (env : Lean.Environment)
     : IO Unit := do
   let source := "/-!\nA\n\n\nB\n-/\n\ndef moduleDocBlankLines := 0\n"
@@ -347,9 +456,18 @@ def assertCustomNotationBracketSpacing : IO Unit := do
   assertEq "at separator preserves source space" " "
     (Formatter.SpaceRules.interTokenWhitespace "@ \"rev\""
       (syntheticAtomTokenAt "@" 0 1) (syntheticAtomTokenAt "\"rev\"" 2 7))
-  assertEq "true postfix superscript marker stays tight" ""
-    (Formatter.SpaceRules.spaceBetweenTokens
-      (syntheticAtomToken "m") (syntheticAtomToken "⁻¹"))
+  assertEq "source-adjacent superscript marker stays tight" ""
+    (Formatter.SpaceRules.interTokenWhitespace "m⁻¹"
+      (syntheticAtomTokenAt "m" 0 1) (syntheticAtomTokenAt "⁻¹" 1 4))
+  assertEq "source-spaced modifier notation keeps its boundary" " "
+    (Formatter.SpaceRules.interTokenWhitespace "f ⁻¹ᵁ"
+      (syntheticAtomTokenAt "f" 0 1) (syntheticAtomTokenAt "⁻¹ᵁ" 2 7))
+  assertEq "source space after a custom-syntax marker is preserved before its close" " "
+    (Formatter.SpaceRules.interTokenWhitespace "← ]"
+      (syntheticAtomTokenAt "←" 0 3) (syntheticAtomTokenAt "]" 4 5))
+  assertEq "source space before an ordinary collection close is normalized" ""
+    (Formatter.SpaceRules.interTokenWhitespace "value ]"
+      (syntheticAtomTokenAt "value" 0 5) (syntheticAtomTokenAt "]" 6 7))
   assertEq "operator-like modifier token gets ordinary spacing" " "
     (Formatter.SpaceRules.spaceBetweenTokens
       (syntheticAtomToken "vec") (syntheticAtomToken "ᵥ*"))
@@ -855,6 +973,24 @@ def assertWhereDeclarationAttributeBreaksBeforeDeclaration (env : Lean.Environme
     Formatter.formatSourceWithEnv env source "where-declaration-attribute.lean"
       { lineWidth := 100 }
   assertEq "where declaration attribute breaks before declaration" expected formatted
+  let longSource :=
+    "def repeatedLong (k : Nat) : Nat := repeatedLong.go k\n"
+    ++ "where\n"
+    ++ "  @[inline]\n"
+    ++ "  go (n : Nat) : Nat → Nat → Nat :=\n"
+    ++ "    veryLongFunctionNameThatForcesTheDeclarationValueToBreak n anotherVeryLongArgumentName\n"
+  let longExpected :=
+    "def repeatedLong (k : Nat) : Nat :=\n"
+    ++ "  repeatedLong.go k\n"
+    ++ "where\n"
+    ++ "  @[inline]\n"
+    ++ "  go (n : Nat) : Nat → Nat → Nat :=\n"
+    ++ "    veryLongFunctionNameThatForcesTheDeclarationValueToBreak n anotherVeryLongArgumentName\n"
+  let longFormatted ←
+    Formatter.formatSourceWithEnv env longSource "long-where-declaration-attribute.lean"
+      { lineWidth := 100 }
+  assertEq "where declaration breaks its value before its fitting signature"
+    longExpected longFormatted
 
 def assertEquationWhereUsesDeclarationBase (env : Lean.Environment) : IO Unit := do
   let source :=
@@ -3299,7 +3435,7 @@ def assertNestedApplicationHonorsSourceBreaks (env : Lean.Environment) : IO Unit
     Formatter.formatSourceWithEnv env source "nested-application-source-breaks.lean"
   assertEq "nested application source breaks" expected formatted
 
-def assertApplicationCommentBreakRebasesWithOuterLayout (env : Lean.Environment)
+def assertApplicationCommentBreakAvoidsOverflowAfterOuterShift (env : Lean.Environment)
     : IO Unit := do
   let source :=
     "def sourceBrokenCommentArgument :=\n"
@@ -3320,16 +3456,19 @@ def assertApplicationCommentBreakRebasesWithOuterLayout (env : Lean.Environment)
     ++ "        unless condition do\n"
     ++ "          return\n"
     ++ "        cmd.apply\n"
-    ++ "          /- Keep this explanation with the named argument. -/\n"
-    ++ "          (option := value) predicate\n"
+    ++ "        /- Keep this explanation with the named argument. -/\n"
+    ++ "          (option := value)\n"
+    ++ "          predicate\n"
     ++ "          fun x =>\n"
     ++ "            do\n"
     ++ "              consume x\n"
   let formatted ←
     Formatter.formatSourceWithEnv env source
       "application-comment-source-break.lean" { lineWidth := 60 }
-  assertEq "application comment source break follows shifted application"
+  assertEq "application comment source break avoids overflow after outer shift"
     expected formatted
+  assertTrue "application comment source break stays within the configured width"
+    (Formatter.linesFit formatted 60)
   assertTrue "shifted application comment source break preserves code"
     (← codePreservedIgnoringWhitespace env source formatted)
   let formattedAgain ←
@@ -3967,6 +4106,32 @@ def assertMovedProofWidgetsJsxUsesPendingIndent : IO Unit := do
     ++ "                    </div>"
   assertEq "moved original layout follows the formatter-selected indentation"
     expected rendered.output
+  let payload := String.ofList (List.replicate 70 'x')
+  let wideSource := "previous\n      <div>" ++ payload ++ "</div>"
+  let wideOpenTag := tokenAt "<div>" (String.Pos.Raw.mk 15) (String.Pos.Raw.mk 20)
+  let widePayload := tokenAt payload (String.Pos.Raw.mk 20) (String.Pos.Raw.mk 90)
+  let wideCloseTag := tokenAt "</div>" (String.Pos.Raw.mk 90) (String.Pos.Raw.mk 96)
+  let wideJsx :=
+    SyntaxTree.Tree.node
+      (.raw `ProofWidgets.Jsx.syntheticElementForIndentTest)
+      #[.leaf wideOpenTag, .leaf widePayload, .leaf wideCloseTag]
+  let wideParent := SyntaxTree.Tree.node .application #[.leaf previous, wideJsx]
+  let wideState : Formatter.RenderState :=
+    {
+      source := wideSource
+      output := "previous"
+      currentLine := "previous"
+      lastToken? := some previous
+      pendingIndent? := some 20
+      options := { lineWidth := 100 }
+    }
+  let wideRendered :=
+    Formatter.renderNestedSegment wideState
+      (Formatter.LineBreakRules.Segment.ofTree wideParent) 1 wideJsx
+  assertEq "moved JSX retains its fitting parent-relative indentation"
+    wideSource wideRendered.output
+  assertTrue "parent-relative JSX layout avoids introduced overflow"
+    (Formatter.linesFit wideRendered.output 100)
 
 def assertSegmentBaseUsesRenderedStartColumn : IO Unit := do
   let source := "left\n      right"
@@ -4825,6 +4990,21 @@ def assertQuantifierBreaksAfterComma (env : Lean.Environment) : IO Unit := do
   let formatted ← Formatter.formatSourceWithEnv env source "quantifier-comma-break.lean"
   assertEq "quantifier breaks after comma" expected formatted
 
+def assertBreakNeverPrecedesTrailingSeparator (env : Lean.Environment) : IO Unit := do
+  let source :=
+    "def separatorBreak (values : List Nat) : Prop :=\n"
+    ++ "  ∀ value ∈ values.filter (fun candidate => candidate = candidate), value = value\n"
+  let expected :=
+    "def separatorBreak (values : List Nat) : Prop :=\n"
+    ++ "  ∀ value ∈\n"
+    ++ "            values.filter\n"
+    ++ "              (fun candidate => candidate = candidate), value\n"
+    ++ "                                                        = value\n"
+  let formatted ←
+    Formatter.formatSourceWithEnv env source "trailing-separator-break.lean"
+      { lineWidth := 55 }
+  assertEq "line breaks are not inserted immediately before separators" expected formatted
+
 def assertQuantifierIdentifierSequenceFlows (env : Lean.Environment) : IO Unit := do
   let source :=
     "def quantifiedPrefixes : Prop := ∃ leftPrefixFields leftPrefixErrors "
@@ -5147,6 +5327,14 @@ def assertShortStructureExtendsHeaderStaysFlat (env : Lean.Environment) : IO Uni
   let formatted ←
     Formatter.formatSourceWithEnv env source "short-structure-extends-header.lean"
   assertEq "short structure extends header stays flat" source formatted
+  let withoutDeriving :=
+    "structure ParameterizedCandidate (α : Type) extends CandidateKey α where\n"
+    ++ "  occurrenceCount : Nat\n"
+  let withoutDerivingFormatted ←
+    Formatter.formatSourceWithEnv env withoutDeriving
+      "short-parameterized-structure-extends-header.lean"
+  assertEq "short parameterized structure header stays flat before mandatory field breaks"
+    withoutDeriving withoutDerivingFormatted
 
 def assertStructureExtendsDoesNotIndentFollowingCommand (env : Lean.Environment)
     : IO Unit := do
@@ -5613,8 +5801,7 @@ def assertLineWidthOptionAffectsFormatting (env : Lean.Environment) : IO Unit :=
       throw <| IO.userError s!"CLI parser should require files: {repr result}"
 
 def assertEnvironmentCacheBound (env : Lean.Environment) : IO Unit := do
-  let keys (entries : List (String × Lean.Environment))
-      : String :=
+  let keys (entries : List (String × Lean.Environment)) : String :=
     String.intercalate "," (entries.map Prod.fst)
   let entries ← IO.mkRef []
   let cache : LeanFmt.Driver.EnvironmentCache :=
@@ -6861,6 +7048,10 @@ def assertMathlibLowRiskSyntaxKindsHaveRules : IO Unit := do
     SyntaxTree.Tree.node (.raw `Lean.Parser.«command__Simproc__[_]_(_):=_») #[]
   assertTrue "bracketed simproc declarations keep original formatting"
     (Formatter.shouldEmitOriginalTree bracketedSimprocTree)
+  let libraryNoteTree :=
+    SyntaxTree.Tree.node (.raw `Batteries.Util.LibraryNote.«commandLibrary_note___») #[]
+  assertTrue "Batteries library notes keep original formatting"
+    (Formatter.shouldEmitOriginalTree libraryNoteTree)
   let jsxTree :=
     SyntaxTree.Tree.node (.raw `ProofWidgets.Jsx.«proofWidgetsJsxElement<__>_</_>») #[]
   assertTrue "ProofWidgets JSX keeps original formatting"
@@ -7251,6 +7442,11 @@ def runBasicFormattingTests (env : Lean.Environment) : IO Unit := do
   assertGetElemBracketStaysAttachedAcrossWrap env
   assertPostfixSuperscriptSpacingPreservesParse env
   assertBlockCommentInternalWhitespacePreservedByFormatting env
+  assertIndentedCommentTriviaDoesNotPadBlankLines
+  assertAtomicTokenRetainsFittingSourceColumn env
+  assertDoBodyRetainsSourceLayoutToAvoidOverflow env
+  assertRegisterOptionValueUsesDeclarationLayout env
+  assertAliasCommandRetainsSourceLayout env
   assertModuleDocInternalBlankLinesPreservedByFormatting env
   assertCustomNotationBracketSpacing
   assertOperatorLikeModifierTokenPreservesParse env
@@ -7356,7 +7552,7 @@ def runExpressionAndRendererTests (env : Lean.Environment) : IO Unit := do
   assertApplicationFlow env
   assertApplicationFitsBeforeSourceBreaks env
   assertNestedApplicationHonorsSourceBreaks env
-  assertApplicationCommentBreakRebasesWithOuterLayout env
+  assertApplicationCommentBreakAvoidsOverflowAfterOuterShift env
   assertApplicationArgumentUsesHeadAnchorAfterTypeBreak env
   assertLetExpressionKeepsBodyBreak env
   assertLetIExpressionKeepsBodyBreak env
@@ -7436,6 +7632,7 @@ def runControlFlowTests (env : Lean.Environment) : IO Unit := do
   assertLambdaBodyUsesOperandAnchor env
   assertLambdaBinderSequenceBreaksBetweenBinders env
   assertQuantifierBreaksAfterComma env
+  assertBreakNeverPrecedesTrailingSeparator env
   assertQuantifierIdentifierSequenceFlows env
   assertArrowQuantifierKeepsQuantifierOnArrowLine env
   assertArrowMatchKeepsMatchOnArrowLine env
