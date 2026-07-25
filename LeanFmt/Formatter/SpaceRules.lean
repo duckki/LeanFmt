@@ -126,12 +126,18 @@ def reindentCommentLine (blockCommentDepth : Nat) (line indent : String) : Strin
     line
   else
     let stripped := stripLeadingHorizontalWhitespace line
-    if stripped.isEmpty then indent else indent ++ stripped
+    if stripped.isEmpty then "" else indent ++ stripped
 
 def reindentCommentLines (indent : String) : Nat → List String → List String
   | _, [] => []
   | blockCommentDepth, line :: rest =>
-      let adjusted := reindentCommentLine blockCommentDepth line indent
+      let adjusted :=
+        if rest.isEmpty
+            && blockCommentDepth == 0
+            && (stripLeadingHorizontalWhitespace line).isEmpty then
+          indent
+        else
+          reindentCommentLine blockCommentDepth line indent
       let blockCommentDepth := blockCommentDepthAfterLine blockCommentDepth line
       adjusted :: reindentCommentLines indent blockCommentDepth rest
 
@@ -143,15 +149,65 @@ def reindentCommentTrivia (text indent : String) : String :=
       <| firstLine
           :: reindentCommentLines indent (blockCommentDepthAfterLine 0 firstLine) rest
 
-def commentTriviaForBreak (text indent : String) : String :=
-  let adjusted := reindentCommentTrivia text indent
+def reindentableCommentWidth (text : String) : Nat :=
+  let rec loop (blockCommentDepth maximum : Nat) : List String → Nat
+    | [] => maximum
+    | line :: rest =>
+        let stripped := stripLeadingHorizontalWhitespace line
+        let maximum :=
+          if blockCommentDepth == 0 && !stripped.isEmpty then
+            max maximum stripped.length
+          else
+            maximum
+        loop (blockCommentDepthAfterLine blockCommentDepth line) maximum rest
+  match (cleanTrivia text).splitOn "\n" with
+  | [] | [_] => 0
+  | firstLine :: rest =>
+      loop (blockCommentDepthAfterLine 0 firstLine) 0 rest
+
+def sourceCommentIndentCapacity? (text : String) (lineWidth : Nat) : Option Nat :=
+  let rec loop (blockCommentDepth capacity : Nat) (found : Bool)
+      : List String → Option Nat
+    | [] => if found then some capacity else none
+    | line :: rest =>
+        let stripped := stripLeadingHorizontalWhitespace line
+        let blockCommentDepthAfter := blockCommentDepthAfterLine blockCommentDepth line
+        if blockCommentDepth == 0 && !stripped.isEmpty then
+          let sourceIndent := line.length - stripped.length
+          if lineWidth < sourceIndent + stripped.length then
+            none
+          else
+            loop blockCommentDepthAfter
+              (min capacity (lineWidth - stripped.length)) true rest
+        else
+          loop blockCommentDepthAfter capacity found rest
+  match (cleanTrivia text).splitOn "\n" with
+  | [] | [_] => none
+  | firstLine :: rest =>
+      loop (blockCommentDepthAfterLine 0 firstLine) lineWidth false rest
+
+def commentIndentForWidth (text : String) (desiredIndent lineWidth : Nat) : Nat :=
+  let contentWidth := reindentableCommentWidth text
+  if contentWidth + desiredIndent <= lineWidth then
+    desiredIndent
+  else
+    match sourceCommentIndentCapacity? text lineWidth with
+    | some capacity => min desiredIndent capacity
+    | none => desiredIndent
+
+def commentTriviaForBreakWithFollowingIndent (text commentIndent followingIndent : String)
+    : String :=
+  let adjusted := reindentCommentTrivia text commentIndent
   match (normalizeLineEndings adjusted).splitOn "\n" |>.reverse with
-  | lastLine :: _ =>
+  | lastLine :: rest =>
       if (stripLeadingHorizontalWhitespace lastLine).isEmpty then
-        adjusted
+        String.intercalate "\n" <| (followingIndent :: rest).reverse
       else
-        adjusted ++ "\n" ++ indent
-  | [] => "\n" ++ indent
+        adjusted ++ "\n" ++ followingIndent
+  | [] => "\n" ++ followingIndent
+
+def commentTriviaForBreak (text indent : String) : String :=
+  commentTriviaForBreakWithFollowingIndent text indent indent
 
 def cleanFinalTrivia (text : String) : String :=
   cleanTrivia text

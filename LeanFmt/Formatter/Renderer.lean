@@ -136,6 +136,21 @@ def rebaseOriginalTextIndent (sourceColumn targetColumn : Nat) (text : String) :
           :: rebaseOriginalLines sourceColumn targetColumn
               (SpaceRules.blockCommentDepthAfterLine 0 first) rest
 
+def rebaseOriginalTreeText
+    (source : String) (tree : SyntaxTree.Tree)
+    (sourceColumn targetColumn : Nat)
+    : String :=
+  let rec loop (previous : SyntaxTree.Token) (output : String)
+      : List SyntaxTree.Token → String
+    | [] => output
+    | token :: rest =>
+        let trivia := SyntaxTree.sourceText source previous.span.stop token.span.start
+        let trivia := rebaseOriginalTextIndent sourceColumn targetColumn trivia
+        loop token (output ++ trivia ++ token.lexeme) rest
+  match tree.tokens.toList with
+  | [] => ""
+  | first :: rest => loop first first.lexeme rest
+
 def originalContinuationIndent? (text : String) : Option Nat :=
   (SpaceRules.normalizeLineEndings text).splitOn "\n" |>.drop 1
   |>.foldl
@@ -325,24 +340,36 @@ def ensureBlankLineBeforeLeadingComment (text : String) : String :=
     "\n\n" ++ text
 
 def commentTriviaForBoundary
-    (trivia indentation : String) (spacing : CommandBoundarySpacing)
+    (trivia commentIndentation followingIndentation : String)
+    (spacing : CommandBoundarySpacing)
     : String :=
-  let adjusted := SpaceRules.commentTriviaForBreak trivia indentation
+  let adjusted :=
+    SpaceRules.commentTriviaForBreakWithFollowingIndent trivia commentIndentation
+      followingIndentation
   if spacing == .blankLine then
     if commentTriviaStartsOnNewLine trivia then
       ensureBlankLineBeforeLeadingComment adjusted
     else
-      ensureBlankLineBeforeIndentation adjusted indentation
+      ensureBlankLineBeforeIndentation adjusted followingIndentation
   else
     adjusted
 
 def whitespaceForPendingBoundary
-    (trivia indentation : String) (commandBoundary? : Option CommandBoundarySpacing)
+    (trivia indentation : String) (lineWidth : Nat)
+    (commandBoundary? : Option CommandBoundarySpacing)
     : String :=
   if SpaceRules.hasCommentStart trivia then
-    match commandBoundary? with
-    | some spacing => commentTriviaForBoundary trivia indentation spacing
-    | none => SpaceRules.commentTriviaForBreak trivia indentation
+    let desiredIndent := indentation.length
+    let commentIndentation :=
+      spaces <| SpaceRules.commentIndentForWidth trivia desiredIndent lineWidth
+    let result :=
+      match commandBoundary? with
+      | some spacing =>
+          commentTriviaForBoundary trivia commentIndentation indentation spacing
+      | none =>
+          SpaceRules.commentTriviaForBreakWithFollowingIndent trivia commentIndentation
+            indentation
+    result
   else
     match commandBoundary? with
     | none =>
@@ -353,17 +380,36 @@ def whitespaceForPendingBoundary
     | some .lineBreak => "\n" ++ indentation
     | some .blankLine => "\n\n" ++ indentation
 
+def RenderState.indentForMultilineToken
+    (state : RenderState) (token : SyntaxTree.Token) (desiredIndent : Nat)
+    : Nat :=
+  if hasLineBreakChar token.lexeme then
+    match (SpaceRules.normalizeLineEndings token.lexeme).splitOn "\n" with
+    | [] => desiredIndent
+    | firstLine :: _ =>
+        let sourceColumn := originalColumnAt state.source token.span.start
+        if desiredIndent + firstLine.length > state.options.lineWidth
+            && sourceColumn + firstLine.length <= state.options.lineWidth then
+          sourceColumn
+        else
+          desiredIndent
+  else
+    desiredIndent
+
 def RenderState.defaultWhitespace (state : RenderState) (token : SyntaxTree.Token)
     (preserveLines : Bool := false)
     : String :=
   match state.lastToken?, state.pendingIndent? with
   | some left, some indent =>
       let trivia := SyntaxTree.sourceText state.source left.span.stop token.span.start
+      let indent := state.indentForMultilineToken token indent
       let indentation := spaces indent
-      whitespaceForPendingBoundary trivia indentation state.pendingCommandBoundary?
+      whitespaceForPendingBoundary trivia indentation state.options.lineWidth
+        state.pendingCommandBoundary?
   | none, some indent =>
+      let indent := state.indentForMultilineToken token indent
       let indentation := spaces indent
-      whitespaceForPendingBoundary token.leading.text indentation
+      whitespaceForPendingBoundary token.leading.text indentation state.options.lineWidth
         state.pendingCommandBoundary?
   | none, none =>
       if SpaceRules.hasCommentStart token.leading.text then
@@ -479,6 +525,16 @@ def renderedCandidateFits (before after : RenderState) : Bool :=
   before.completedLineOverflowCount == after.completedLineOverflowCount
   && lineFitsWithTrailingWidth after.currentLine after.lineFitSuffixWidth
       after.options.lineWidth
+
+def renderedOverflowCount (before after : RenderState) : Nat :=
+  let completed := after.completedLineOverflowCount - before.completedLineOverflowCount
+  let current :=
+    if lineFitsWithTrailingWidth after.currentLine after.lineFitSuffixWidth
+        after.options.lineWidth then
+      0
+    else
+      1
+  completed + current
 
 def RenderState.segmentStartBaseFor
     (state : RenderState) (segment : LineBreakRules.Segment)
@@ -760,8 +816,7 @@ partial def treeStartsWithOriginalEmission : SyntaxTree.Tree → Bool
       if shouldEmitOriginalTree tree then
         true
       else
-        let rec loop (index : Nat)
-            : Bool :=
+        let rec loop (index : Nat) : Bool :=
           match children[index]? with
           | some child =>
               if SyntaxTree.Tree.firstToken? child |>.isSome then
@@ -774,6 +829,7 @@ partial def treeStartsWithOriginalEmission : SyntaxTree.Tree → Bool
 def RenderState.emitOriginalTree
     (state : RenderState) (tree : SyntaxTree.Tree)
     (respectPendingIndent : Bool := false)
+    (rebaseSourceTextTargetColumn? : Option Nat := none)
     : RenderState :=
   match SyntaxTree.Tree.firstToken? tree, SyntaxTree.Tree.lastToken? tree with
   | some firstToken, some lastToken =>
@@ -793,10 +849,22 @@ def RenderState.emitOriginalTree
           state.defaultWhitespace firstToken true
         else
           originalLeading
+      let preliminaryLeadingColumn :=
+        lineWidth <| currentLineAfterAppend state.currentLine leading
+      let leading :=
+        match rebaseSourceTextTargetColumn? with
+        | some targetColumn =>
+            rebaseOriginalTextIndent preliminaryLeadingColumn targetColumn leading
+        | none => leading
       let leadingColumn := lineWidth <| currentLineAfterAppend state.currentLine leading
       let sourceText :=
         SyntaxTree.sourceText state.source firstToken.span.start lastToken.span.stop
       let sourceColumn := originalColumnAt state.source firstToken.span.start
+      let sourceText :=
+        match rebaseSourceTextTargetColumn? with
+        | some targetColumn =>
+            rebaseOriginalTreeText state.source tree sourceColumn targetColumn
+        | none => sourceText
       let inlineMultilineProof :=
         isProofTree tree
         && treeHasLineBreakTrivia tree
@@ -1243,8 +1311,7 @@ partial def lineFitSuffixAfterChild
     : Nat × Bool :=
   let afterChild := (WidthState.ofRenderState state).afterFlatTreeForSuffix child
   let context := state.context
-  let rec loop (suffixState : SuffixState) (nextIndex : Nat)
-      : SuffixState × Bool :=
+  let rec loop (suffixState : SuffixState) (nextIndex : Nat) : SuffixState × Bool :=
     if nextIndex < segment.stop then
       match segment.child? nextIndex with
       | some nextChild =>
@@ -1787,8 +1854,7 @@ def FlowRenderContext.stateForForcedNestedChild?
 
 def segmentRangeFirstTree? (segment : LineBreakRules.Segment) (start stop : Nat)
     : Option SyntaxTree.Tree :=
-  let rec loop (index : Nat)
-      : Option SyntaxTree.Tree :=
+  let rec loop (index : Nat) : Option SyntaxTree.Tree :=
     if index < stop then
       match segment.child? index with
       | some tree => if tree.firstToken?.isSome then some tree else loop (index + 1)
@@ -2043,6 +2109,26 @@ mutual
         let naturalStartColumn := state.segmentStartColumn childSegment
         let alignedStartColumn := indentationPastColumn naturalStartColumn
         state.appendOutput <| spaces (alignedStartColumn - naturalStartColumn)
+    let parentRelativeOriginalColumn? :=
+      if state.lastToken?.isNone || state.originalTreeStartsOnNewSourceLine child then
+        SyntaxTree.Tree.firstToken? child
+        |>.map
+            fun _ =>
+              let sourceColumn := state.originalTreeColumnAfterLineBreak child
+              shiftColumnByAnchor state.sourceLayoutBaseColumn
+                state.outputLayoutBaseColumn sourceColumn
+      else
+        none
+    let state :=
+      match child.tokens.toList, state.pendingIndent?, parentRelativeOriginalColumn? with
+      | [token], some desiredIndent, some targetColumn =>
+          if token.lexeme.startsWith "\""
+              && desiredIndent + token.lexeme.length > state.options.lineWidth
+              && targetColumn + token.lexeme.length <= state.options.lineWidth then
+            { state with pendingIndent? := some targetColumn }
+          else
+            state
+      | _, _, _ => state
     let scope := ChildRenderScope.capture state
     let childBase :=
       if inheritsBase then
@@ -2096,6 +2182,59 @@ mutual
             || state.pendingCommandBoundary?.isSome)
       else
         renderSegment childState childSegment (some (childRule, childBreakPoints))
+    let rendered :=
+      if !emitOriginal || !isProofWidgetsJsxSyntaxTree child then
+        rendered
+      else
+        match parentRelativeOriginalColumn? with
+        | none => rendered
+        | some targetColumn =>
+            let original :=
+              childState.emitOriginalTree child
+                (respectPendingIndent := true)
+                (rebaseSourceTextTargetColumn? := some targetColumn)
+            if renderedOverflowCount childState original
+                < renderedOverflowCount childState rendered then
+              original
+            else
+              rendered
+    let rendered :=
+      if emitOriginal
+          || !LineBreakRules.canRetainParentRelativeOriginalLayoutForOverflow child then
+        rendered
+      else
+        match parentRelativeOriginalColumn? with
+        | none => rendered
+        | some targetColumn =>
+            let original :=
+              childState.emitOriginalTree child
+                (respectPendingIndent := true)
+                (rebaseSourceTextTargetColumn? := some targetColumn)
+            if renderedOverflowCount childState original
+                < renderedOverflowCount childState rendered then
+              original
+            else
+              rendered
+    let rendered :=
+      if emitOriginal
+          || !LineBreakRules.canRetainOriginalLayoutForOverflow childContext child then
+        rendered
+      else
+        let original :=
+          childState.emitOriginalTree child
+            (respectPendingIndent := true)
+            (rebaseSourceTextTargetColumn? :=
+              SyntaxTree.Tree.firstToken? child
+              |>.map
+                  fun _ =>
+                    childState.originalTreeColumnAfterLineBreak child
+                    |> shiftColumnByAnchor childState.sourceLayoutBaseColumn
+                        childState.outputLayoutBaseColumn)
+        if renderedOverflowCount childState original
+            < renderedOverflowCount childState rendered then
+          original
+        else
+          rendered
     scope.restore rendered
 
   partial def renderChildren (state : RenderState) (segment : LineBreakRules.Segment)
@@ -2126,8 +2265,7 @@ mutual
       (state : RenderState) (segment : LineBreakRules.Segment) (breaks : List SourceBreak)
       : RenderState :=
     let layout : SourceBreakLayout := { segment, breaks }
-    let rec loop (state : RenderState) (index : Nat)
-        : RenderState :=
+    let rec loop (state : RenderState) (index : Nat) : RenderState :=
       if index < segment.stop then
         match segment.child? index with
         | none => loop state (index + 1)
@@ -2148,8 +2286,7 @@ mutual
       (state : RenderState) (segment : LineBreakRules.Segment) (breaks : List SourceBreak)
       : Option RenderState :=
     let layout : SourceBreakLayout := { segment, breaks }
-    let rec loop (state : RenderState) (index : Nat)
-        : Option RenderState :=
+    let rec loop (state : RenderState) (index : Nat) : Option RenderState :=
       if index < segment.stop then
         match segment.child? index with
         | none => loop state (index + 1)
@@ -2255,8 +2392,7 @@ mutual
       let entryIndentation := state.segmentIndentation
       let entryBaseColumn := state.segmentBaseColumn
       let entryTailIndentation? := state.tailIndentation?
-      let stateForPiece (state : RenderState) (firstPiece : Bool)
-          : RenderState :=
+      let stateForPiece (state : RenderState) (firstPiece : Bool) : RenderState :=
         if firstPiece then
           { state with tailIndentation? := entryTailIndentation? }
         else

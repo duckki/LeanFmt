@@ -289,8 +289,15 @@ def childStartsWithLexeme (segment : Segment) (index : Nat) (lexeme : String) : 
   | some child => treeFirstLexeme? child == some lexeme
   | none => false
 
+def isDoLetFallbackKind (kind : Lean.SyntaxNodeKind) : Bool :=
+  kind == `Lean.Parser.Term.doIdDecl
+  || kind == `Lean.Parser.Term.doPatDecl
+  || kind == `Lean.Parser.Term.doLetArrow
+  || kind == `Lean.Parser.Term.doLet
+  || kind == `Lean.Parser.Term.doLetElse
+
 def frameSelectsDoLetElseFallback (frame : Frame) : Bool :=
-  frame.rawKind? == some `Lean.Parser.Term.doLetElse
+  frame.rawKind?.any isDoLetFallbackKind
   && (List.range frame.childIndex).any
       fun index =>
         childStartsWithLexeme frame.segment index "|"
@@ -692,6 +699,25 @@ def nullInheritBase (context : RuleContext) (segment : Segment) : Bool :=
 
 def attachedBodyStart (segment : Segment) (index : Nat) : Bool :=
   childStartsWithLexeme segment index "do" || childStartsWithLexeme segment index "by"
+
+partial def treeContainsDoLetFallback : SyntaxTree.Tree → Bool
+  | .missing
+  | .leaf _ => false
+  | tree@(.node (.raw kind) children) =>
+      (isDoLetFallbackKind kind && treeContainsLexeme "|" tree)
+      || children.any treeContainsDoLetFallback
+  | .node _ children => children.any treeContainsDoLetFallback
+
+def canRetainOriginalLayoutForOverflow (context : RuleContext) : SyntaxTree.Tree → Bool
+  | tree@(.node (.raw `Lean.Parser.Term.doSeqIndent) _) =>
+      !inDoLetElseFallback context
+      && !wrappedByDoLetElseFallbackSequence context
+      && !treeContainsDoLetFallback tree
+  | _ => false
+
+def canRetainParentRelativeOriginalLayoutForOverflow : SyntaxTree.Tree → Bool
+  | .node (.raw `Lean.Parser.Term.doSeqIndent) _ => true
+  | _ => false
 
 def infixAttachedBodyAssignmentValue (context : RuleContext) (segment : Segment) : Bool :=
   match context.ancestors, (nonemptyChildIndexes segment).head? with
