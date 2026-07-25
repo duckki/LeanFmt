@@ -5947,9 +5947,9 @@ def assertEnvironmentCacheBound (env : Lean.Environment) : IO Unit := do
 
 def assertParserReservoirIsolatesExactImports : IO Unit := do
   let projectImports : Array Lean.Import := #[{ module := `LeanFmt.Tests.ProjectSyntax }]
+  let projectEnvironment ← SyntaxTree.importEnvironment projectImports
   let reservoir : LeanFmt.Driver.ParserEnvironmentReservoir :=
-    { environment :=
-        ← SyntaxTree.importEnvironment projectImports }
+    { private? := some projectEnvironment }
   let projectEnv ← reservoir.environmentForImports projectImports
   let source := "#check project_syntax\n"
   let projectModule ←
@@ -5961,6 +5961,16 @@ def assertParserReservoirIsolatesExactImports : IO Unit := do
     SyntaxTree.parseModuleStringWithEnv leanEnv source "lean-parser-reservoir.lean"
   assertTrue "shared module reservoir excludes syntax outside the exact imports"
     (!leanModule.tree.containsNodeKind (.raw `projectSyntax))
+
+def assertSourceImportsUseLeanHeaderLevel : IO Unit := do
+  let moduleImports ←
+    LeanFmt.Driver.importEnvironmentSpecForSource
+      "module\n\npublic import Lean\n" "module-header.lean"
+  assertTrue "module headers import exported olean data"
+    (moduleImports.level == .exported)
+  let scriptImports ←
+    LeanFmt.Driver.importEnvironmentSpecForSource "import Lean\n" "script-header.lean"
+  assertTrue "script headers import private olean data" (scriptImports.level == .private)
 
 def assertDefaultEnvironmentPartition (env : Lean.Environment) : IO Unit := do
   IO.FS.withTempDir
@@ -7840,6 +7850,7 @@ def runCliAndArchitectureTests (env : Lean.Environment) : IO Unit := do
   assertCliParsing
   assertEnvironmentCacheBound env
   assertParserReservoirIsolatesExactImports
+  assertSourceImportsUseLeanHeaderLevel
   assertDefaultEnvironmentPartition env
   assertWorkersUseInputLakeRoot
   assertImportFilesGroupByHeader

@@ -77,9 +77,10 @@ Formatting a file follows this pipeline:
    fact. The CLI first tries the default environment, then loads an import-specific
    environment when project syntax requires it. Multi-file package formatting first
    handles files that parse in the default environment. A short-lived worker then
-   imports the union of the remaining files' module graphs once. For each exact ordered
-   import header, it reconstructs Lean's parser extension state from the imported
-   modules' own persistent-extension entries and caches that derived environment.
+   imports the union of the remaining files' module graphs once per Lean import level:
+   exported `.olean` data for files with a `module` header and private data for scripts.
+   For each exact ordered import header, it reconstructs Lean's parser extension state
+   from the imported modules' own persistent-extension entries and caches that derived environment.
    Constants and serialized module data are shared, but parser syntax outside the
    file's exact import closure is excluded. This prevents downstream parser extensions
    from changing how an earlier source module is parsed without repeatedly loading the
