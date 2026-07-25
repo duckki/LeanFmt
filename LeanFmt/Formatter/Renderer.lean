@@ -938,7 +938,7 @@ def RenderState.emitOriginalTree
         if isProofTree tree && SpaceRules.hasLineStructure originalLeading then
           targetColumn?.map
             fun targetColumn =>
-              max (state.segmentIndentation * indentationSpaces) targetColumn
+              max state.outputLayoutBaseColumn targetColumn
         else
           targetColumn?
       let leading :=
@@ -948,25 +948,24 @@ def RenderState.emitOriginalTree
               (if usesPendingIndent then leadingColumn else sourceColumn)
               targetColumn leading
         | none => leading
+      let sourceTextRebase? :=
+        match inlineContinuationColumns?, rebaseSourceTextTargetColumn? with
+        | some continuationColumns, some targetColumn =>
+            if isProofTree tree then
+              some (sourceColumn, targetColumn)
+            else
+              some continuationColumns
+        | some continuationColumns, none => some continuationColumns
+        | none, some targetColumn => some (sourceColumn, targetColumn)
+        | none, none => targetColumn?.map fun targetColumn => (sourceColumn, targetColumn)
       let sourceText :=
-        match inlineContinuationColumns?, rebaseSourceTextTargetColumn?,
-              targetColumn? with
-        | some (sourceIndent, targetIndent), _, _ =>
+        match sourceTextRebase? with
+        | some (sourceIndent, targetIndent) =>
             if sourceIndent == targetIndent then
               sourceText
             else
               rebaseOriginalTreeText state.source tree sourceIndent targetIndent
-        | none, some targetColumn, _ =>
-            if sourceColumn == targetColumn then
-              sourceText
-            else
-              rebaseOriginalTreeText state.source tree sourceColumn targetColumn
-        | none, none, some targetColumn =>
-            if sourceColumn == targetColumn then
-              sourceText
-            else
-              rebaseOriginalTreeText state.source tree sourceColumn targetColumn
-        | none, none, none => sourceText
+        | none => sourceText
       {
         state.appendOutput <| leading ++ sourceText with
           lastToken? := some lastToken
