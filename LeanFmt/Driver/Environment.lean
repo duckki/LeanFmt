@@ -151,29 +151,6 @@ def EnvironmentCache.environmentForSourceProfiled
               s!"{fileName}: environment.normalize={normalizeMs}ms default-parse={defaultParseMs}ms failed import-header={headerMs}ms import-env={importMs}ms cache=miss remember={rememberMs}ms"
             pure env
 
-def appendDistinctImports (collected imports : Array Lean.Import) : Array Lean.Import :=
-  imports.foldl
-    (fun collected importDecl =>
-      if collected.any fun existing => importKey existing == importKey importDecl then
-        collected
-      else
-        collected.push importDecl)
-    collected
-
-def importsForEnvironmentFiles (paths : List FilePath) : IO (Array Lean.Import) := do
-  let mut imports := #[]
-  for path in paths do
-    let source ← IO.FS.readFile path
-    let normalized := Formatter.Internal.normalizeSource source
-    imports := appendDistinctImports imports (← importsForSource normalized path.toString)
-  pure imports
-
-def environmentForWorkerEnvironmentFiles
-    (cache : EnvironmentCache) (_options : Options) (paths : List FilePath)
-    : IO Lean.Environment := do
-  let imports ← importsForEnvironmentFiles paths
-  cache.environmentForImports imports
-
 def relativePathFromComponents (base path : List String) : Option FilePath :=
   let rec dropCommon : List String → List String → List String × List String
     | baseHead :: baseRest, pathHead :: pathRest =>
@@ -204,14 +181,6 @@ def pathsForWorkerCwd (cwd? : Option FilePath) (files : List FilePath)
     : IO (List FilePath) :=
   files.mapM (pathForWorkerCwd cwd?)
 
-def workerGroupForCwd (cwd? : Option FilePath) (group : ImportWorkerGroup)
-    : IO ImportWorkerGroup := do
-  pure
-    {
-      environmentFile := ← pathForWorkerCwd cwd? group.environmentFile
-      files := ← pathsForWorkerCwd cwd? group.files
-    }
-
 def addFileToImportGroup
     (groups : List (String × List FilePath)) (key : String) (file : FilePath)
     : List (String × List FilePath) :=
@@ -239,126 +208,13 @@ def exactImportFileGroups (files : List FilePath) : IO (List ImportWorkerGroup) 
         | [] => none
         | envFile :: _ => some { environmentFile := envFile, files := files.reverse }
 
-def setupPathForSource? (cwd? : Option FilePath) (file : FilePath)
-    : IO (Option FilePath) := do
-  let some cwd := cwd?
-  | pure none
-  let relative ← pathForWorkerCwd (some cwd) file
-  pure <| some <| cwd / ".lake" / "build" / "ir" / relative.withExtension "setup.json"
-
-def importArtifactsFromSetupJson (json : Lean.Json) : Except String (List String) := do
-  let importArts ← json.getObjVal? "importArts"
-  let object ← importArts.getObj?
-  pure <| object.foldl (init := []) fun modules moduleName _ => moduleName :: modules
-
-def importArtifactsForSource? (cwd? : Option FilePath) (file : FilePath)
-    : IO (Option (List String)) := do
-  let some setupPath ←
-    setupPathForSource? cwd? file
-  | pure none
-  if !(← setupPath.pathExists) then
-    pure none
-  else
-    match Lean.Json.parse (← IO.FS.readFile setupPath) with
-    | .error _ => pure none
-    | .ok json =>
-        match importArtifactsFromSetupJson json with
-        | .error _ => pure none
-        | .ok modules => pure <| some <| modules.mergeSort (· < ·)
-
-def stringListSubset (left right : List String) : Bool :=
-  left.all fun value => right.contains value
-
-structure ImportArtifactGroupCandidate where
-  file : FilePath
-  imports : List String
-
-def maximalImportArtifactCandidates (candidates : List ImportArtifactGroupCandidate)
-    : List ImportArtifactGroupCandidate :=
-  candidates.filter
-    fun candidate =>
-      !candidates.any
-        fun other =>
-          candidate.file != other.file
-          && candidate.imports.length < other.imports.length
-          && stringListSubset candidate.imports other.imports
-
-def chooseCoveringImportCandidate
-    (maximal : List ImportArtifactGroupCandidate)
-    (candidate : ImportArtifactGroupCandidate)
-    : Option ImportArtifactGroupCandidate :=
-  maximal |>.filter (fun cover => stringListSubset candidate.imports cover.imports)
-    |>.mergeSort
-        (fun left right =>
-          left.imports.length < right.imports.length
-          || (left.imports.length == right.imports.length
-              && left.file.toString < right.file.toString))
-  |>.head?
-
-def addFileToImportArtifactGroup
-    (groups : List (FilePath × List FilePath)) (envFile file : FilePath)
-    : List (FilePath × List FilePath) :=
-  let rec loop (seen : List (FilePath × List FilePath))
-      : List (FilePath × List FilePath) → List (FilePath × List FilePath)
-    | [] => (envFile, [file]) :: seen
-    | (groupEnv, files) :: rest =>
-        if groupEnv == envFile then
-          seen.reverse ++ ((groupEnv, file :: files) :: rest)
-        else
-          loop ((groupEnv, files) :: seen) rest
-  loop [] groups
-
-def importArtifactFileGroups?
-    (cwd? : Option FilePath) (environmentFiles files : List FilePath)
-    : IO (Option (List ImportWorkerGroup)) := do
-  let rec collectAvailable (candidates : List ImportArtifactGroupCandidate)
-      : List FilePath → IO (List ImportArtifactGroupCandidate)
-    | [] => pure candidates.reverse
-    | file :: rest => do
-        match (← importArtifactsForSource? cwd? file) with
-        | none => collectAvailable candidates rest
-        | some imports => collectAvailable ({ file, imports } :: candidates) rest
-  let candidates ← collectAvailable [] environmentFiles
-  let rec collectTargets (targets : List ImportArtifactGroupCandidate)
-      (missing : List FilePath)
-      : List FilePath → IO (List ImportArtifactGroupCandidate × List FilePath)
-    | [] => pure (targets.reverse, missing.reverse)
-    | file :: rest => do
-        match (← importArtifactsForSource? cwd? file) with
-        | none => collectTargets targets (file :: missing) rest
-        | some imports => collectTargets ({ file, imports } :: targets) missing rest
-  let (targets, missingTargets) ← collectTargets [] [] files
-  if candidates.isEmpty || targets.isEmpty then
-    pure none
-  else
-    let maximal := maximalImportArtifactCandidates candidates
-    let rec assign (groups : List (FilePath × List FilePath))
-        : List ImportArtifactGroupCandidate → Option (List (FilePath × List FilePath))
-      | [] => some groups
-      | candidate :: rest =>
-          match chooseCoveringImportCandidate maximal candidate with
-          | none => none
-          | some cover =>
-              assign (addFileToImportArtifactGroup groups cover.file candidate.file) rest
-    let some groups := assign [] targets
-    | pure none
-    pure
-    <| some
-    <| (groups.reverse.map
-          fun (envFile, files) => { environmentFile := envFile, files := files.reverse })
-        ++ (← exactImportFileGroups missingTargets)
-
-def importFileGroups (cwd? : Option FilePath) (files : List FilePath)
+def importFileGroups (_cwd? : Option FilePath) (files : List FilePath)
     : IO (List ImportWorkerGroup) := do
-  match (← importArtifactFileGroups? cwd? files files) with
-  | some groups => pure groups
-  | none => exactImportFileGroups files
+  exactImportFileGroups files
 
 def importFileGroupsWithEnvironmentCandidates
-    (cwd? : Option FilePath) (environmentFiles files : List FilePath)
+    (_cwd? : Option FilePath) (_environmentFiles files : List FilePath)
     : IO (List ImportWorkerGroup) := do
-  match (← importArtifactFileGroups? cwd? environmentFiles files) with
-  | some groups => pure groups
-  | none => exactImportFileGroups files
+  exactImportFileGroups files
 
 end LeanFmt.Driver

@@ -5765,16 +5765,6 @@ def assertCliParsing : IO Unit := do
       throw
       <| IO.userError
           s!"CLI parser should accept --worker-batch-size and files: {repr result}"
-  match LeanFmt.Cli.parseArgs
-          ["--worker-env-from-inputs", "GraphQL.lean", "Tests.lean"] with
-  | .run options =>
-      assertTrue "CLI input environment flag" options.workerEnvironmentFromInputs
-      assertTrue "CLI input environment files"
-        (options.files.map toString == ["GraphQL.lean", "Tests.lean"])
-  | result =>
-      throw
-      <| IO.userError
-          s!"CLI parser should accept --worker-env-from-inputs and files: {repr result}"
   match LeanFmt.Cli.parseArgs ["--line-width", "100", "GraphQL.lean"] with
   | .run options =>
       assertTrue "CLI line-width flag" (options.formatterOptions.lineWidth == 100)
@@ -5890,22 +5880,6 @@ def assertEnvironmentCacheBound (env : Lean.Environment) : IO Unit := do
     { default := env, maxEntries := 0, entries := disabledEntries }
   disabledCache.rememberEnvironment "ignored" env
   assertTrue "disabled environment cache remains empty" (← disabledEntries.get).isEmpty
-
-def assertWorkerEnvironmentImportsAreCombined : IO Unit := do
-  IO.FS.withTempDir
-    fun root =>
-      do
-        let first := root / "First.lean"
-        let second := root / "Second.lean"
-        IO.FS.writeFile first "import Lean\nimport Init\n"
-        IO.FS.writeFile second "import Init\nimport Lean\n"
-        let imports ← LeanFmt.Driver.importsForEnvironmentFiles [first, second]
-        let expected :=
-          "Init|all=false|exported=true|meta=false\n"
-          ++ "Init|all=false|exported=true|meta=true\n"
-          ++ "Lean|all=false|exported=true|meta=false"
-        assertEq "worker input environments deduplicate their header imports"
-          expected (LeanFmt.Driver.importsKey imports)
 
 def assertDefaultEnvironmentPartition (env : Lean.Environment) : IO Unit := do
   IO.FS.withTempDir
@@ -6035,7 +6009,7 @@ def assertImportFilesGroupByHeader : IO Unit := do
         assertEq "import-heavy files group by normalized import header"
           (toString [[first, third], [second]]) (toString (groups.map (·.files)))
 
-def assertImportFilesGroupByLakeSetupImportArtifacts : IO Unit := do
+def assertImportFilesIgnoreLakeSetupSupersets : IO Unit := do
   IO.FS.withTempDir
     fun root =>
       do
@@ -6056,12 +6030,12 @@ def assertImportFilesGroupByLakeSetupImportArtifacts : IO Unit := do
           "{\"importArts\":{\"Mathlib\":{}}}\n"
         IO.FS.writeFile (setupDir / "Third.setup.json") "{\"importArts\":{\"Lean\":{}}}\n"
         let groups ← LeanFmt.Driver.importFileGroups (some project) [first, second, third]
-        assertEq "Lake setup import artifacts group by covering environment"
-          (toString [[first, second], [third]]) (toString (groups.map (·.files)))
-        assertEq "Lake setup import artifacts choose superset environment file"
-          (toString [first, third]) (toString (groups.map (·.environmentFile)))
+        assertTrue "files with distinct import headers use separate environments"
+          (groups.length == 3)
+        assertTrue "each distinct import header chooses its own environment file"
+          (groups.all fun group => group.files == [group.environmentFile])
 
-def assertImportFilesUseDefaultAggregatorAsEnvironmentCandidate : IO Unit := do
+def assertImportFilesIgnoreDownstreamEnvironmentCandidates : IO Unit := do
   IO.FS.withTempDir
     fun root =>
       do
@@ -6086,10 +6060,10 @@ def assertImportFilesUseDefaultAggregatorAsEnvironmentCandidate : IO Unit := do
         let groups ←
           LeanFmt.Driver.importFileGroupsWithEnvironmentCandidates
             (some project) [aggregator, first, second] [first, second]
-        assertEq "default-parsing aggregator can cover imported files"
+        assertEq "identical import headers share an exact environment"
           (toString [[first, second]]) (toString (groups.map (·.files)))
-        assertEq "default-parsing aggregator is selected as worker environment"
-          (toString [aggregator]) (toString (groups.map (·.environmentFile)))
+        assertEq "downstream aggregator is not selected as a worker environment"
+          (toString [first]) (toString (groups.map (·.environmentFile)))
 
 def assertRecursiveWorkerChecksTargetToolchain : IO Unit := do
   IO.FS.withTempDir
@@ -7783,12 +7757,11 @@ def runCliAndArchitectureTests (env : Lean.Environment) : IO Unit := do
     { default := env, maxEntries := 1, entries }
   assertCliParsing
   assertEnvironmentCacheBound env
-  assertWorkerEnvironmentImportsAreCombined
   assertDefaultEnvironmentPartition env
   assertWorkersUseInputLakeRoot
   assertImportFilesGroupByHeader
-  assertImportFilesGroupByLakeSetupImportArtifacts
-  assertImportFilesUseDefaultAggregatorAsEnvironmentCandidate
+  assertImportFilesIgnoreLakeSetupSupersets
+  assertImportFilesIgnoreDownstreamEnvironmentCandidates
   assertRecursiveWorkerChecksTargetToolchain
   assertFormattingExceptionChecks env
   assertCliChecksStillFormatUnlessCheck env cache

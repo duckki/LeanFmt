@@ -220,11 +220,6 @@ def Options.workerArgs (options : Options) (files : List FilePath) : Array Strin
         args := args.push "--import-env-first"
       if options.includeHidden then
         args := args.push "--include-hidden"
-      if options.workerEnvironmentFromInputs then
-        args := args.push "--worker-env-from-inputs"
-      if let some envFile := options.workerEnvironment? then
-        args := args.push "--worker-env"
-        args := args.push envFile.toString
       args := args.push "--env-cache-size"
       args := args.push s!"{options.environmentCacheSize}"
       args := args.push "--line-width"
@@ -278,47 +273,18 @@ def initialWorkerBatchSize (options : Options) (cwd? : Option FilePath)
   | some size => pure size
   | none => defaultWorkerBatchSize cwd? files
 
-def runWorkerBatch
-    (options : Options) (cwd? : Option FilePath) (group : ImportWorkerGroup)
-    : IO UInt32 := do
-  let executable ← workerExecutable
-  let group ← workerGroupForCwd cwd? group
-  let childOptions := { options with workerEnvironment? := some group.environmentFile }
-  let (exitCode, elapsedMs) ←
-    timeIO <| do
-      let child ←
-        IO.Process.spawn
-          {
-            cmd := "lake"
-            args := #["env", executable.toString] ++ childOptions.workerArgs group.files
-            cwd := cwd?
-            stdin := .null
-            stdout := .inherit
-            stderr := .inherit
-          }
-      child.wait
-  profileLine options
-    s!"worker-batch: env={group.environmentFile} files={group.files.length} elapsed={elapsedMs}ms"
-  pure exitCode
-
-def runCombinedWorkerBatch
+def runExactEnvironmentWorkerBatch
     (options : Options) (cwd? : Option FilePath) (inputFiles : List FilePath)
     : IO UInt32 := do
   let executable ← workerExecutable
   let files ← pathsForWorkerCwd cwd? inputFiles
-  let childOptions :=
-    {
-      options with
-        workerEnvironmentFromInputs := true
-        workerEnvironment? := none
-    }
   let (exitCode, elapsedMs) ←
     timeIO <| do
       let child ←
         IO.Process.spawn
           {
             cmd := "lake"
-            args := #["env", executable.toString] ++ childOptions.workerArgs files
+            args := #["env", executable.toString] ++ options.workerArgs files
             cwd := cwd?
             stdin := .null
             stdout := .inherit
@@ -326,22 +292,20 @@ def runCombinedWorkerBatch
           }
       child.wait
   profileLine options
-    s!"worker-batch: envs=inputs files={files.length} elapsed={elapsedMs}ms"
+    s!"worker-batch: envs=exact files={files.length} elapsed={elapsedMs}ms"
   pure exitCode
 
-partial def runWorkerBatches
-    (options : Options) (cwd? : Option FilePath) (group : ImportWorkerGroup)
+partial def runExactEnvironmentWorkerBatches
+    (options : Options) (cwd? : Option FilePath) (files : List FilePath)
     : IO UInt32 := do
-  let initialBatchSize ← initialWorkerBatchSize options cwd? group.files
+  let initialBatchSize ← initialWorkerBatchSize options cwd? files
   let rec loop (failed : Bool) : List FilePath → IO UInt32
     | [] => pure <| if failed then 1 else 0
     | remaining => do
         let batch := remaining.take initialBatchSize
-        let exitCode ←
-          runWorkerBatch options cwd?
-            { environmentFile := group.environmentFile, files := batch }
+        let exitCode ← runExactEnvironmentWorkerBatch options cwd? batch
         loop (failed || exitCode != 0) (remaining.drop initialBatchSize)
-  loop false group.files
+  loop false files
 
 def summarizeOutcomes (options : Options) (outcomes : List FileOutcome) : IO UInt32 := do
   let changed := outcomes.any (·.changed)
@@ -354,19 +318,6 @@ def summarizeOutcomes (options : Options) (outcomes : List FileOutcome) : IO UIn
   let formattingDifferenceFailed := options.check && !diagnosticMode && changed
   pure <| if failed || formattingDifferenceFailed then 1 else 0
 
-def formatFilesWithWorkerEnvironment
-    (cache : EnvironmentCache) (options : Options) (envFiles : List FilePath)
-    (files : List FilePath)
-    : IO UInt32 := do
-  let (env, environmentMs) ←
-    timeIO <| environmentForWorkerEnvironmentFiles cache options envFiles
-  profileLine options
-    s!"worker-env: envs={envFiles.length} files={files.length} environment={environmentMs}ms"
-  let (outcomes, formatMs) ← timeIO <| files.mapM (formatFileWithEnv env options)
-  profileLine options
-    s!"worker-env-files: envs={envFiles.length} files={files.length} format={formatMs}ms"
-  summarizeOutcomes options outcomes
-
 def formatDefaultEnvironmentFiles
     (cache : EnvironmentCache) (options : Options) (files : List FilePath)
     : IO UInt32 := do
@@ -375,16 +326,6 @@ def formatDefaultEnvironmentFiles
   profileLine options
     s!"default-environment-files: files={files.length} elapsed={elapsedMs}ms"
   summarizeOutcomes options outcomes
-
-partial def runImportWorkerGroups
-    (options : Options) (cwd? : Option FilePath) (groups : List ImportWorkerGroup)
-    : IO UInt32 := do
-  let rec loop (failed : Bool) : List ImportWorkerGroup → IO UInt32
-    | [] => pure <| if failed then 1 else 0
-    | group :: rest => do
-        let exitCode ← runWorkerBatches options cwd? group
-        loop (failed || exitCode != 0) rest
-  loop false groups
 
 def runMixedWorkerBatches
     (cache : EnvironmentCache) (options : Options) (cwd? : Option FilePath)
@@ -396,20 +337,14 @@ def runMixedWorkerBatches
     s!"partition: files={files.length} default={defaultFiles.length} import={importFiles.length} elapsed={partitionMs}ms"
   let defaultExitCode ← formatDefaultEnvironmentFiles cache options defaultFiles
   let importExitCode ←
-    match options.workerBatchSize? with
-    | none =>
-        profileLine options
-          s!"import-groups: files={importFiles.length} strategy=input-union elapsed=0ms"
-        if importFiles.isEmpty then
-          pure 0
-        else
-          runCombinedWorkerBatch options cwd? importFiles
-    | some _ =>
-        let (importGroups, groupMs) ←
-          timeIO <| importFileGroupsWithEnvironmentCandidates cwd? files importFiles
-        profileLine options
-          s!"import-groups: files={importFiles.length} groups={importGroups.length} elapsed={groupMs}ms"
-        runImportWorkerGroups options cwd? importGroups
+    if importFiles.isEmpty then
+      pure 0
+    else
+      profileLine options
+        s!"import-groups: files={importFiles.length} strategy=exact-per-file elapsed=0ms"
+      let exactGroups ← exactImportFileGroups importFiles
+      let orderedFiles := exactGroups.flatMap (·.files)
+      runExactEnvironmentWorkerBatches options cwd? orderedFiles
   pure <| if defaultExitCode != 0 || importExitCode != 0 then 1 else 0
 
 end LeanFmt.Driver

@@ -463,11 +463,11 @@ the corresponding existing clone there. Set
 `LEANFMT_VALIDATION_FORMATTER_BATCH_SIZE` passes `--worker-batch-size` to
 LeanFmt to override its automatic worker batch choice. Multi-file package formatter
 invocations first format files that parse in LeanFmt's default Lean environment, then
-combine the distinct header imports of files that need imported syntax in one
-short-lived worker. This avoids selecting a costly umbrella module merely because its
-import closure covers every source file. Supplying a worker batch size instead groups
-files under covering environments and processes bounded batches, trading more
-environment loads for lower peak memory. Set
+process files that need imported syntax in a short-lived worker. That worker resolves
+each file's exact ordered header imports through a bounded cache; it never uses a
+downstream or covering import environment. Supplying a worker batch size limits the
+number of files processed by each worker, trading process and environment setup time
+for lower peak memory. Set
 `LEANFMT_VALIDATION_LINE_WIDTH=N` to pass a project-specific line width to every
 formatter invocation.
 

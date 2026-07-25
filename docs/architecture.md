@@ -76,12 +76,12 @@ Formatting a file follows this pipeline:
    term parser at application-argument precedence and retain the result as a parser
    fact. The CLI first tries the default environment, then loads an import-specific
    environment when project syntax requires it. Multi-file package formatting first
-   handles files that parse in the default environment. By default, one short-lived
-   worker then imports the distinct header imports of every remaining file and reuses
-   that combined parser environment for the whole set. This avoids both loading an
-   umbrella module's compiled declarations and starting one process per import shape.
-   An explicit worker batch size instead retains bounded covering-environment groups to
-   limit peak memory.
+   handles files that parse in the default environment. A short-lived worker then
+   resolves the exact header-import environment of every remaining file through a
+   bounded in-process cache. Files may share an environment only when their ordered
+   import headers match. This prevents downstream parser extensions from changing how
+   an earlier source module is parsed. An explicit worker batch size limits how many
+   files each short-lived worker processes and bounds peak memory.
 3. Convert Lean `Syntax` to a `SyntaxTree.Tree` of tokens and raw parser nodes.
 4. Regroup selected raw nodes into logical `SyntaxTree.NodeKind` nodes.
 5. Render the resulting tree using line-break rules and space rules.

@@ -96,12 +96,6 @@ def parseArgs (args : List String) : ParseResult :=
         .error "--worker-batch-size requires a value"
     | "--worker" :: rest =>
         loop { options with worker := true } files rest
-    | "--worker-env-from-inputs" :: rest =>
-        loop { options with workerEnvironmentFromInputs := true } files rest
-    | "--worker-env" :: value :: rest =>
-        loop { options with workerEnvironment? := some (FilePath.mk value) } files rest
-    | "--worker-env" :: [] =>
-        .error "--worker-env requires a value"
     | "--recursive" :: rest | "-r" :: rest =>
         loop { options with recursive := true } files rest
     | "--include-hidden" :: rest =>
