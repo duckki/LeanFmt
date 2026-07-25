@@ -3477,6 +3477,7 @@ def ruleFor : SyntaxTree.Tree → Option LineBreakRule
       some defaultRule
   | .node (.raw `SimplexCategory.Truncated.mkNotation) _ => some defaultRule
   | .node (.raw `TopCat.Presheaf.attrSheaf_restrict) _ => some defaultRule
+  | .node (.raw `TopCat.Presheaf.attrSheaf_restrict_1) _ => some defaultRule
   | .node (.raw `aliasIn) _ => some defaultRule
   | .node (.raw `Mathlib.Tactic.TermCongr.termCongr) _ => some defaultRule
   | .node (.raw `Mathlib.Meta.FunProp.funPropTacStx) _ => some defaultRule

@@ -6980,6 +6980,7 @@ def assertMathlibLowRiskSyntaxKindsHaveRules : IO Unit := do
       `CategoryTheory.SimplicialObject.Truncated.mkNotation,
       `SimplexCategory.Truncated.mkNotation,
       `TopCat.Presheaf.attrSheaf_restrict,
+      `TopCat.Presheaf.attrSheaf_restrict_1,
       `proof_wanted,
       `BigOperators.bigexpect,
       `Std.termF!_,
