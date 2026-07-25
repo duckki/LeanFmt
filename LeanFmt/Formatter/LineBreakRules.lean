@@ -609,7 +609,8 @@ def rawKindIsQuantifier (kind : Lean.SyntaxNodeKind) : Bool :=
   || kind == `«term∃_,_»
 
 def binderOperatorLexeme (lexeme : String) : Bool :=
-  ["∀", "∃", "⨆", "⨅", "∑", "∏", "∑'", "∏'", "𝔼", "∫", "∮"].contains lexeme
+  ["∀", "∃", "⨆", "⨅", "∑", "∏", "𝔼", "∫", "∮"].any
+    fun operatorPrefix => lexeme.startsWith operatorPrefix
 
 def treeHasBinderBodySeparator (tree : SyntaxTree.Tree) : Bool :=
   let segment := Segment.ofTree tree

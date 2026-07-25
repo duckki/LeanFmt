@@ -983,7 +983,8 @@ because they appeared in the input.
 
 Binder operators such as `⨆`, `⨅`, `∑`, and `∫` use the same comma/body
 layout. This rule is recognized from the operator token and syntax shape, so
-generated notation node names do not need individual mappings.
+generated notation node names do not need individual mappings. Decorated forms
+such as `∀ᵉ` share the classification of their base operator.
 
 ```lean
 ⨆ p : Index,

@@ -5125,6 +5125,17 @@ def assertGeneratedBinderOperatorBreaksBeforeBody (_env : Lean.Environment)
     Formatter.formatSourceWithEnv env source "generated-binder-operator.lean"
       { lineWidth := 60 }
   assertEq "generated binder operator breaks before its body" expected formatted
+  let modifiedSource :=
+    "def generatedModifiedBinder := ∀ᵉ value ∈ SomeSetWithALongName, longBodyFunction value anotherArgument\n"
+  let modifiedExpected :=
+    "def generatedModifiedBinder :=\n"
+    ++ "  ∀ᵉ value ∈ SomeSetWithALongName,\n"
+    ++ "    longBodyFunction value anotherArgument\n"
+  let modifiedFormatted ←
+    Formatter.formatSourceWithEnv env modifiedSource
+      "generated-modified-binder-operator.lean" { lineWidth := 60 }
+  assertEq "modified binder operator uses its base token class"
+    modifiedExpected modifiedFormatted
 
 def assertQuantifierIdentifierSequenceFlows (env : Lean.Environment) : IO Unit := do
   let source :=
