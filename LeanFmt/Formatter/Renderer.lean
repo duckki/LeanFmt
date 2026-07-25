@@ -536,6 +536,13 @@ def renderedOverflowCount (before after : RenderState) : Nat :=
       1
   completed + current
 
+def preferCandidateWithFewerOverflows (before current candidate : RenderState)
+    : RenderState :=
+  if renderedOverflowCount before candidate < renderedOverflowCount before current then
+    candidate
+  else
+    current
+
 def RenderState.segmentStartBaseFor
     (state : RenderState) (segment : LineBreakRules.Segment)
     : SegmentBase :=
@@ -1996,20 +2003,9 @@ mutual
         state.commitLayoutProbe probe
       else if rule.preferChildLayouts state.context segment
               && !hasRetainedSourceBreak then
-        let childLayout := renderChildren state segment
-        let prefixStaysFlat :=
-          match breakPoints.head? with
-          | some breakPoint =>
-              let prefixStop := min segment.stop (breakPoint.index + 1)
-              let prefixSegment := segment.slice segment.start prefixStop
-              let prefixRendered :=
-                renderSegmentRange state segment segment.start prefixStop
-              !renderedSegmentIsMultiline state prefixRendered prefixSegment
-          | none => true
-        if prefixStaysFlat && renderedCandidateFits state childLayout then
-          childLayout
-        else
-          renderAfterFlatFailure state segment rule breakPoints isFlow
+        match renderPreferredChildLayout? state segment breakPoints with
+        | some childLayout => childLayout
+        | none => renderAfterFlatFailure state segment rule breakPoints isFlow
       else
         renderAfterFlatFailure state segment rule breakPoints isFlow
 
@@ -2040,6 +2036,24 @@ mutual
               if renderedCandidateFits state candidate then candidate else fallback ()
           | none => fallback ()
 
+  partial def renderPreferredChildLayout?
+      (state : RenderState) (segment : LineBreakRules.Segment)
+      (breakPoints : List LineBreakRules.BreakPoint)
+      : Option RenderState :=
+    let childLayout := renderChildren state segment
+    let prefixStaysFlat :=
+      match breakPoints.head? with
+      | some breakPoint =>
+          let prefixStop := min segment.stop (breakPoint.index + 1)
+          let prefixSegment := segment.slice segment.start prefixStop
+          let prefixRendered := renderSegmentRange state segment segment.start prefixStop
+          !renderedSegmentIsMultiline state prefixRendered prefixSegment
+      | none => true
+    if prefixStaysFlat && renderedCandidateFits state childLayout then
+      some childLayout
+    else
+      none
+
   partial def renderUsingExistingBreaks
       (state : RenderState) (segment : LineBreakRules.Segment)
       (rule : LineBreakRules.LineBreakRule)
@@ -2057,20 +2071,9 @@ mutual
           if probe.acceptedForRule isFlow breakPoints then
             state.commitLayoutProbe probe
           else if rule.preferChildLayouts state.context segment && !hasSourceBreaks then
-            let childLayout := renderChildren state segment
-            let prefixStaysFlat :=
-              match breakPoints.head? with
-              | some breakPoint =>
-                  let prefixStop := min segment.stop (breakPoint.index + 1)
-                  let prefixSegment := segment.slice segment.start prefixStop
-                  let prefixRendered :=
-                    renderSegmentRange state segment segment.start prefixStop
-                  !renderedSegmentIsMultiline state prefixRendered prefixSegment
-              | none => true
-            if prefixStaysFlat && renderedCandidateFits state childLayout then
-              childLayout
-            else
-              renderAfterFlatFailure state segment rule breakPoints isFlow
+            match renderPreferredChildLayout? state segment breakPoints with
+            | some childLayout => childLayout
+            | none => renderAfterFlatFailure state segment rule breakPoints isFlow
           else
             renderAfterFlatFailure state segment rule breakPoints isFlow
 
@@ -2193,11 +2196,7 @@ mutual
               childState.emitOriginalTree child
                 (respectPendingIndent := true)
                 (rebaseSourceTextTargetColumn? := some targetColumn)
-            if renderedOverflowCount childState original
-                < renderedOverflowCount childState rendered then
-              original
-            else
-              rendered
+            preferCandidateWithFewerOverflows childState rendered original
     let rendered :=
       if emitOriginal
           || !LineBreakRules.canRetainParentRelativeOriginalLayoutForOverflow child then
@@ -2210,11 +2209,7 @@ mutual
               childState.emitOriginalTree child
                 (respectPendingIndent := true)
                 (rebaseSourceTextTargetColumn? := some targetColumn)
-            if renderedOverflowCount childState original
-                < renderedOverflowCount childState rendered then
-              original
-            else
-              rendered
+            preferCandidateWithFewerOverflows childState rendered original
     let rendered :=
       if emitOriginal
           || !LineBreakRules.canRetainOriginalLayoutForOverflow childContext child then
@@ -2230,11 +2225,7 @@ mutual
                     childState.originalTreeColumnAfterLineBreak child
                     |> shiftColumnByAnchor childState.sourceLayoutBaseColumn
                         childState.outputLayoutBaseColumn)
-        if renderedOverflowCount childState original
-            < renderedOverflowCount childState rendered then
-          original
-        else
-          rendered
+        preferCandidateWithFewerOverflows childState rendered original
     scope.restore rendered
 
   partial def renderChildren (state : RenderState) (segment : LineBreakRules.Segment)
