@@ -193,7 +193,7 @@ def noSpaceAfterToken (lexeme : String) : Bool :=
   stringEndsWithAny lexeme ["(", "[", "⟨", "⟪", "⦃"]
 
 def allowsHorizontalAlignmentAfterToken (lexeme : String) : Bool :=
-  lexeme != "("
+  lexeme != "(" && lexeme != ":"
 
 def charCodeIn (char : Char) (lower upper : Nat) : Bool :=
   lower <= char.toNat && char.toNat <= upper

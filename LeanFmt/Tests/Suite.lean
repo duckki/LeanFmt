@@ -3377,13 +3377,14 @@ def assertParenthesizedLetIKeepsTightOpeningDelimiter (env : Lean.Environment)
       "parenthesized-letI-tight-opening-formatted.lean"
   assertEq "parenthesized letI formatting is idempotent" formatted formattedAgain
 
-def assertBinderLetIAlignsAfterColon (env : Lean.Environment) : IO Unit := do
+def assertBinderLetIDoesNotPadAfterColon (env : Lean.Environment) : IO Unit := do
   let source :=
     "def binderLetI [h : letI := veryLongInstanceProviderName alphaArgument functionArgument; VeryLongTypeclassName alphaArgument] : Nat := default\n"
   let formatted ← Formatter.formatSourceWithEnv env source "binder-letI-spacing.lean"
   assertTrue "binder letI preserves code"
     (← codePreservedIgnoringWhitespace env source formatted)
-  assertTextContains "binder letI aligns after colon" formatted ":  letI"
+  assertTextContains "binder letI uses one space after colon" formatted ": letI"
+  assertTextLacks "binder letI does not add alignment padding" formatted ":  letI"
   let formattedAgain ←
     Formatter.formatSourceWithEnv env formatted "binder-letI-spacing-formatted.lean"
   assertEq "binder letI formatting is idempotent" formatted formattedAgain
@@ -7341,7 +7342,7 @@ def runExpressionAndRendererTests (env : Lean.Environment) : IO Unit := do
   assertLetIExpressionKeepsBodyBreak env
   assertLetExpressionBlocksFlatRendering env
   assertParenthesizedLetIKeepsTightOpeningDelimiter env
-  assertBinderLetIAlignsAfterColon env
+  assertBinderLetIDoesNotPadAfterColon env
   assertParenthesizedLetRhsIndentUnderImplication env
   assertParenthesizedLetAlignmentFollowsBodyPrecedence env
   assertParenthesizedLetWithMatchBodyKeepsTightOpening env
