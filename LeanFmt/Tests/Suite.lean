@@ -6162,6 +6162,8 @@ def assertWorkersUseInputLakeRoot : IO Unit := do
         assertTrue "automatic imported worker count follows Lean's conservative cap"
           (LeanFmt.Driver.defaultImportedEnvironmentWorkerJobs
             ≤ LeanFmt.Driver.maxDefaultImportedEnvironmentWorkerJobs)
+        assertTrue "exact workers recycle after the measured default lifetime"
+          (LeanFmt.Driver.defaultImportedEnvironmentsPerWorker == 2)
         assertTrue "explicit imported worker count overrides the machine default"
           (LeanFmt.Driver.configuredImportedEnvironmentWorkerJobs
               { workerJobs? := some 3 }

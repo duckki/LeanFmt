@@ -483,10 +483,11 @@ The import-prefix cache is bounded by `--env-cache-size`. Files with a `module` 
 exported `.olean` data; scripts use private data, matching Lean's frontend. Lean itself
 computes every transitive import, IR phase, initializer, and persistent extension;
 leanfmt does not derive environments from a superset. An imported worker handles at
-most 16 exact environments by default. Restarting it bounds Lean runtime state outside
-the explicit caches. Lowering the worker-job count reduces peak memory; changing the
-environment limit trades process setup time for each process's lifetime and retained
-state. Setting
+most two exact environments by default. Restarting it bounds Lean runtime state
+outside the explicit caches and avoids the increasing environment-import cost observed
+in longer-lived processes. Lowering the worker-job count reduces peak memory; changing
+the environment limit trades process setup time for each process's lifetime and
+runtime state. Setting
 `--env-cache-size 0` disables prefix reuse and uses Lean's direct importer when a new
 exact environment is required. The immediately preceding exact environment remains
 available for files with an identical header. This direct path is

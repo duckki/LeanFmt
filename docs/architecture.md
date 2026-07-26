@@ -96,10 +96,12 @@ Formatting a file follows this pipeline:
 
    The automatic imported-environment worker count is capped at two to avoid
    multiplying cold `.olean` I/O and retained environments without bound. Each
-   imported worker loads at most 16 exact environments by default, regardless of how
-   many files share each environment. The scheduler keeps the configured number of
-   jobs active until its queue is empty. Worker output is buffered and reported in
-   batch order so diagnostics remain readable and deterministic.
+   imported worker loads at most two exact environments by default, regardless of how
+   many files share each environment. Recycling workers at this boundary avoids the
+   increasing runtime and heap-management cost observed when one process constructs
+   many large environments. The scheduler keeps the configured number of jobs active
+   until its queue is empty. Worker output is buffered and reported in batch order so
+   diagnostics remain readable and deterministic.
    `-j` or `--jobs` limits concurrent workers, while
    `--environments-per-worker` overrides the exact-environment lifetime bound. Setting
    `--env-cache-size` to zero also bypasses prefix-state reuse and calls Lean's direct

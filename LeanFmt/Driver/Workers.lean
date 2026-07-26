@@ -273,7 +273,7 @@ def shouldUseWorker (options : Options) (cwd? : Option FilePath) (fileCount : Na
     : Bool :=
   !options.worker && cwd?.isSome && fileCount > 1
 
-def defaultImportedEnvironmentsPerWorker : Nat := 16
+def defaultImportedEnvironmentsPerWorker : Nat := 2
 
 def maxDefaultImportedEnvironmentWorkerJobs : Nat := 2
 
