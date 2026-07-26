@@ -128,12 +128,17 @@ structure ModuleImportRequirement where
   needsIRTrans : Bool
 deriving BEq
 
-partial def moduleIndicesForImports
-    (environment : Lean.Environment) (imports : Array Lean.Import)
+structure ModuleImportPlan where
+  requirements : Lean.NameMap ModuleImportRequirement
+  moduleNames : Array Lean.Name
+
+partial def moduleImportPlanForImports
+    (imports : Array Lean.Import)
     (level : Lean.OLeanLevel := .private)
-    : IO (Array Lean.ModuleIdx) := do
+    (importsForModule : Lean.Name → IO (Array Lean.Import))
+    : IO ModuleImportPlan := do
   let requirementsRef ← IO.mkRef ({} : Lean.NameMap ModuleImportRequirement)
-  let indicesRef ← IO.mkRef (#[] : Array Lean.ModuleIdx)
+  let moduleNamesRef ← IO.mkRef (#[] : Array Lean.Name)
   let rec visitImports
       (moduleImports : Array Lean.Import)
       (importAll isExported needsData needsIRTrans : Bool)
@@ -164,19 +169,38 @@ partial def moduleIndicesForImports
           unless changed do
             continue
           requirementsRef.set <| requirements.insert imported.module effective
-          let some moduleIndex := environment.getModuleIdx? imported.module
-          | throw
-            <| IO.userError
-                s!"shared parser environment is missing module {imported.module}"
-          let moduleData := environment.header.moduleData[moduleIndex]!
-          visitImports moduleData.imports effective.importAll
+          visitImports (← importsForModule imported.module) effective.importAll
             effective.isExported effective.needsData effective.needsIRTrans
           if previous?.isNone then
-            indicesRef.modify (·.push moduleIndex)
+            moduleNamesRef.modify (·.push imported.module)
   visitImports imports (importAll := true)
     (isExported := level < .private) (needsData := true)
     (needsIRTrans := false)
-  indicesRef.get
+  pure
+    {
+      requirements := ← requirementsRef.get
+      moduleNames := ← moduleNamesRef.get
+    }
+
+partial def moduleIndicesForImports
+    (environment : Lean.Environment) (imports : Array Lean.Import)
+    (level : Lean.OLeanLevel := .private)
+    : IO (Array Lean.ModuleIdx) := do
+  let plan ←
+    moduleImportPlanForImports imports level
+      fun moduleName =>
+        do
+          let some moduleIndex := environment.getModuleIdx? moduleName
+          | throw
+            <| IO.userError s!"shared parser environment is missing module {moduleName}"
+          pure environment.header.moduleData[moduleIndex]!.imports
+  plan.moduleNames.mapM
+    fun moduleName =>
+      do
+        let some moduleIndex := environment.getModuleIdx? moduleName
+        | throw
+          <| IO.userError s!"shared parser environment is missing module {moduleName}"
+        pure moduleIndex
 
 def ParserEnvironmentReservoir.environmentForImports
     (reservoir : ParserEnvironmentReservoir) (imports : Array Lean.Import)
