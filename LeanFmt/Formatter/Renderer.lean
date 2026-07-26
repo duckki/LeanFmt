@@ -367,19 +367,16 @@ def commentTriviaForBoundary
     adjusted
 
 def whitespaceForPendingBoundary
-    (trivia indentation : String) (lineWidth : Nat)
+    (trivia indentation : String) (_lineWidth : Nat)
     (commandBoundary? : Option CommandBoundarySpacing)
     : String :=
   if SpaceRules.hasCommentStart trivia then
-    let desiredIndent := indentation.length
-    let commentIndentation :=
-      spaces <| SpaceRules.commentIndentForWidth trivia desiredIndent lineWidth
     let result :=
       match commandBoundary? with
       | some spacing =>
-          commentTriviaForBoundary trivia commentIndentation indentation spacing
+          commentTriviaForBoundary trivia indentation indentation spacing
       | none =>
-          SpaceRules.commentTriviaForBreakWithFollowingIndent trivia commentIndentation
+          SpaceRules.commentTriviaForBreakWithFollowingIndent trivia indentation
             indentation
     result
   else

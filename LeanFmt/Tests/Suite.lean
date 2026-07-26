@@ -349,6 +349,28 @@ def assertIndentedCommentTriviaDoesNotPadBlankLines : IO Unit := do
   assertTrue "existing comment overflow is not disguised by deindentation"
     (Formatter.SpaceRules.commentIndentForWidth overflowingTrivia 12 100 == 12)
 
+def assertMovedStandaloneCommentsKeepSiblingIndent (env : Lean.Environment)
+    : IO Unit := do
+  let source :=
+    "def nestedComment := do\n"
+    ++ "  wrapper firstArgument secondArgument fun value => do\n"
+    ++ "  -- This standalone comment is deliberately long enough to exceed the configured width.\n"
+    ++ "  let result := transform value\n"
+    ++ "  pure result\n"
+  let expected :=
+    "def nestedComment := do\n"
+    ++ "  wrapper firstArgument secondArgument\n"
+    ++ "    fun value => do\n"
+    ++ "      -- This standalone comment is deliberately long enough to exceed the configured width.\n"
+    ++ "      let result := transform value\n"
+    ++ "      pure result\n"
+  let formatted ←
+    Formatter.formatSourceWithEnv env source "moved-standalone-comment.lean"
+      { lineWidth := 70 }
+  assertEq "moved standalone comment keeps its sibling indentation" expected formatted
+  assertTrue "moved standalone comment preserves code"
+    (← codePreservedIgnoringWhitespace env source formatted)
+
 def assertAtomicTokenRetainsFittingSourceColumn (env : Lean.Environment) : IO Unit := do
   let firstLine := "\"" ++ String.ofList (List.replicate 98 'x')
   let source :=
@@ -7881,6 +7903,7 @@ def runBasicFormattingTests (env : Lean.Environment) : IO Unit := do
   assertPostfixSuperscriptSpacingPreservesParse env
   assertBlockCommentInternalWhitespacePreservedByFormatting env
   assertIndentedCommentTriviaDoesNotPadBlankLines
+  assertMovedStandaloneCommentsKeepSiblingIndent env
   assertAtomicTokenRetainsFittingSourceColumn env
   assertDoBodyRetainsSourceLayoutToAvoidOverflow env
   assertRegisterOptionValueUsesDeclarationLayout env
