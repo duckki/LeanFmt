@@ -387,8 +387,10 @@ Rule methods mean:
   not force an otherwise fitting header to break.
 - `mandatory`: returned breaks are structural and are applied without a flat attempt.
 - `flow`: returned breaks are candidates; flat layout is tried first, then accepted
-  source breaks, then computed wrapping. Structure headers use flow so a mandatory
-  field line does not force a fitting `extends ... where` clause to break.
+  source breaks, then computed wrapping. If the accepted source layout still overflows,
+  computed wrapping adds breaks without dropping its accepted source boundaries.
+  Structure headers use flow so a mandatory field line does not force a fitting
+  `extends ... where` clause to break.
 - `inheritBase`: this segment uses the surrounding base indentation instead of its
   rendered start column.
 - `liftsTailIndentation`: while rendering every child except the final child, establish
@@ -488,7 +490,8 @@ For each segment:
 10. For rules that prefer child layouts, try the recursively rendered children when
     the rule-specific prefix remains flat and the complete child layout fits.
 11. For flow rules, try accepted source breaks after flat failure, then computed flow
-   wrapping.
+   wrapping that retains those accepted source boundaries while adding any required
+   breaks.
 12. For non-flow rules with break points, apply all returned breaks simultaneously.
 
 Fit measurement is speculative. The renderer emits into an empty probe while retaining
@@ -520,9 +523,10 @@ Blank-line trivia at an accepted break point is a source break too: the renderer
 retains one blank line while rebasing the following token to the rule-computed
 indentation instead of preserving its old absolute column.
 
-For flow rules, accepted source breaks remain selectable opportunities. For non-flow
-rules, they are activation signals for the complete balanced rule layout. This is a
-renderer invariant, not an opt-in rule predicate.
+For flow rules, accepted source breaks remain selected if their layout needs additional
+computed wrapping; the renderer adds fitting breaks instead of discarding the accepted
+ones. For non-flow rules, accepted source breaks are activation signals for the complete
+balanced rule layout. This is a renderer invariant, not an opt-in rule predicate.
 
 ### Rule consistency invariants
 

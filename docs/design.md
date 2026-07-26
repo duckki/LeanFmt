@@ -121,7 +121,8 @@ specific boundaries where source line breaks may be preserved.
 
 Source-break preservation follows the rule's layout mode:
 
-- a flow rule may retain only the accepted boundaries needed by its fitting layout;
+- a flow rule retains accepted source boundaries and may add only the other boundaries
+  needed by its fitting layout;
 - a non-flow rule is balanced: once an accepted source break activates the rule,
   every break point returned by that rule is applied together.
 

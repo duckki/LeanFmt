@@ -1773,11 +1773,15 @@ structure FlowRenderContext where
   segment : LineBreakRules.Segment
   rule : LineBreakRules.LineBreakRule
   breakPoints : List LineBreakRules.BreakPoint
+  sourceBreaks : List SourceBreak
   entryState : RenderState
 
 def FlowRenderContext.breakAt? (flow : FlowRenderContext) (index : Nat)
     : Option LineBreakRules.BreakPoint :=
   flow.breakPoints.find? fun breakPoint => breakPoint.index == index
+
+def FlowRenderContext.hasSourceBreakAt (flow : FlowRenderContext) (index : Nat) : Bool :=
+  flow.sourceBreaks.any fun sourceBreak => sourceBreak.index == index
 
 def FlowRenderContext.nextBreakIndex (flow : FlowRenderContext) (index : Nat) : Nat :=
   match flow.breakPoints.find? fun breakPoint => index < breakPoint.index with
@@ -1845,6 +1849,7 @@ def FlowRenderContext.stateForForcedNestedChild?
               (state.currentIndent + breakPoint.indentLevels * indentationSpaces)
       else if breakAfterPreviousChild
               || !childFit.fits
+              || flow.hasSourceBreakAt index
               || formattedWhitespaceKeepsSourceBreakAt state.source flow.segment index
               || (breakPoint.indentLevels == 0 && !pieceFit.flat)
               || !pieceFit.fits then
@@ -2325,7 +2330,17 @@ mutual
     | none => renderChildren state segment
     | some _ =>
         let flow : FlowRenderContext :=
-          { segment, rule, breakPoints, entryState := state }
+          {
+            segment
+            rule
+            breakPoints
+            sourceBreaks :=
+              if rule.useExistingBreaks state.context segment then
+                sourceBreaksAllowedByBreakPointsInState state segment breakPoints
+              else
+                []
+            entryState := state
+          }
         renderFlowChildren state flow segment.start false
 
   partial def renderFlowChildren

@@ -1247,6 +1247,29 @@ def assertDoLetElseBreaks (env : Lean.Environment) : IO Unit := do
       "multi-statement-do-let-fallback-formatted.lean"
   assertEq "multi-statement do-let fallback is idempotent"
     multiStatementFallbackResult.formatted multiStatementFallbackAgain
+  let longChainedFallbackSource :=
+    "def extractCatInstance (instQuiv instCS : Expr) : MetaM (Expr × Expr) := do\n"
+    ++ "  let (``Quiver.Hom, #[_, instQuiv, _, _]) := instQuiv.getAppFnArgs | failure\n"
+    ++ "  let (``CategoryTheory.CategoryStruct.toQuiver, #[_, instCS]) := instQuiv.getAppFnArgs | failure\n"
+    ++ "  let (``CategoryTheory.Category.toCategoryStruct, #[C, instC]) := instCS.getAppFnArgs | failure\n"
+    ++ "  return (C, instC)\n"
+  let longChainedFallbackResult ←
+    Formatter.formatSourceWithEnvDetailed env longChainedFallbackSource
+      "long-chained-do-let-fallback.lean" { lineWidth := 100 }
+  assertTrue "long chained do-let fallback does not fall back"
+    (!longChainedFallbackResult.fellBack)
+  assertTrue "long chained do-let fallback preserves code"
+    (← codePreservedIgnoringWhitespace env longChainedFallbackSource
+        longChainedFallbackResult.formatted)
+  assertTextContains "long chained do-let keeps its continuation separate"
+    longChainedFallbackResult.formatted "| failure\n  return (C, instC)\n"
+  assertTextLacks "long chained do-let fallback does not absorb its continuation"
+    longChainedFallbackResult.formatted "| failure return"
+  let longChainedFallbackAgain ←
+    Formatter.formatSourceWithEnv env longChainedFallbackResult.formatted
+      "long-chained-do-let-fallback-formatted.lean" { lineWidth := 100 }
+  assertEq "long chained do-let fallback formatting is idempotent"
+    longChainedFallbackResult.formatted longChainedFallbackAgain
 
 def assertDbgTraceBodyUsesTermBase (env : Lean.Environment) : IO Unit := do
   let source :=
