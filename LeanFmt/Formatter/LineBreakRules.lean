@@ -2204,11 +2204,18 @@ def matchExpressionBreaks (_context : RuleContext) (segment : Segment)
   | none => []
 
 def quantifierBodyIndex? (segment : Segment) : Option Nat :=
-  (segment.parentIndexes.filter
-    fun index =>
-      match segment.parentChild? index with
-      | some child => treeHasContent child
-      | none => false).getLast?
+  let contentIndexes :=
+    segment.parentIndexes.filter
+      fun index =>
+        match segment.parentChild? index with
+        | some child => treeHasContent child
+        | none => false
+  let separatorIndex? :=
+    (contentIndexes.filter fun index => childStartsWithLexeme segment index ",").getLast?
+  match separatorIndex? with
+  | some separatorIndex =>
+      contentIndexes.find? fun index => separatorIndex < index
+  | none => contentIndexes.getLast?
 
 def quantifierBreaks (_context : RuleContext) (segment : Segment) : List BreakPoint :=
   match quantifierBodyIndex? segment with

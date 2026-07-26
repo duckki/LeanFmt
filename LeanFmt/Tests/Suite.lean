@@ -5141,6 +5141,18 @@ def assertGeneratedBinderOperatorBreaksBeforeBody (_env : Lean.Environment)
       "generated-modified-binder-operator.lean" { lineWidth := 60 }
   assertEq "modified binder operator uses its base token class"
     modifiedExpected modifiedFormatted
+  let suffixedSource :=
+    "def generatedBinderWithSuffix :=\n"
+    ++ "  ∫ value in SomeSetWithALongName, longBodyFunction value anotherArgument ∂measure\n"
+  let suffixedExpected :=
+    "def generatedBinderWithSuffix :=\n"
+    ++ "  ∫ value in SomeSetWithALongName,\n"
+    ++ "    longBodyFunction value anotherArgument ∂measure\n"
+  let suffixedFormatted ←
+    Formatter.formatSourceWithEnv env suffixedSource
+      "generated-binder-with-suffix.lean" { lineWidth := 60 }
+  assertEq "generated binder with suffix breaks before its body"
+    suffixedExpected suffixedFormatted
 
 def assertQuantifierIdentifierSequenceFlows (env : Lean.Environment) : IO Unit := do
   let source :=

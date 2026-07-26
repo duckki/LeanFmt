@@ -984,7 +984,9 @@ because they appeared in the input.
 Binder operators such as `⨆`, `⨅`, `∑`, and `∫` use the same comma/body
 layout. This rule is recognized from the operator token and syntax shape, so
 generated notation node names do not need individual mappings. Decorated forms
-such as `∀ᵉ` share the classification of their base operator.
+such as `∀ᵉ` share the classification of their base operator. A trailing
+notation suffix after the body, such as `∂μ` on an integral, stays with the body
+and does not move the comma/body break.
 
 ```lean
 ⨆ p : Index,

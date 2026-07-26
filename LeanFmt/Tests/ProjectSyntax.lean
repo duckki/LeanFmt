@@ -7,6 +7,7 @@ namespace BigOperators
 syntax bigOpBinder := ident (" ∈ " term)?
 syntax bigOpBinders := bigOpBinder
 syntax (name := bigsum) "∑ " bigOpBinders ", " term:67 : term
+syntax (name := projectIntegral) "∫ " ident " in " term ", " term " ∂" term : term
 
 end BigOperators
 
