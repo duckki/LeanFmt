@@ -1,11 +1,11 @@
-# LeanFmt architecture
+# leanfmt architecture
 
-This document explains the implementation choices behind LeanFmt. It is written for
+This document explains the implementation choices behind leanfmt. It is written for
 contributors who want to understand or reproduce the formatter, not for users deciding
 whether they like the style. For style rules and examples, see [design.md](design.md).
 For build, test, debugging, and profiling commands, see [development.md](development.md).
 
-LeanFmt is a structure-preserving formatter. It parses Lean source with Lean's own
+leanfmt is a structure-preserving formatter. It parses Lean source with Lean's own
 parser, converts the raw syntax into a lossless tree, asks syntax rules where line
 breaks may occur, and lets one renderer choose physical whitespace and indentation.
 
@@ -25,7 +25,7 @@ The implementation follows a few constraints that shape the whole codebase:
 
 These constraints deliberately rule out a classic pretty-printer pipeline that lowers
 Lean syntax into an unrelated document algebra. Lean's parser tree contains source spans,
-custom syntax, layout-sensitive proof blocks, and empty parser wrapper nodes. LeanFmt
+custom syntax, layout-sensitive proof blocks, and empty parser wrapper nodes. leanfmt
 keeps that tree close to the source and introduces only the logical regrouping needed by
 rules.
 
@@ -61,7 +61,7 @@ namespace, so the namespace is explicit in the module names. The library explici
 `Tests/Fixtures` because the test CLI reads them as files rather than importing them.
 
 The Batteries environment linter lives in a separate Lake package under
-`tools/linter`. That package depends on LeanFmt by a local path and may pin
+`tools/linter`. That package depends on leanfmt by a local path and may pin
 development-only lint dependencies. The root package and its manifest therefore
 describe only the library and executables distributed to downstream users.
 
@@ -700,7 +700,7 @@ specific transparent/default rule or a grouping change before adding another ori
 source region. Mathlib tactic extension nodes whose names start with `Mathlib.Tactic.`
 are currently original-source islands because their syntax is extension-owned and often
 already encodes tactic-specific layout requirements. Multiline custom braced term
-syntax is also emitted from original source so LeanFmt does not invent a layout for an
+syntax is also emitted from original source so leanfmt does not invent a layout for an
 extension-owned DSL whose braces may carry domain-specific structure.
 ProofWidgets JSX remains an original-source island, but its complete relative indentation
 is rebased when the surrounding formatted layout moves it; leaving a JSX tag at its old
@@ -737,7 +737,7 @@ code-token sequence and exact comment text are preserved, reports remaining line
 and reports missing rules with their source location and tree slice. Each missing raw
 syntax kind is also classified by whether Lean provides a registered formatter, only a
 parser-description fallback, or no formatter metadata. This is a read-only coverage audit:
-the renderer continues to use LeanFmt's `defaultRule`, and non-ignorable missing LeanFmt
+the renderer continues to use leanfmt's `defaultRule`, and non-ignorable missing leanfmt
 rules remain exceptions regardless of the Lean formatter classification. Preservation
 normalization gives every code token and comment boundary one canonical space, so ordinary
 formatting whitespace is ignored without conflating tokenizations such as `ab c` and
@@ -866,7 +866,7 @@ ordinary formatting differences, determine failure.
 
 ### Why not Lean's pretty printer?
 
-Lean's pretty printer is semantic and elaboration-oriented. LeanFmt needs to preserve
+Lean's pretty printer is semantic and elaboration-oriented. leanfmt needs to preserve
 unrecognized syntax, comments, proofs, and exact token text in files that may contain
 project-specific parser extensions. A source formatter needs a lossless source tree,
 not just pretty-printed elaborated terms.

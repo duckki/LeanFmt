@@ -1,10 +1,10 @@
-# LeanFmt formatting design
+# leanfmt formatting design
 
-This document describes how LeanFmt formats Lean source code. It is written for
+This document describes how leanfmt formats Lean source code. It is written for
 Lean programmers evaluating the formatter and for users who want to understand
 the changes it makes.
 
-LeanFmt is a conservative, structure-preserving formatter. It parses a complete
+leanfmt is a conservative, structure-preserving formatter. It parses a complete
 Lean file with Lean's parser, recognizes common Lean constructs, and chooses
 whitespace and line breaks around the existing source tokens.
 
@@ -13,7 +13,7 @@ test, and debugging commands, see [development.md](development.md).
 
 ## Formatting at a glance
 
-LeanFmt turns a line-wrapped proposition whose nesting is difficult to scan:
+leanfmt turns a line-wrapped proposition whose nesting is difficult to scan:
 
 ```lean
 def parenthesizedConjunctionChain (schema : Schema) : Prop :=
@@ -47,8 +47,8 @@ Formatting changes whitespace only. Token text and token order remain the same.
 
 ### Prefer a clear rule over a clever guess
 
-LeanFmt has rules for common Lean constructs. Unknown syntax is still lossless and
-receives a generic structural layout, but LeanFmt does not guess at the meaning of custom
+leanfmt has rules for common Lean constructs. Unknown syntax is still lossless and
+receives a generic structural layout, but leanfmt does not guess at the meaning of custom
 syntax.
 
 Proofs receive an even more conservative treatment. Proof subtrees are retained
@@ -57,7 +57,7 @@ does not accidentally damage tactic layout.
 
 ### Keep fitting code compact
 
-LeanFmt uses a 90-character default line limit and two-space indentation. The
+leanfmt uses a 90-character default line limit and two-space indentation. The
 line limit is configurable for projects with a different convention. Most
 constructs are first considered in a single-line form. A construct breaks only
 when it is structurally multiline, an accepted source break applies, or the flat
@@ -88,13 +88,13 @@ def result : Prop :=
   ∧ finalCondition
 ```
 
-LeanFmt generally breaks before operators for this reason. Bodies after `:=`,
+leanfmt generally breaks before operators for this reason. Bodies after `:=`,
 `=>`, `with`, quantifier commas, and similar separators are indented instead.
 
 ### Preserve intentional source breaks selectively
 
 Line breaks from the input source code are meaningful in some places and incidental in
-others. LeanFmt preserves a source break only where the rule for that construct accepts
+others. leanfmt preserves a source break only where the rule for that construct accepts
 one. It always computes the resulting indentation itself.
 
 For example, a multiline function application may retain well-chosen argument
@@ -156,7 +156,7 @@ equation-style declaration arms.
 The same header-suffix principle keeps `instance ... where` and `match ... with`
 together; the body breaks after `where` or `with`, not before it.
 
-The introducer keyword is also part of a binding header. LeanFmt never emits a
+The introducer keyword is also part of a binding header. leanfmt never emits a
 line containing only `let`; it keeps `let` with the pattern or identifier:
 
 ```lean
@@ -213,14 +213,14 @@ def handAligned   :   Nat:=
 def formattedAfter:Nat:=2
 ```
 
-LeanFmt formats the parseable chunks before and after the region, then splices
+leanfmt formats the parseable chunks before and after the region, then splices
 the ignored marker lines and enclosed lines back unchanged. An `off` marker
 without a matching `on` marker preserves the rest of the file.
 
 ## Comments
 
 Line comments, block comments, nested block comments, and doc comments keep
-their text. LeanFmt cleans surrounding whitespace and reindents comment trivia
+their text. leanfmt cleans surrounding whitespace and reindents comment trivia
 when a containing construct moves.
 
 ```lean
@@ -243,7 +243,7 @@ comments retain their exact internal whitespace and line shape.
 
 ## Token spacing
 
-LeanFmt normally inserts one space between adjacent ordinary tokens and keeps
+leanfmt normally inserts one space between adjacent ordinary tokens and keeps
 punctuation tight.
 
 ```lean
@@ -282,7 +282,7 @@ fit, it uses the same balanced layout as other collections:
 }
 ```
 
-LeanFmt does not infer that whitespace before a dot is always removable. In
+leanfmt does not infer that whitespace before a dot is always removable. In
 Lean, a dot after an expression can also begin an anonymous constructor, so the
 syntax tree and original adjacency are respected.
 
@@ -422,7 +422,7 @@ private inductive Aligned : List α -> Prop where
 
 ### Parameters
 
-Declaration parameters flow at binder boundaries. LeanFmt keeps as many
+Declaration parameters flow at binder boundaries. leanfmt keeps as many
 binders as fit and places later binders on continuation lines indented four
 spaces from the declaration base.
 
@@ -611,7 +611,7 @@ theorem theoremArrowChain (h : HypothesisWithEnoughCharactersForLayoutTesting)
 The source text of theorem proof values is preserved. Definitions and
 abbreviations containing proof subtrees are preserved as a whole. The tactic
 body after `decreasing_by` is protected separately from the formatted
-termination-clause keywords and measure. LeanFmt can therefore format
+termination-clause keywords and measure. leanfmt can therefore format
 surrounding declarations and propositions without imposing a tactic style.
 
 Equation-style theorem and definition arms begin on their own lines and use the
@@ -778,7 +778,7 @@ right-attached layout.
 
 ## Tail indentation
 
-LeanFmt breaks before an infix operator so the operator visually connects the
+leanfmt breaks before an infix operator so the operator visually connects the
 lines in its chain:
 
 ```lean
@@ -871,7 +871,7 @@ something
   - g
 ```
 
-When tail indentation raises such a construct, LeanFmt shifts the complete
+When tail indentation raises such a construct, leanfmt shifts the complete
 break profile together. It does not independently clamp every line, because
 that would flatten the difference between fields and the closing brace:
 
@@ -896,7 +896,7 @@ remain one level deeper than the surrounding chain:
 
 ## Propositions and arrows
 
-LeanFmt distinguishes the layout role of arrow chains from their syntactic
+leanfmt distinguishes the layout role of arrow chains from their syntactic
 context:
 
 - arrows in ordinary function types flow and wrap only where required;
@@ -1011,12 +1011,12 @@ def withLet : Result :=
 ```
 
 The body aligns with `let`, not with the right-hand side. When a `let` appears
-after a leading operator, LeanFmt may insert alignment space before `let` so the
+after a leading operator, leanfmt may insert alignment space before `let` so the
 result also satisfies Lean's indentation-sensitive parser.
 
 For a layout-delimited `let`, Lean must be able to tell where the right-hand
 side ends and the body begins. When the body starts with syntax that could also
-be another function argument, LeanFmt aligns `let` to an indentation column.
+be another function argument, leanfmt aligns `let` to an indentation column.
 This may retain a space after an opening parenthesis:
 
 ```lean
@@ -1039,7 +1039,7 @@ result
       | some field => field :: collectedRest)
 ```
 
-LeanFmt asks Lean's active term parser this question at function-argument
+leanfmt asks Lean's active term parser this question at function-argument
 precedence. Syntax extensions declared or imported by a project therefore
 follow their own declared precedence instead of a built-in keyword list.
 
@@ -1329,7 +1329,7 @@ closing delimiter break together.
 ]
 ```
 
-LeanFmt does not add a trailing comma.
+leanfmt does not add a trailing comma.
 
 A single multiline item keeps the outer array compact around that item. This
 supports common nested forms such as an array containing one structure value:
@@ -1395,7 +1395,7 @@ def tupleOperand :=
 ```
 
 Existing punctuation is preserved, so the trailing comma above remains because
-it was present in the source; LeanFmt does not add one.
+it was present in the source; leanfmt does not add one.
 
 Anonymous constructors use the same balanced shape. Single-field constructors
 remain flat when they fit.
@@ -1427,7 +1427,7 @@ inside the `with` header. A short update remains flat, such as
 
 ## Unknown and custom syntax
 
-Every parser token remains present even when LeanFmt has no explicit rule for a
+Every parser token remains present even when leanfmt has no explicit rule for a
 syntax node. The generic rule examines only the node's immediate child shape:
 
 - a token between two child nodes is treated as an infix-like break point;
@@ -1447,7 +1447,7 @@ to the preceding expression while that expression applies its own layout.
 
 Unknown syntax is lossless, but its whitespace is not guaranteed to remain
 byte-for-byte unchanged. Multiline custom braced term syntax is a conservative
-exception: LeanFmt keeps its source layout instead of canonicalizing indentation for
+exception: leanfmt keeps its source layout instead of canonicalizing indentation for
 an extension-owned DSL.
 
 A short custom syntax declaration can remain flat:
@@ -1457,7 +1457,7 @@ syntax "widget" : term
 ```
 
 If a larger custom node overflows, its parser-child boundaries determine the
-generic wrapping until LeanFmt has a dedicated rule for that syntax.
+generic wrapping until leanfmt has a dedicated rule for that syntax.
 
 ## Diagnostics
 
@@ -1478,7 +1478,7 @@ The ambiguous `!f a b` spelling is reported but not automatically rewritten.
 
 ## Formatting guarantees
 
-LeanFmt is designed around these checks:
+leanfmt is designed around these checks:
 
 1. Parsing succeeds with Lean's parser and active syntax extensions.
 2. Reconstructing the syntax tree reproduces the parsed source.
@@ -1492,8 +1492,8 @@ formatter development. They describe formatter correctness, not style options
 that ordinary users need to select.
 
 Formatting may require more than one parse/render pass because a first layout
-can expose a different accepted source-break shape to the next pass. LeanFmt
+can expose a different accepted source-break shape to the next pass. leanfmt
 iterates to a fixed point with a hard limit of four passes. If an intermediate
 result does not parse, repeats a previously seen result, or does not converge
-within that limit, LeanFmt emits a warning and returns the original source
+within that limit, leanfmt emits a warning and returns the original source
 rather than treating the fallback as a hard formatter error.

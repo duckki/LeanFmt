@@ -1,12 +1,12 @@
-# LeanFmt development
+# leanfmt development
 
-This document is for contributors working on LeanFmt itself. For formatting style and
+This document is for contributors working on leanfmt itself. For formatting style and
 examples, see [design.md](design.md). For the implementation model, see
 [architecture.md](architecture.md).
 
 ## Prerequisites
 
-LeanFmt is a Lake package. Use the repository's pinned toolchain:
+leanfmt is a Lake package. Use the repository's pinned toolchain:
 
 ```sh
 cat lean-toolchain
@@ -89,21 +89,21 @@ shellcheck` when changing shell scripts. CI runs these checks for every pull
 request.
 
 The development linter runs the enabled Batteries environment linters except
-`docBlame`. LeanFmt exposes a small public formatter API, but most declarations
+`docBlame`. leanfmt exposes a small public formatter API, but most declarations
 are internal implementation details for syntax analysis, layout, diagnostics,
 and the CLI. Other linter findings fail the gate and should be fixed rather than
 added to a baseline.
 
 ## Lean-version compatibility
 
-LeanFmt supports one source and release line across our current toolchain and
+leanfmt supports one source and release line across our current toolchain and
 supported previous minor versions. The current-toolchain CI job runs the complete
 maintenance gate. Compatibility jobs select each previous minor version in a
 disposable checkout and run only the build and test suite. Linting, fixtures,
 self-formatting, formatter diagnostics, and idempotency checks run once with our
 current toolchain.
 
-When adding or updating LeanFmt in a project on an older supported Lean version,
+When adding or updating leanfmt in a project on an older supported Lean version,
 preserve the project's toolchain during dependency resolution:
 
 ```sh
@@ -111,8 +111,8 @@ lake update --keep-toolchain
 ```
 
 A normal `lake update` considers direct dependencies' `lean-toolchain` files and
-may update the root project to LeanFmt's current version. With
-`--keep-toolchain`, Lake retains the downstream version and compiles LeanFmt with
+may update the root project to leanfmt's current version. With
+`--keep-toolchain`, Lake retains the downstream version and compiles leanfmt with
 it. This is required for reliable loading of the project's compiled parser
 extensions and imported environment.
 
@@ -177,7 +177,7 @@ generic rule cannot know, such as projection tightness or mandatory command boun
 The `Lean formatter` line classifies the kind as `registered formatter`, `parser
 description`, or `no formatter metadata`. The final exception summary counts all three
 groups separately. This classification is evidence for rule development only; it neither
-delegates rendering to Lean's pretty printer nor makes a missing LeanFmt rule pass.
+delegates rendering to Lean's pretty printer nor makes a missing leanfmt rule pass.
 
 ## Tests
 
@@ -315,7 +315,7 @@ After changing space rules, run fixtures that cover:
 
 ## Release and downstream use
 
-LeanFmt is redistributable as a Lake package. A downstream package can depend on a local
+leanfmt is redistributable as a Lake package. A downstream package can depend on a local
 checkout while developing:
 
 ```toml
@@ -409,7 +409,7 @@ the exception and idempotency checks enabled. Batches continue until all are for
 or one reports a diagnostic failure. The validator then runs one complete project
 build over every candidate written through that point, even when the final formatter
 batch failed, so it can also report elaboration or linting failures. Within each batch,
-LeanFmt manages formatter worker processes and batch sizing. The validator prints the
+leanfmt manages formatter worker processes and batch sizing. The validator prints the
 total file count, total batch count, selected batch, batch index range, first/last file
 for each batch, and whether a formatter worker batch override was supplied. Without
 `--batch`, it runs batches in order and stops formatting at the first failed batch.
@@ -461,8 +461,8 @@ the corresponding existing clone there. Set
 `LEANFMT_VALIDATION_FILE_PATTERN` to change the default file selector, or
 `LEANFMT_VALIDATION_BATCH_SIZE` to change the validation batch size.
 `LEANFMT_VALIDATION_FORMATTER_BATCH_SIZE` passes `--worker-batch-size` to
-LeanFmt to override its automatic worker batch choice. Multi-file package formatter
-invocations first format files that parse in LeanFmt's default Lean environment, then
+leanfmt to override its automatic worker batch choice. Multi-file package formatter
+invocations first format files that parse in leanfmt's default Lean environment, then
 process files that need imported syntax in a short-lived worker running under the
 target package's `lake env`. The worker orders files by exact normalized import header
 and retains only its most recent Lean-created environment, so adjacent identical
@@ -472,7 +472,7 @@ state for the remaining imports.
 The import-prefix cache is bounded by `--env-cache-size`. Files with a `module` header use
 exported `.olean` data; scripts use private data, matching Lean's frontend. Lean itself
 computes every transitive import, IR phase, initializer, and persistent extension;
-LeanFmt does not derive environments from a superset. Imported files run serially in
+leanfmt does not derive environments from a superset. Imported files run serially in
 workers of at most 16 files by default. Restarting the worker also bounds Lean runtime
 state outside the explicit caches. Supplying a worker batch size overrides that
 lifetime, trading process and environment setup time for peak memory. Setting

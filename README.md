@@ -1,10 +1,10 @@
-# LeanFmt
+# leanfmt
 
-LeanFmt is a structure-preserving code formatter for Lean. It parses complete
+leanfmt is a structure-preserving code formatter for Lean. It parses complete
 Lean files with Lean's own parser, preserves source tokens and comments, and
 formats declarations and expressions through the `fmt` executable.
 
-LeanFmt favors layouts that expose the structure of Lean code. In particular,
+leanfmt favors layouts that expose the structure of Lean code. In particular,
 leading operators connect continuation lines vertically while indentation shows
 nested expressions.
 
@@ -52,7 +52,7 @@ def leadingArrowExistentialApplicationWrap : Prop :=
 See the [formatting design](docs/design.md) for the complete rule descriptions
 and more examples.
 
-## Add LeanFmt to a Lake package
+## Add leanfmt to a Lake package
 
 Add the Git dependency to `lakefile.toml`:
 
@@ -69,16 +69,16 @@ Preserve the package's Lean version when resolving the dependency:
 lake update --keep-toolchain
 ```
 
-LeanFmt uses one source release across its supported Lean versions and tests the
+leanfmt uses one source release across its supported Lean versions and tests the
 current toolchain and previous minor versions in CI. `--keep-toolchain` prevents
 Lake from replacing an older project's toolchain with the version recorded by
-LeanFmt. LeanFmt is then built with the project's selected Lean version, which is
+leanfmt. leanfmt is then built with the project's selected Lean version, which is
 important because it loads that project's parser extensions and imported
 environments.
 
-Projects that do not want LeanFmt in their published dependency graph may place
+Projects that do not want leanfmt in their published dependency graph may place
 the requirement in a separate development-tool Lake package instead. That tool
-package should also depend on the project by a local path so LeanFmt can load the
+package should also depend on the project by a local path so leanfmt can load the
 project's dependencies and parser extensions.
 
 Then format files or directories through Lake:
@@ -94,7 +94,7 @@ Directory arguments include directly contained `.lean` files. Pass
 `--recursive` or `-r` to include nested directories. Hidden files and
 directories discovered inside directory arguments are skipped by default.
 Explicitly supplied hidden paths are still processed. Pass `--include-hidden`
-to include hidden descendants during directory traversal. LeanFmt uses a
+to include hidden descendants during directory traversal. leanfmt uses a
 90-character line limit by default; pass `--line-width N` when a project uses a
 different convention.
 
@@ -123,7 +123,7 @@ def handAligned   :   Nat:=
 -- leanfmt: on
 ```
 
-LeanFmt formats parseable chunks outside the ignored region and keeps the marker
+leanfmt formats parseable chunks outside the ignored region and keeps the marker
 lines and enclosed lines unchanged, apart from the command's normal line-ending
 normalization.
 
@@ -138,7 +138,7 @@ it suitable for CI.
 
 ## Status
 
-LeanFmt is under active development. Review formatting changes before applying
+leanfmt is under active development. Review formatting changes before applying
 it broadly. Formatting is deliberately conservative: it changes whitespace,
 keeps token text and order and preserves proof regions.
 
@@ -152,9 +152,9 @@ keeps token text and order and preserves proof regions.
   between the syntax tree, rules, and renderer.
 - [Development](docs/development.md) covers building, testing, fixtures, tracing,
   profiling, validation, and contributing new rules.
-- [Comparison](docs/comparison.md) compares LeanFmt's style, architecture, and workflow
+- [Comparison](docs/comparison.md) compares leanfmt's style, architecture, and workflow
   with Lean's standard-library guide and pretty-lean.
 
 ## License
 
-LeanFmt is released under the [MIT License](LICENSE).
+leanfmt is released under the [MIT License](LICENSE).

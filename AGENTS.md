@@ -1,7 +1,7 @@
-# LeanFmt repository guide
+# leanfmt repository guide
 
 This file is the repository-local operational memory for agents working on
-LeanFmt. Run commands from the repository root. The detailed documentation
+leanfmt. Run commands from the repository root. The detailed documentation
 linked below remains the source of truth when this summary and the code diverge.
 
 ## Repository layout
@@ -30,7 +30,7 @@ linked below remains the source of truth when this summary and the code diverge.
 - `scripts/validate-external-projects.sh` validates the formatter against fresh
   clones of external Lean projects.
 - `tools/linter/` is a separate development-only Lake package that pins
-  Batteries and runs environment linters without adding Batteries to LeanFmt's
+  Batteries and runs environment linters without adding Batteries to leanfmt's
   released dependency graph.
 - `lakefile.toml`, `lake-manifest.json`, and `lean-toolchain` define the released
   package, executables, and canonical Lean version. The root package depends
@@ -141,7 +141,7 @@ LEANFMT_VALIDATION_LINE_WIDTH=100 scripts/validate-external-projects.sh \
   cslib=$HOME/work/lean-libs/cslib
 ```
 
-For each project the script builds LeanFmt, creates a fresh clone under
+For each project the script builds leanfmt, creates a fresh clone under
 `.scratch/external-validation/`, optionally downloads the project's Lake cache,
 and runs one complete build before formatting. It then formats each file batch
 directly with `--check-exception --check-idempotent` under the target project's

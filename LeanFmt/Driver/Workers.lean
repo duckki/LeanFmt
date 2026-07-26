@@ -246,7 +246,7 @@ def checkWorkerToolchain (cwd? : Option FilePath) : IO Bool := do
           IO.eprintln
             s!"leanfmt: target package uses {targetToolchain}, but this formatter was built with {expectedLeanToolchain}"
           IO.eprintln
-            "leanfmt: rebuild/run LeanFmt with the target package's Lean toolchain, or rebuild the target package with this Lean version"
+            "leanfmt: rebuild/run leanfmt with the target package's Lean toolchain, or rebuild the target package with this Lean version"
           pure false
 
 def workerExecutable : IO FilePath := do

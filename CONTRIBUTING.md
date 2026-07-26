@@ -1,6 +1,6 @@
-# Contributing to LeanFmt
+# Contributing to leanfmt
 
-LeanFmt follows the Lean community's maintenance conventions used by mathlib and
+leanfmt follows the Lean community's maintenance conventions used by mathlib and
 CSLib. The released formatter intentionally depends only on Lean. Batteries is
 confined to the separate `tools/linter` development package.
 
