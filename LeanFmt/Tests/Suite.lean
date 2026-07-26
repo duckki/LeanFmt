@@ -5408,6 +5408,26 @@ def assertClassInductiveAlternativesStaySeparated (env : Lean.Environment) : IO 
     Formatter.formatSourceWithEnv env source "class-inductive-alternatives.lean"
   assertEq "class inductive alternatives stay separated" source formatted
 
+def assertLongInductiveAlternativesStaySeparated (env : Lean.Environment) : IO Unit := do
+  let source :=
+    "inductive SourceLocalClosure : Prop\n"
+    ++ "  /-- The first constructor. -/\n"
+    ++ "  | of (f : Nat) : SourceLocalClosure\n"
+    ++ "  /-- The second constructor. -/\n"
+    ++ "  | of_iso (f g : Nat) (e : f = g)\n"
+    ++ "    : SourceLocalClosure → SourceLocalClosure\n"
+    ++ "  | comp (f : Nat) (hf : SourceLocalClosure) (restriction : Nat) (hrestriction : True)\n"
+    ++ "    (g : Nat) : SourceLocalClosure\n"
+  let formatted ←
+    Formatter.formatSourceWithEnv env source "long-inductive-alternatives.lean"
+  assertTextContains "long inductive alternatives stay separated" formatted "\n  | comp "
+  assertTextLacks "long inductive alternatives do not share a result line"
+    formatted "SourceLocalClosure | comp"
+  let formattedAgain ←
+    Formatter.formatSourceWithEnv env formatted
+      "long-inductive-alternatives-formatted.lean"
+  assertEq "long inductive alternative formatting is idempotent" formatted formattedAgain
+
 def assertConstructorBinderContinuesFromUnbrokenPrefix (env : Lean.Environment)
     : IO Unit := do
   let source :=
@@ -7935,6 +7955,7 @@ def runControlFlowTests (env : Lean.Environment) : IO Unit := do
 def runCollectionAndDeclarationTests (env : Lean.Environment) : IO Unit := do
   assertInductiveConstructorIndentation env
   assertClassInductiveAlternativesStaySeparated env
+  assertLongInductiveAlternativesStaySeparated env
   assertConstructorBinderContinuesFromUnbrokenPrefix env
   assertStructureFieldsBreakMandatory env
   assertStructureFieldTypeBreakIndentation env
