@@ -5553,6 +5553,19 @@ def assertStructureExtendsBreaksBeforeWhereFields (env : Lean.Environment) : IO 
   assertTrue "multiple structure parents have no overflow"
     (Formatter.Diagnostics.overflowOccurrences multipleParentsModule
       { lineWidth := 100 }).isEmpty
+
+  let parentApplicationSource :=
+    "class Module (R : Type u) (M : Type v) [Semiring R] [AddCommMonoid M] extends DistribMulAction R M where\n"
+    ++ "  add_smul : True\n"
+  let parentApplicationExpected :=
+    "class Module (R : Type u) (M : Type v) [Semiring R] [AddCommMonoid M]\n"
+    ++ "    extends DistribMulAction R M where\n"
+    ++ "  add_smul : True\n"
+  let parentApplicationFormatted ←
+    Formatter.formatSourceWithEnv env parentApplicationSource
+      "structure-extends-parent-application.lean" { lineWidth := 100 }
+  assertEq "structure breaks before extends instead of inside the parent application"
+    parentApplicationExpected parentApplicationFormatted
   let multipleParentsFormattedAgain ←
     Formatter.formatSourceWithEnv env multipleParentsResult.formatted
       "structure-multiple-parents-formatted-again.lean" { lineWidth := 100 }

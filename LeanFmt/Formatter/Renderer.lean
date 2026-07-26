@@ -2001,13 +2001,12 @@ mutual
         breakPoints.any
           fun breakPoint =>
             formattedWhitespaceKeepsSourceBreakAt state.source segment breakPoint.index
-      if probe.acceptedForRule isFlow breakPoints && !hasRetainedSourceBreak then
-        state.commitLayoutProbe probe
-      else if rule.preferChildLayouts state.context segment
-              && !hasRetainedSourceBreak then
+      if rule.preferChildLayouts state.context segment && !hasRetainedSourceBreak then
         match renderPreferredChildLayout? state segment breakPoints with
         | some childLayout => childLayout
         | none => renderAfterFlatFailure state segment rule breakPoints isFlow
+      else if probe.acceptedForRule isFlow breakPoints && !hasRetainedSourceBreak then
+        state.commitLayoutProbe probe
       else
         renderAfterFlatFailure state segment rule breakPoints isFlow
 
@@ -2046,10 +2045,19 @@ mutual
     let prefixStaysFlat :=
       match breakPoints.head? with
       | some breakPoint =>
-          let prefixStop := min segment.stop (breakPoint.index + 1)
+          let prefixStop := min segment.stop breakPoint.index
           let prefixSegment := segment.slice segment.start prefixStop
           let prefixRendered := renderSegmentRange state segment segment.start prefixStop
-          !renderedSegmentIsMultiline state prefixRendered prefixSegment
+          let prefixStaysFlat :=
+            !renderedSegmentIsMultiline state prefixRendered prefixSegment
+          match segment.child? breakPoint.index with
+          | some child =>
+              let childRendered :=
+                renderNestedSegment prefixRendered segment breakPoint.index child
+                  (some segment.stop)
+              prefixStaysFlat
+              && !renderedTreeIsMultiline prefixRendered childRendered child
+          | none => prefixStaysFlat
       | none => true
     if prefixStaysFlat && renderedCandidateFits state childLayout then
       some childLayout
@@ -2061,10 +2069,18 @@ mutual
       (rule : LineBreakRules.LineBreakRule)
       (breakPoints : List LineBreakRules.BreakPoint) (isFlow : Bool)
       : RenderState :=
-    let hasSourceBreaks :=
-      !(sourceBreaksAllowedByBreakPointsInState state segment breakPoints).isEmpty
+    let sourceBreaks := sourceBreaksAllowedByBreakPointsInState state segment breakPoints
+    let hasSourceBreaks := !sourceBreaks.isEmpty
+    let preferredBreakHasSource :=
+      breakPoints.head?.any
+        fun breakPoint =>
+          sourceBreaks.any fun sourceBreak => sourceBreak.index == breakPoint.index
     if !isFlow && hasSourceBreaks then
       renderBalancedSegment state segment rule breakPoints
+    else if rule.preferChildLayouts state.context segment && !preferredBreakHasSource then
+      match renderPreferredChildLayout? state segment breakPoints with
+      | some childLayout => childLayout
+      | none => renderAfterFlatFailure state segment rule breakPoints isFlow
     else
       match tryRenderSegmentWithSourceBreaks? state segment rule with
       | some rendered => rendered
@@ -2072,10 +2088,6 @@ mutual
           let probe := measureLayout state segment false
           if probe.acceptedForRule isFlow breakPoints then
             state.commitLayoutProbe probe
-          else if rule.preferChildLayouts state.context segment && !hasSourceBreaks then
-            match renderPreferredChildLayout? state segment breakPoints with
-            | some childLayout => childLayout
-            | none => renderAfterFlatFailure state segment rule breakPoints isFlow
           else
             renderAfterFlatFailure state segment rule breakPoints isFlow
 
