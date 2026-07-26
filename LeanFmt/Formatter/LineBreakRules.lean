@@ -1796,6 +1796,8 @@ def doLetRule : LineBreakRule :=
 def byTacticRule : LineBreakRule :=
   {
     name := "byTactic"
+    useExistingBreaks :=
+      fun context _ => parentIsRawKind context `Lean.Parser.Term.basicFun
     inheritBase := fun _ _ => true
     breakPoints := byTacticBreaks
   }
@@ -2261,9 +2263,12 @@ def quantifierBreaks (_context : RuleContext) (segment : Segment) : List BreakPo
   | none => []
 
 def basicFunBreaks (_context : RuleContext) (segment : Segment) : List BreakPoint :=
-  match boundaryBreak? segment 3 1 with
-  | some breakPoint => [breakPoint]
-  | none => []
+  if attachedBodyStart segment 3 then
+    []
+  else
+    match boundaryBreak? segment 3 1 with
+    | some breakPoint => [breakPoint]
+    | none => []
 
 def subtypeBreaks (_context : RuleContext) (segment : Segment) : List BreakPoint :=
   match boundaryBreak? segment 3 1 with
