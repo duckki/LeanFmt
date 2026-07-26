@@ -2207,6 +2207,11 @@ def ifThenElseBreaks (_context : RuleContext) (segment : Segment) : List BreakPo
   [(3, 1), (4, 0), (5, 1)].filterMap
     fun (index, indentLevels) => boundaryBreak? segment index indentLevels
 
+def dependentIfThenElseBreaks (_context : RuleContext) (segment : Segment)
+    : List BreakPoint :=
+  [(3, 1), (4, 0), (5, 1), (6, 0), (7, 1)].filterMap
+    fun (index, indentLevels) => boundaryBreak? segment index indentLevels
+
 def ifThenElseChainBreaks (_context : RuleContext) (segment : Segment)
     : List BreakPoint :=
   (List.range (segment.size - 1)).filterMap
@@ -2731,6 +2736,15 @@ def ifThenElseRule : LineBreakRule :=
     startAlignment := fun _ _ => .preferred
     roundUpBaseIndentation := true
     breakPoints := ifThenElseBreaks
+  }
+
+def dependentIfThenElseRule : LineBreakRule :=
+  {
+    name := "dependentIfThenElse"
+    useExistingBreaks := fun _ _ => true
+    startAlignment := fun _ _ => .preferred
+    roundUpBaseIndentation := true
+    breakPoints := dependentIfThenElseBreaks
   }
 
 def ifThenElseChainRule : LineBreakRule :=
@@ -3311,7 +3325,7 @@ def ruleFor : SyntaxTree.Tree → Option LineBreakRule
       some defaultRule
   | .node (.raw `Mathlib.Meta.SetNotationForOrder.«binderPred⊇_») _ =>
       some defaultRule
-  | .node (.raw `termDepIfThenElse) _ => some defaultRule
+  | .node (.raw `termDepIfThenElse) _ => some dependentIfThenElseRule
   | .node (.raw `BigOperators.bigsum) _ => some bigOperatorRule
   | .node (.raw `BigOperators.bigprod) _ => some bigOperatorRule
   | .node (.raw `BigOperators.bigexpect) _ => some bigOperatorRule

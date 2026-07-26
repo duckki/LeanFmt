@@ -4830,6 +4830,27 @@ def assertIfThenElseUsesExistingBreaks (env : Lean.Environment) : IO Unit := do
     Formatter.formatSourceWithEnv env source "if-then-else-existing-breaks.lean"
   assertEq "if-then-else uses existing breaks" source formatted
 
+def assertDependentIfThenElseKeepsHeaderAndBranchesAligned (env : Lean.Environment)
+    : IO Unit := do
+  let source :=
+    "def choose : Nat :=\n"
+    ++ "  if h : VeryLongPredicateName firstArgument secondArgument thirdArgument then\n"
+    ++ "    veryLongThenBranch h firstArgument secondArgument\n"
+    ++ "  else\n"
+    ++ "    veryLongElseBranch firstArgument secondArgument\n"
+  let expected :=
+    "def choose : Nat :=\n"
+    ++ "  if h :\n"
+    ++ "    VeryLongPredicateName firstArgument secondArgument thirdArgument\n"
+    ++ "  then\n"
+    ++ "    veryLongThenBranch h firstArgument secondArgument\n"
+    ++ "  else\n"
+    ++ "    veryLongElseBranch firstArgument secondArgument\n"
+  let formatted ←
+    Formatter.formatSourceWithEnv env source "dependent-if-then-else.lean"
+      { lineWidth := 70 }
+  assertEq "dependent if keeps its header and branches aligned" expected formatted
+
 def assertElseIfContinuesOnElseLine (env : Lean.Environment) : IO Unit := do
   let source :=
     "def elseIfChain : Result := if conditionNameWithEnoughCharactersForLayoutTesting then firstResultNameWithEnoughCharactersForLayoutTesting else if secondConditionNameWithEnoughCharactersForLayoutTesting then secondResultNameWithEnoughCharactersForLayoutTesting else fallbackResultNameWithEnoughCharactersForLayoutTesting\n"
@@ -8009,6 +8030,7 @@ def runControlFlowTests (env : Lean.Environment) : IO Unit := do
   assertIfThenElseRuleBreaksBalancedShape env
   assertShortIfThenElseStaysFlatInEquationArm env
   assertIfThenElseUsesExistingBreaks env
+  assertDependentIfThenElseKeepsHeaderAndBranchesAligned env
   assertElseIfContinuesOnElseLine env
   assertElseIfChainBreaksThenBranchesTogether env
   assertTermMatchAlternativesStayOnOwnLines env
