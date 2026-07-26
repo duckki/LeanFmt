@@ -5206,6 +5206,20 @@ def assertLambdaKeepsAttachedBlockIntroducers (env : Lean.Environment) : IO Unit
       { lineWidth := 55 }
   assertEq "lambda keeps an attached do introducer" doExpected doFormatted
 
+def assertProofAfterSemicolonIndentsFromIntroducer (env : Lean.Environment)
+    : IO Unit := do
+  let source :=
+    "def semicolonProof : Nat :=\n" ++ "  (fun x ↦ let y := x; by\n" ++ "    exact y) 0\n"
+  let expected :=
+    "def semicolonProof : Nat :=\n"
+    ++ "  (fun x ↦\n"
+    ++ "    let y := x;\n"
+    ++ "    by\n"
+    ++ "      exact y)\n"
+    ++ "    0\n"
+  let formatted ← Formatter.formatSourceWithEnv env source "semicolon-proof.lean"
+  assertEq "proof after semicolon indents from its introducer" expected formatted
+
 def assertQuantifierBreaksAfterComma (env : Lean.Environment) : IO Unit := do
   let source :=
     "def quantifierCommaBreak : Prop := ∀ scopedField, scopedField ∈ sourceFieldsWithEnoughCharactersForLayoutTestingAndMoreText -> targetField ∈ targetFields\n"
@@ -8060,6 +8074,7 @@ def runControlFlowTests (env : Lean.Environment) : IO Unit := do
   assertLambdaBodyUsesOperandAnchor env
   assertLambdaBinderSequenceBreaksBetweenBinders env
   assertLambdaKeepsAttachedBlockIntroducers env
+  assertProofAfterSemicolonIndentsFromIntroducer env
   assertQuantifierBreaksAfterComma env
   assertBreakNeverPrecedesTrailingSeparator env
   assertGeneratedBinderOperatorBreaksBeforeBody env

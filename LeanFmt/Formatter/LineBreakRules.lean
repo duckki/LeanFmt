@@ -728,6 +728,15 @@ def nullInheritBase (context : RuleContext) (segment : Segment) : Bool :=
 def attachedBodyStart (segment : Segment) (index : Nat) : Bool :=
   childStartsWithLexeme segment index "do" || childStartsWithLexeme segment index "by"
 
+def attachedBodyFollowsDelimiter (context : RuleContext) (delimiter : String) : Bool :=
+  match context.ancestors with
+  | parent :: _ =>
+      let segment := Segment.ofTree parent.segment.parent
+      match previousContentIndex? segment parent.childIndex with
+      | some index => childStartsWithLexeme segment index delimiter
+      | none => false
+  | _ => false
+
 partial def treeContainsDoLetFallback : SyntaxTree.Tree → Bool
   | .missing
   | .leaf _ => false
@@ -1797,7 +1806,9 @@ def byTacticRule : LineBreakRule :=
   {
     name := "byTactic"
     useExistingBreaks :=
-      fun context _ => parentIsRawKind context `Lean.Parser.Term.basicFun
+      fun context _ =>
+        parentIsRawKind context `Lean.Parser.Term.basicFun
+        || attachedBodyFollowsDelimiter context ";"
     inheritBase := fun _ _ => true
     breakPoints := byTacticBreaks
   }
