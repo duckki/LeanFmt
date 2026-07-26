@@ -466,11 +466,14 @@ invocations first format files that parse in LeanFmt's default Lean environment,
 process files that need imported syntax in a short-lived worker running under the
 target package's `lake env`. The worker orders files by exact normalized import header
 and keeps Lean-created environments in a bounded cache, so adjacent identical headers
-reuse one environment. Files with a `module` header use exported `.olean` data; scripts
-use private data, matching Lean's frontend. Lean itself computes every transitive import,
-IR phase, initializer, and persistent extension; LeanFmt does not derive environments
-from a superset. Supplying a worker batch size limits the number of files processed by
-each worker, trading process and environment setup time for lower peak memory. Set
+reuse one environment. It also reuses Lean's opaque state after an identical first
+direct import and lets Lean extend and finalize that state for the remaining imports.
+Both caches are bounded by `--env-cache-size`. Files with a `module` header use
+exported `.olean` data; scripts use private data, matching Lean's frontend. Lean itself
+computes every transitive import, IR phase, initializer, and persistent extension;
+LeanFmt does not derive environments from a superset. Supplying a worker batch size
+limits the number of files processed by each worker, trading process and environment
+setup time for lower peak memory. Set
 `LEANFMT_VALIDATION_LINE_WIDTH=N` to pass a project-specific line width to every
 formatter invocation.
 

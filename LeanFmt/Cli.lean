@@ -35,7 +35,7 @@ def usage : String :=
       "  --profile",
       "            Print formatter CLI phase timings to stderr.",
       "  --env-cache-size N",
-      "            Keep up to N imported parser environments in one formatter process.",
+      "            Keep up to N exact environments and import-prefix states per process.",
       "  --import-env-first",
       "            Import the source header environment before trying default parsing.",
       "  --check-exception",

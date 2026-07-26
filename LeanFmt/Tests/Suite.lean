@@ -5996,6 +5996,38 @@ def assertLeanEnvironmentKeyIncludesImportSemantics : IO Unit := do
   assertTrue "environment cache keys include level and every import modifier"
     (keys.length == specs.size)
 
+def assertImportSessionMatchesLeanEnvironment : IO Unit := do
+  let spec : LeanFmt.LeanEnvironment.Spec :=
+    {
+      imports :=
+        #[
+          { module := `LeanFmt.Tests.ProjectSyntax },
+          { module := `LeanFmt.Tests.ExportedModuleSyntax }
+        ]
+      level := .private
+    }
+  let direct ← LeanFmt.LeanEnvironment.importEnvironmentDirect spec
+  let session ← LeanFmt.LeanEnvironment.Session.create 1
+  let reused ← session.importEnvironment spec
+  let effectiveImports (env : Lean.Environment) :=
+    env.header.modules.map
+      fun imported =>
+        s!"{imported.module}|all={imported.importAll}|exported={imported.isExported}|data={imported.hasData}|ir={repr imported.irPhases}"
+  assertEq "prefix reuse preserves Lean's effective imports"
+    (toString (effectiveImports direct)) (toString (effectiveImports reused))
+  assertEq "prefix reuse preserves Lean's imported constants"
+    (toString direct.constants.map₁.size) (toString reused.constants.map₁.size)
+  let source := "#check project_syntax\n"
+  let directParsed ←
+    SyntaxTree.parseModuleStringWithEnv direct source "direct-import-syntax.lean"
+  let reusedParsed ←
+    SyntaxTree.parseModuleStringWithEnv reused "#check project_syntax\n"
+      "prefix-reuse-syntax.lean"
+  assertTrue "prefix reuse preserves Lean's parsed syntax tree"
+    (directParsed.tree == reusedParsed.tree)
+  assertTrue "prefix reuse preserves imported parser syntax"
+    (reusedParsed.tree.containsNodeKind (.raw `projectSyntax))
+
 def assertExportedEnvironmentSkipsPrivateTransitiveImports : IO Unit := do
   let imports : Array Lean.Import := #[{ module := `LeanFmt.Tests.ExportedModuleSyntax }]
   let environment ←
@@ -6011,8 +6043,8 @@ def assertExportedEnvironmentSkipsPrivateTransitiveImports : IO Unit := do
 def assertExportedEnvironmentIncludesMetaIrClosure : IO Unit := do
   let imports : Array Lean.Import :=
     #[{ module := `LeanFmt.Tests.MetaImportRoot, isExported := true }]
-  let environment ←
-    LeanFmt.LeanEnvironment.importEnvironment { imports, level := .exported }
+  let session ← LeanFmt.LeanEnvironment.Session.create 1
+  let environment ← session.importEnvironment { imports, level := .exported }
   let some leafIndex :=
     environment.getModuleIdx? `LeanFmt.Tests.MetaImportLeaf
   | throw <| IO.userError "expected meta/IR-only leaf import"
@@ -6145,7 +6177,7 @@ def assertImportFilesGroupByHeader : IO Unit := do
         IO.FS.writeFile third "import Lean\n\ndef third : Nat := 0\n"
         let groups ← LeanFmt.Driver.exactImportHeaderGroups [first, second, third]
         assertEq "import-heavy files group by normalized import header"
-          (toString [[first, third], [second]]) (toString (groups.map (·.files)))
+          (toString [[second], [first, third]]) (toString (groups.map (·.files)))
 
 def assertRecursiveWorkerChecksTargetToolchain : IO Unit := do
   IO.FS.withTempDir
@@ -7843,6 +7875,7 @@ def runCliAndArchitectureTests (env : Lean.Environment) : IO Unit := do
   assertEnvironmentCacheBound env
   assertSourceImportsUseLeanHeaderLevel
   assertLeanEnvironmentKeyIncludesImportSemantics
+  assertImportSessionMatchesLeanEnvironment
   assertExportedEnvironmentSkipsPrivateTransitiveImports
   assertExportedEnvironmentIncludesMetaIrClosure
   assertDefaultEnvironmentPartition env

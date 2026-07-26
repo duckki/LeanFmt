@@ -80,12 +80,16 @@ Formatting a file follows this pipeline:
    runs in the target package's Lake environment. Files are ordered by their exact
    normalized import header so identical environments are adjacent. The worker asks
    Lean to construct each exact environment and retains a bounded LRU cache keyed by
-   the ordered imports and import level. Files with a `module` header use exported
-   `.olean` data; scripts use private data, matching Lean's frontend. Lean therefore
-   remains responsible for its import fixed point, public/private data selection, IR
-   phases, user initializers, and persistent extensions. `LeanEnvironment.lean` is the
-   narrow maintenance boundary for these APIs. An explicit worker batch size
-   limits the lifetime and peak memory of each short-lived worker.
+   the ordered imports and import level. A second bounded cache retains Lean's opaque
+   `ImportState` after the first direct import; adjacent headers with the same prefix
+   ask `importModulesCore` to extend that state in original order before
+   `finalizeImport` constructs the exact environment. LeanFmt never inspects or
+   reconstructs the state. Files with a `module` header use exported `.olean` data;
+   scripts use private data, matching Lean's frontend. Lean therefore remains
+   responsible for its import fixed point, public/private data selection, IR phases,
+   user initializers, and persistent extensions. `LeanEnvironment.lean` is the narrow
+   maintenance boundary for these APIs. An explicit worker batch size limits the
+   lifetime and peak memory of each short-lived worker.
 3. Convert Lean `Syntax` to a `SyntaxTree.Tree` of tokens and raw parser nodes.
 4. Regroup selected raw nodes into logical `SyntaxTree.NodeKind` nodes.
 5. Render the resulting tree using line-break rules and space rules.

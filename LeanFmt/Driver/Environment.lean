@@ -11,8 +11,10 @@ structure EnvironmentCache where
   default : Lean.Environment
   maxEntries : Nat
   entries : IO.Ref (List (String × Lean.Environment))
+  importSession? : Option LeanEnvironment.Session := none
 
 structure ImportHeaderGroup where
+  key : String
   files : List FilePath
 deriving Repr
 
@@ -38,7 +40,12 @@ def loadFormatterEnvironment (options : Options) : IO EnvironmentCache := do
   Lean.initSearchPath (← Lean.findSysroot)
   let default ← Formatter.defaultEnvironment
   let entries ← IO.mkRef []
-  pure { default, maxEntries := options.environmentCacheSize, entries }
+  let importSession? ←
+    if options.worker then
+      some <$> LeanEnvironment.Session.create options.environmentCacheSize
+    else
+      pure none
+  pure { default, maxEntries := options.environmentCacheSize, entries, importSession? }
 
 def EnvironmentCache.rememberEnvironment
     (cache : EnvironmentCache) (key : String) (env : Lean.Environment)
@@ -63,7 +70,10 @@ def EnvironmentCache.environmentForImports
     match entries.find? (fun entry => entry.1 == key) with
     | some (_, env) => cache.rememberEnvironment key env *> pure env
     | none =>
-        let env ← LeanEnvironment.importEnvironment spec
+        let env ←
+          match cache.importSession? with
+          | some session => session.importEnvironment spec
+          | none => LeanEnvironment.importEnvironment spec
         cache.rememberEnvironment key env
         pure env
 
@@ -108,7 +118,11 @@ def EnvironmentCache.environmentForSourceProfiled
             s!"{fileName}: environment.normalize={normalizeMs}ms default-parse=skipped import-header={headerMs}ms import-env=0ms cache=hit remember={rememberMs}ms"
           pure env
       | none =>
-          let (env, importMs) ← timeIO <| LeanEnvironment.importEnvironment importSpec
+          let (env, importMs) ←
+            timeIO
+            <| match cache.importSession? with
+                | some session => session.importEnvironment importSpec
+                | none => LeanEnvironment.importEnvironment importSpec
           let (_, rememberMs) ← timeIO <| cache.rememberEnvironment key env
           profileLine options
             s!"{fileName}: environment.normalize={normalizeMs}ms default-parse=skipped import-header={headerMs}ms import-env={importMs}ms cache=miss remember={rememberMs}ms"
@@ -144,7 +158,11 @@ def EnvironmentCache.environmentForSourceProfiled
               s!"{fileName}: environment.normalize={normalizeMs}ms default-parse={defaultParseMs}ms failed import-header={headerMs}ms import-env=0ms cache=hit remember={rememberMs}ms"
             pure env
         | none =>
-            let (env, importMs) ← timeIO <| LeanEnvironment.importEnvironment importSpec
+            let (env, importMs) ←
+              timeIO
+              <| match cache.importSession? with
+                  | some session => session.importEnvironment importSpec
+                  | none => LeanEnvironment.importEnvironment importSpec
             let (_, rememberMs) ← timeIO <| cache.rememberEnvironment key env
             profileLine options
               s!"{fileName}: environment.normalize={normalizeMs}ms default-parse={defaultParseMs}ms failed import-header={headerMs}ms import-env={importMs}ms cache=miss remember={rememberMs}ms"
@@ -202,10 +220,13 @@ def exactImportHeaderGroups (files : List FilePath) : IO (List ImportHeaderGroup
         (Formatter.Internal.normalizeSource source) file.toString
     groups := addFileToImportGroup groups importSpec.key file
   pure
-  <| groups.reverse.filterMap
-      fun (_, files) =>
-        match files.reverse with
-        | [] => none
-        | _ => some { files := files.reverse }
+  <| (groups.reverse.filterMap
+            fun (key, files) =>
+              match files.reverse with
+              | [] => none
+              | _ => some { key, files := files.reverse })
+          |>.toArray
+        |>.qsort (fun left right => left.key < right.key)
+      |>.toList
 
 end LeanFmt.Driver
