@@ -5972,61 +5972,47 @@ def assertEnvironmentCacheBound (env : Lean.Environment) : IO Unit := do
   disabledCache.rememberEnvironment "ignored" env
   assertTrue "disabled environment cache remains empty" (← disabledEntries.get).isEmpty
 
-def assertParserReservoirIsolatesExactImports : IO Unit := do
-  let projectImports : Array Lean.Import := #[{ module := `LeanFmt.Tests.ProjectSyntax }]
-  let projectEnvironment ← SyntaxTree.importEnvironment projectImports
-  let reservoir : LeanFmt.Driver.ParserEnvironmentReservoir :=
-    { private? := some projectEnvironment }
-  let projectEnv ← reservoir.environmentForImports projectImports
-  let source := "#check project_syntax\n"
-  let projectModule ←
-    SyntaxTree.parseModuleStringWithEnv projectEnv source "project-parser-reservoir.lean"
-  assertTrue "shared module reservoir includes exact imported parser syntax"
-    (projectModule.tree.containsNodeKind (.raw `projectSyntax))
-  let leanEnv ← reservoir.environmentForImports #[{ module := `Lean }]
-  let leanModule ←
-    SyntaxTree.parseModuleStringWithEnv leanEnv source "lean-parser-reservoir.lean"
-  assertTrue "shared module reservoir excludes syntax outside the exact imports"
-    (!leanModule.tree.containsNodeKind (.raw `projectSyntax))
-
 def assertSourceImportsUseLeanHeaderLevel : IO Unit := do
   let moduleImports ←
-    LeanFmt.Driver.importEnvironmentSpecForSource
+    LeanFmt.LeanEnvironment.specForSource
       "module\n\npublic import Lean\n" "module-header.lean"
   assertTrue "module headers import exported olean data"
     (moduleImports.level == .exported)
   let scriptImports ←
-    LeanFmt.Driver.importEnvironmentSpecForSource "import Lean\n" "script-header.lean"
+    LeanFmt.LeanEnvironment.specForSource "import Lean\n" "script-header.lean"
   assertTrue "script headers import private olean data" (scriptImports.level == .private)
 
-def assertExportedReservoirSkipsPrivateTransitiveImports : IO Unit := do
+def assertLeanEnvironmentKeyIncludesImportSemantics : IO Unit := do
+  let base : Lean.Import := { module := `Lean }
+  let specs : Array LeanFmt.LeanEnvironment.Spec :=
+    #[
+      { imports := #[base], level := .private },
+      { imports := #[base], level := .exported },
+      { imports := #[{ base with importAll := true }], level := .private },
+      { imports := #[{ base with isExported := false }], level := .private },
+      { imports := #[{ base with isMeta := true }], level := .private }
+    ]
+  let keys := (specs.map (·.key)).toList.eraseDups
+  assertTrue "environment cache keys include level and every import modifier"
+    (keys.length == specs.size)
+
+def assertExportedEnvironmentSkipsPrivateTransitiveImports : IO Unit := do
   let imports : Array Lean.Import := #[{ module := `LeanFmt.Tests.ExportedModuleSyntax }]
-  let environment ← SyntaxTree.importEnvironment imports (level := .exported)
+  let environment ←
+    LeanFmt.LeanEnvironment.importEnvironment { imports, level := .exported }
   assertTrue "exported environment excludes private transitive imports"
     (environment.getModuleIdx? `LeanFmt.Tests.PrivateModuleDependency).isNone
-  let reservoir : LeanFmt.Driver.ParserEnvironmentReservoir :=
-    { exported? := some environment }
-  let exactEnvironment ← reservoir.environmentForImports imports (level := .exported)
   let source := "#check exported_module_syntax\n"
   let parsed ←
-    SyntaxTree.parseModuleStringWithEnv exactEnvironment source
-      "exported-module-syntax.lean"
+    SyntaxTree.parseModuleStringWithEnv environment source "exported-module-syntax.lean"
   assertTrue "exported parser syntax remains available"
     (parsed.tree.containsNodeKind (.raw `exportedModuleSyntax))
 
-def assertExportedReservoirIncludesMetaIrClosure : IO Unit := do
+def assertExportedEnvironmentIncludesMetaIrClosure : IO Unit := do
   let imports : Array Lean.Import :=
     #[{ module := `LeanFmt.Tests.MetaImportRoot, isExported := true }]
-  let environment ← SyntaxTree.importEnvironment imports (level := .exported)
-  let moduleIndices ←
-    LeanFmt.Driver.moduleIndicesForImports environment imports (level := .exported)
-  let exactNames := environment.header.modules.map (·.module)
-  let derivedNames :=
-    moduleIndices.map
-      fun moduleIndex =>
-        environment.header.modules[moduleIndex]!.module
-  assertEq "shared parser environment follows Lean's meta/IR import closure"
-    (toString exactNames) (toString derivedNames)
+  let environment ←
+    LeanFmt.LeanEnvironment.importEnvironment { imports, level := .exported }
   let some leafIndex :=
     environment.getModuleIdx? `LeanFmt.Tests.MetaImportLeaf
   | throw <| IO.userError "expected meta/IR-only leaf import"
@@ -6157,65 +6143,9 @@ def assertImportFilesGroupByHeader : IO Unit := do
         IO.FS.writeFile first "import Lean\n\ndef first : Nat := 0\n"
         IO.FS.writeFile second "import Init\n\ndef second : Nat := 0\n"
         IO.FS.writeFile third "import Lean\n\ndef third : Nat := 0\n"
-        let groups ← LeanFmt.Driver.importFileGroups none [first, second, third]
+        let groups ← LeanFmt.Driver.exactImportHeaderGroups [first, second, third]
         assertEq "import-heavy files group by normalized import header"
           (toString [[first, third], [second]]) (toString (groups.map (·.files)))
-
-def assertImportFilesIgnoreLakeSetupSupersets : IO Unit := do
-  IO.FS.withTempDir
-    fun root =>
-      do
-        let project := root / "project"
-        let sourceDir := project / "QuantumComputing"
-        let setupDir := project / ".lake" / "build" / "ir" / "QuantumComputing"
-        IO.FS.createDirAll sourceDir
-        IO.FS.createDirAll setupDir
-        let first := sourceDir / "First.lean"
-        let second := sourceDir / "Second.lean"
-        let third := sourceDir / "Third.lean"
-        IO.FS.writeFile first "import QuantumComputing.Second\n\ndef first : Nat := 0\n"
-        IO.FS.writeFile second "import Mathlib\n\ndef second : Nat := 0\n"
-        IO.FS.writeFile third "import Lean\n\ndef third : Nat := 0\n"
-        IO.FS.writeFile (setupDir / "First.setup.json")
-          "{\"importArts\":{\"Mathlib\":{},\"QuantumComputing.Second\":{}}}\n"
-        IO.FS.writeFile (setupDir / "Second.setup.json")
-          "{\"importArts\":{\"Mathlib\":{}}}\n"
-        IO.FS.writeFile (setupDir / "Third.setup.json") "{\"importArts\":{\"Lean\":{}}}\n"
-        let groups ← LeanFmt.Driver.importFileGroups (some project) [first, second, third]
-        assertTrue "files with distinct import headers use separate environments"
-          (groups.length == 3)
-        assertTrue "each distinct import header chooses its own environment file"
-          (groups.all fun group => group.files == [group.environmentFile])
-
-def assertImportFilesIgnoreDownstreamEnvironmentCandidates : IO Unit := do
-  IO.FS.withTempDir
-    fun root =>
-      do
-        let project := root / "project"
-        let sourceDir := project / "QuantumComputing"
-        let setupDir := project / ".lake" / "build" / "ir"
-        IO.FS.createDirAll sourceDir
-        IO.FS.createDirAll (setupDir / "QuantumComputing")
-        let aggregator := project / "QuantumComputing.lean"
-        let first := sourceDir / "First.lean"
-        let second := sourceDir / "Second.lean"
-        IO.FS.writeFile aggregator
-          "import QuantumComputing.First\nimport QuantumComputing.Second\n"
-        IO.FS.writeFile first "import Mathlib\n\ndef first : Nat := 0\n"
-        IO.FS.writeFile second "import Mathlib\n\ndef second : Nat := 0\n"
-        IO.FS.writeFile (setupDir / "QuantumComputing.setup.json")
-          "{\"importArts\":{\"Mathlib\":{},\"QuantumComputing.First\":{},\"QuantumComputing.Second\":{}}}\n"
-        IO.FS.writeFile (setupDir / "QuantumComputing" / "First.setup.json")
-          "{\"importArts\":{\"Mathlib\":{},\"QuantumComputing.First\":{}}}\n"
-        IO.FS.writeFile (setupDir / "QuantumComputing" / "Second.setup.json")
-          "{\"importArts\":{\"Mathlib\":{},\"QuantumComputing.Second\":{}}}\n"
-        let groups ←
-          LeanFmt.Driver.importFileGroupsWithEnvironmentCandidates
-            (some project) [aggregator, first, second] [first, second]
-        assertEq "identical import headers share an exact environment"
-          (toString [[first, second]]) (toString (groups.map (·.files)))
-        assertEq "downstream aggregator is not selected as a worker environment"
-          (toString [first]) (toString (groups.map (·.environmentFile)))
 
 def assertRecursiveWorkerChecksTargetToolchain : IO Unit := do
   IO.FS.withTempDir
@@ -7370,7 +7300,7 @@ def assertMissingRuleCheckUsesDispatch
         (some `Lean.Parser.Term.syntheticUnknownForTest)
       == .unavailable)
   let projectImports ←
-    LeanFmt.Driver.importsForSource
+    LeanFmt.LeanEnvironment.importsForSource
       "import LeanFmt.Tests.ProjectSyntax\n" "project-syntax-import.lean"
   let projectEnv ← cache.environmentForImports projectImports
   assertTrue "parser description fallback is identified"
@@ -7911,15 +7841,13 @@ def runCliAndArchitectureTests (env : Lean.Environment) : IO Unit := do
     { default := env, maxEntries := 1, entries }
   assertCliParsing
   assertEnvironmentCacheBound env
-  assertParserReservoirIsolatesExactImports
   assertSourceImportsUseLeanHeaderLevel
-  assertExportedReservoirSkipsPrivateTransitiveImports
-  assertExportedReservoirIncludesMetaIrClosure
+  assertLeanEnvironmentKeyIncludesImportSemantics
+  assertExportedEnvironmentSkipsPrivateTransitiveImports
+  assertExportedEnvironmentIncludesMetaIrClosure
   assertDefaultEnvironmentPartition env
   assertWorkersUseInputLakeRoot
   assertImportFilesGroupByHeader
-  assertImportFilesIgnoreLakeSetupSupersets
-  assertImportFilesIgnoreDownstreamEnvironmentCandidates
   assertRecursiveWorkerChecksTargetToolchain
   assertFormattingExceptionChecks env
   assertCliChecksStillFormatUnlessCheck env cache

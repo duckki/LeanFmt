@@ -77,15 +77,15 @@ Formatting a file follows this pipeline:
    fact. The CLI first tries the default environment, then loads an import-specific
    environment when project syntax requires it. Multi-file package formatting first
    handles files that parse in the default environment. A short-lived worker then
-   imports the union of the remaining files' module graphs once per Lean import level:
-   exported `.olean` data for files with a `module` header and private data for scripts.
-   For each exact ordered import header, it reconstructs Lean's parser extension state
-   from the imported modules' own persistent-extension entries and caches that derived environment.
-   Constants and serialized module data are shared, but parser syntax outside the
-   file's exact import closure is excluded. This prevents downstream parser extensions
-   from changing how an earlier source module is parsed without repeatedly loading the
-   same `.olean` graph. An explicit worker batch size limits how many files each
-   short-lived worker processes and bounds peak memory.
+   runs in the target package's Lake environment. Files are ordered by their exact
+   normalized import header so identical environments are adjacent. The worker asks
+   Lean to construct each exact environment and retains a bounded LRU cache keyed by
+   the ordered imports and import level. Files with a `module` header use exported
+   `.olean` data; scripts use private data, matching Lean's frontend. Lean therefore
+   remains responsible for its import fixed point, public/private data selection, IR
+   phases, user initializers, and persistent extensions. `LeanEnvironment.lean` is the
+   narrow maintenance boundary for these APIs. An explicit worker batch size
+   limits the lifetime and peak memory of each short-lived worker.
 3. Convert Lean `Syntax` to a `SyntaxTree.Tree` of tokens and raw parser nodes.
 4. Regroup selected raw nodes into logical `SyntaxTree.NodeKind` nodes.
 5. Render the resulting tree using line-break rules and space rules.

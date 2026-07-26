@@ -295,22 +295,17 @@ def runExactEnvironmentWorkerBatch
     s!"worker-batch: envs=exact files={files.length} elapsed={elapsedMs}ms"
   pure exitCode
 
-partial def runExactEnvironmentWorkerGroups
-    (options : Options) (cwd? : Option FilePath) (groups : List ImportWorkerGroup)
+partial def runExactEnvironmentWorkerBatches
+    (options : Options) (cwd? : Option FilePath) (files : List FilePath)
     : IO UInt32 := do
-  let rec runGroupBatches (batchSize : Nat) (failed : Bool) : List FilePath → IO Bool
-    | [] => pure failed
+  let batchSize ← initialWorkerBatchSize options cwd? files
+  let rec loop (failed : Bool) : List FilePath → IO UInt32
+    | [] => pure <| if failed then 1 else 0
     | remaining => do
         let batch := remaining.take batchSize
         let exitCode ← runExactEnvironmentWorkerBatch options cwd? batch
-        runGroupBatches batchSize (failed || exitCode != 0) (remaining.drop batchSize)
-  let rec loop (failed : Bool) : List ImportWorkerGroup → IO UInt32
-    | [] => pure <| if failed then 1 else 0
-    | group :: remaining => do
-        let batchSize ← initialWorkerBatchSize options cwd? group.files
-        let failed ← runGroupBatches batchSize failed group.files
-        loop failed remaining
-  loop false groups
+        loop (failed || exitCode != 0) (remaining.drop batchSize)
+  loop false files
 
 def summarizeOutcomes (options : Options) (outcomes : List FileOutcome) : IO UInt32 := do
   let changed := outcomes.any (·.changed)
@@ -345,10 +340,11 @@ def runMixedWorkerBatches
     if importFiles.isEmpty then
       pure 0
     else
+      let (exactGroups, groupingMs) ← timeIO <| exactImportHeaderGroups importFiles
+      let orderedFiles := exactGroups.flatMap (·.files)
       profileLine options
-        s!"import-groups: files={importFiles.length} strategy=exact-import-header elapsed=0ms"
-      let exactGroups ← exactImportFileGroups importFiles
-      runExactEnvironmentWorkerGroups options cwd? exactGroups
+        s!"import-groups: files={importFiles.length} groups={exactGroups.length} strategy=exact-lean-environments elapsed={groupingMs}ms"
+      runExactEnvironmentWorkerBatches options cwd? orderedFiles
   pure <| if defaultExitCode != 0 || importExitCode != 0 then 1 else 0
 
 end LeanFmt.Driver

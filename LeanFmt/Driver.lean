@@ -18,14 +18,6 @@ def runOptionsWithCache (cache : EnvironmentCache) (options : Options) : IO UInt
     else
       pure 1
   else
-    let (cache, reservoirMs) ←
-      timeIO
-      <|  if options.worker && 1 < files.length then
-            cache.withParserReservoirForFiles files
-          else
-            pure cache
-    profileLine options
-      s!"parser-reservoir: files={files.length} enabled={cache.parserReservoir?.isSome} elapsed={reservoirMs}ms"
     summarizeOutcomes options (← files.mapM (formatFile cache options))
 
 def runOptions (options : Options) : IO UInt32 := do

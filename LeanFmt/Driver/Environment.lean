@@ -1,27 +1,18 @@
 import Lean
 import LeanFmt.Driver.Options
 import LeanFmt.Formatter
+import LeanFmt.LeanEnvironment
 
 open System
 
 namespace LeanFmt.Driver
 
-structure ParserEnvironmentReservoir where
-  exported? : Option Lean.Environment := none
-  private? : Option Lean.Environment := none
-
-structure ImportEnvironmentSpec where
-  imports : Array Lean.Import
-  level : Lean.OLeanLevel
-
 structure EnvironmentCache where
   default : Lean.Environment
   maxEntries : Nat
   entries : IO.Ref (List (String × Lean.Environment))
-  parserReservoir? : Option ParserEnvironmentReservoir := none
 
-structure ImportWorkerGroup where
-  environmentFile : FilePath
+structure ImportHeaderGroup where
   files : List FilePath
 deriving Repr
 
@@ -34,32 +25,6 @@ def timeIO (action : IO α) : IO (α × Nat) := do
   let value ← action
   let stop ← IO.monoMsNow
   pure (value, stop - start)
-
-def importKey (importDecl : Lean.Import) : String :=
-  s!"{importDecl.module}|all={importDecl.importAll}|exported={importDecl.isExported}|meta={importDecl.isMeta}"
-
-def importLevelKey : Lean.OLeanLevel → String
-  | .exported => "exported"
-  | .server => "server"
-  | .private => "private"
-
-def importsKey (imports : Array Lean.Import) (level : Lean.OLeanLevel := .private)
-    : String :=
-  importLevelKey level ++ "\n" ++ String.intercalate "\n" (imports.toList.map importKey)
-
-def importEnvironmentSpecForSource (source fileName : String)
-    : IO ImportEnvironmentSpec := do
-  let inputContext := Lean.Parser.mkInputContext source fileName
-  let (header, _state, _messages) ← Lean.Parser.parseHeader inputContext
-  pure
-    {
-      imports := Lean.Elab.headerToImports header
-      level :=
-        if Lean.Elab.HeaderSyntax.isModule header then .exported else .private
-    }
-
-def importsForSource (source fileName : String) : IO (Array Lean.Import) := do
-  pure (← importEnvironmentSpecForSource source fileName).imports
 
 def usesDefaultEnvironmentImports (imports : Array Lean.Import) : Bool :=
   imports
@@ -74,163 +39,6 @@ def loadFormatterEnvironment (options : Options) : IO EnvironmentCache := do
   let default ← Formatter.defaultEnvironment
   let entries ← IO.mkRef []
   pure { default, maxEntries := options.environmentCacheSize, entries }
-
-def pushUniqueImport (imports : Array Lean.Import) (fileImport : Lean.Import)
-    : Array Lean.Import :=
-  let key := importKey fileImport
-  if imports.any fun existing => importKey existing == key then
-    imports
-  else
-    imports.push fileImport
-
-def importsForFiles (files : List FilePath)
-    : IO (Array Lean.Import × Array Lean.Import) := do
-  let mut exported := #[]
-  let mut privateImports := #[]
-  for file in files do
-    let source ← IO.FS.readFile file
-    let importSpec ←
-      importEnvironmentSpecForSource
-        (Formatter.Internal.normalizeSource source) file.toString
-    for fileImport in importSpec.imports do
-      if importSpec.level == .exported then
-        exported := pushUniqueImport exported fileImport
-      else
-        privateImports := pushUniqueImport privateImports fileImport
-  pure (exported, privateImports)
-
-def loadParserEnvironmentReservoir (files : List FilePath)
-    : IO (Option ParserEnvironmentReservoir) := do
-  let (exportedImports, privateImports) ← importsForFiles files
-  if exportedImports.isEmpty && privateImports.isEmpty then
-    pure none
-  else
-    let exported? ←
-      if exportedImports.isEmpty then
-        pure none
-      else
-        some
-        <$> SyntaxTree.importEnvironment exportedImports
-              (leakEnv := true) (level := .exported)
-    let private? ←
-      if privateImports.isEmpty then
-        pure none
-      else
-        some
-        <$> SyntaxTree.importEnvironment privateImports
-              (leakEnv := true) (level := .private)
-    pure <| some { exported?, private? }
-
-structure ModuleImportRequirement where
-  importAll : Bool
-  isExported : Bool
-  needsData : Bool
-  needsIRTrans : Bool
-deriving BEq
-
-structure ModuleImportPlan where
-  requirements : Lean.NameMap ModuleImportRequirement
-  moduleNames : Array Lean.Name
-
-partial def moduleImportPlanForImports
-    (imports : Array Lean.Import)
-    (level : Lean.OLeanLevel := .private)
-    (importsForModule : Lean.Name → IO (Array Lean.Import))
-    : IO ModuleImportPlan := do
-  let requirementsRef ← IO.mkRef ({} : Lean.NameMap ModuleImportRequirement)
-  let moduleNamesRef ← IO.mkRef (#[] : Array Lean.Name)
-  let rec visitImports
-      (moduleImports : Array Lean.Import)
-      (importAll isExported needsData needsIRTrans : Bool)
-      : IO Unit := do
-        for imported in moduleImports do
-          let importedNeedsData := needsData && (imported.isExported || importAll)
-          let importedImportAll := level == .private || importAll && imported.importAll
-          let importedIsExported := isExported && imported.isExported
-          let importedNeedsIRTrans := needsIRTrans || importedNeedsData && imported.isMeta
-          let importedNeedsIR :=
-            importedNeedsIRTrans || importedImportAll || level > .exported
-          if !importedNeedsData && !importedNeedsIR then
-            continue
-          let requirements ← requirementsRef.get
-          let previous? := requirements.find? imported.module
-          let effective :=
-            {
-              importAll :=
-                importedImportAll || previous?.any (·.importAll)
-              isExported :=
-                importedIsExported || previous?.any (·.isExported)
-              needsData :=
-                importedNeedsData || previous?.any (·.needsData)
-              needsIRTrans :=
-                importedNeedsIRTrans || previous?.any (·.needsIRTrans)
-            }
-          let changed := previous?.isNone || previous?.any (· != effective)
-          unless changed do
-            continue
-          requirementsRef.set <| requirements.insert imported.module effective
-          visitImports (← importsForModule imported.module) effective.importAll
-            effective.isExported effective.needsData effective.needsIRTrans
-          if previous?.isNone then
-            moduleNamesRef.modify (·.push imported.module)
-  visitImports imports (importAll := true)
-    (isExported := level < .private) (needsData := true)
-    (needsIRTrans := false)
-  pure
-    {
-      requirements := ← requirementsRef.get
-      moduleNames := ← moduleNamesRef.get
-    }
-
-partial def moduleIndicesForImports
-    (environment : Lean.Environment) (imports : Array Lean.Import)
-    (level : Lean.OLeanLevel := .private)
-    : IO (Array Lean.ModuleIdx) := do
-  let plan ←
-    moduleImportPlanForImports imports level
-      fun moduleName =>
-        do
-          let some moduleIndex := environment.getModuleIdx? moduleName
-          | throw
-            <| IO.userError s!"shared parser environment is missing module {moduleName}"
-          pure environment.header.moduleData[moduleIndex]!.imports
-  plan.moduleNames.mapM
-    fun moduleName =>
-      do
-        let some moduleIndex := environment.getModuleIdx? moduleName
-        | throw
-          <| IO.userError s!"shared parser environment is missing module {moduleName}"
-        pure moduleIndex
-
-def ParserEnvironmentReservoir.environmentForImports
-    (reservoir : ParserEnvironmentReservoir) (imports : Array Lean.Import)
-    (level : Lean.OLeanLevel := .private)
-    : IO Lean.Environment := do
-  let environment? :=
-    match level with
-    | .exported => reservoir.exported?
-    | .server => none
-    | .private => reservoir.private?
-  let some environment := environment?
-  | throw
-    <| IO.userError
-        s!"shared parser environment has no {importLevelKey level} module reservoir"
-  let moduleIndices ← moduleIndicesForImports environment imports level
-  let importedEntries :=
-    moduleIndices.map
-      fun moduleIndex =>
-        Lean.Parser.parserExtension.ext.getModuleEntries environment moduleIndex
-  let parserState ←
-    (Lean.Parser.parserExtension.ext.addImportedFn importedEntries).run
-      { env := environment, opts := {} }
-  pure <| Lean.Parser.parserExtension.ext.setState environment parserState
-
-def EnvironmentCache.withParserReservoirForFiles
-    (cache : EnvironmentCache) (files : List FilePath)
-    : IO EnvironmentCache := do
-  let parserReservoir? ← loadParserEnvironmentReservoir files
-  let entries ← IO.mkRef []
-  pure { cache with entries, parserReservoir? }
 
 def EnvironmentCache.rememberEnvironment
     (cache : EnvironmentCache) (key : String) (env : Lean.Environment)
@@ -249,15 +57,13 @@ def EnvironmentCache.environmentForImports
   if level == .private && usesDefaultEnvironmentImports imports then
     pure cache.default
   else
-    let key := importsKey imports level
+    let spec : LeanEnvironment.Spec := { imports, level }
+    let key := spec.key
     let entries ← cache.entries.get
     match entries.find? (fun entry => entry.1 == key) with
     | some (_, env) => cache.rememberEnvironment key env *> pure env
     | none =>
-        let env ←
-          match cache.parserReservoir? with
-          | some reservoir => reservoir.environmentForImports imports level
-          | none => SyntaxTree.importEnvironment imports (level := level)
+        let env ← LeanEnvironment.importEnvironment spec
         cache.rememberEnvironment key env
         pure env
 
@@ -266,7 +72,7 @@ def EnvironmentCache.environmentForSource
     : IO Lean.Environment := do
   let normalized := Formatter.Internal.normalizeSource source
   if options.importEnvFirst then
-    let importSpec ← importEnvironmentSpecForSource normalized fileName
+    let importSpec ← LeanEnvironment.specForSource normalized fileName
     cache.environmentForImports importSpec.imports importSpec.level
   else
     try
@@ -275,7 +81,7 @@ def EnvironmentCache.environmentForSource
           normalized fileName
       pure cache.default
     catch _ =>
-      let importSpec ← importEnvironmentSpecForSource normalized fileName
+      let importSpec ← LeanEnvironment.specForSource normalized fileName
       cache.environmentForImports importSpec.imports importSpec.level
 
 def EnvironmentCache.environmentForSourceProfiled
@@ -285,7 +91,7 @@ def EnvironmentCache.environmentForSourceProfiled
     timeIO <| pure <| Formatter.Internal.normalizeSource source
   if options.importEnvFirst then
     let (importSpec, headerMs) ←
-      timeIO <| importEnvironmentSpecForSource normalized fileName
+      timeIO <| LeanEnvironment.specForSource normalized fileName
     let imports := importSpec.imports
     let level := importSpec.level
     if level == .private && usesDefaultEnvironmentImports imports then
@@ -293,7 +99,7 @@ def EnvironmentCache.environmentForSourceProfiled
         s!"{fileName}: environment.normalize={normalizeMs}ms default-parse=skipped import-header={headerMs}ms import-env=0ms cache=default-imports"
       pure cache.default
     else
-      let key := importsKey imports level
+      let key := importSpec.key
       let entries ← cache.entries.get
       match entries.find? (fun entry => entry.1 == key) with
       | some (_, env) =>
@@ -302,11 +108,7 @@ def EnvironmentCache.environmentForSourceProfiled
             s!"{fileName}: environment.normalize={normalizeMs}ms default-parse=skipped import-header={headerMs}ms import-env=0ms cache=hit remember={rememberMs}ms"
           pure env
       | none =>
-          let (env, importMs) ←
-            timeIO
-            <| match cache.parserReservoir? with
-                | some reservoir => reservoir.environmentForImports imports level
-                | none => SyntaxTree.importEnvironment imports (level := level)
+          let (env, importMs) ← timeIO <| LeanEnvironment.importEnvironment importSpec
           let (_, rememberMs) ← timeIO <| cache.rememberEnvironment key env
           profileLine options
             s!"{fileName}: environment.normalize={normalizeMs}ms default-parse=skipped import-header={headerMs}ms import-env={importMs}ms cache=miss remember={rememberMs}ms"
@@ -325,7 +127,7 @@ def EnvironmentCache.environmentForSourceProfiled
       let defaultParseStop ← IO.monoMsNow
       let defaultParseMs := defaultParseStop - defaultParseStart
       let (importSpec, headerMs) ←
-        timeIO <| importEnvironmentSpecForSource normalized fileName
+        timeIO <| LeanEnvironment.specForSource normalized fileName
       let imports := importSpec.imports
       let level := importSpec.level
       if level == .private && usesDefaultEnvironmentImports imports then
@@ -333,7 +135,7 @@ def EnvironmentCache.environmentForSourceProfiled
           s!"{fileName}: environment.normalize={normalizeMs}ms default-parse={defaultParseMs}ms failed import-header={headerMs}ms import-env=0ms cache=default-imports"
         pure cache.default
       else
-        let key := importsKey imports level
+        let key := importSpec.key
         let entries ← cache.entries.get
         match entries.find? (fun entry => entry.1 == key) with
         | some (_, env) =>
@@ -342,11 +144,7 @@ def EnvironmentCache.environmentForSourceProfiled
               s!"{fileName}: environment.normalize={normalizeMs}ms default-parse={defaultParseMs}ms failed import-header={headerMs}ms import-env=0ms cache=hit remember={rememberMs}ms"
             pure env
         | none =>
-            let (env, importMs) ←
-              timeIO
-              <| match cache.parserReservoir? with
-                  | some reservoir => reservoir.environmentForImports imports level
-                  | none => SyntaxTree.importEnvironment imports (level := level)
+            let (env, importMs) ← timeIO <| LeanEnvironment.importEnvironment importSpec
             let (_, rememberMs) ← timeIO <| cache.rememberEnvironment key env
             profileLine options
               s!"{fileName}: environment.normalize={normalizeMs}ms default-parse={defaultParseMs}ms failed import-header={headerMs}ms import-env={importMs}ms cache=miss remember={rememberMs}ms"
@@ -395,29 +193,19 @@ def addFileToImportGroup
           loop ((groupKey, files) :: seen) rest
   loop [] groups
 
-def exactImportFileGroups (files : List FilePath) : IO (List ImportWorkerGroup) := do
+def exactImportHeaderGroups (files : List FilePath) : IO (List ImportHeaderGroup) := do
   let mut groups := []
   for file in files do
     let source ← IO.FS.readFile file
     let importSpec ←
-      importEnvironmentSpecForSource
+      LeanEnvironment.specForSource
         (Formatter.Internal.normalizeSource source) file.toString
-    groups :=
-      addFileToImportGroup groups (importsKey importSpec.imports importSpec.level) file
+    groups := addFileToImportGroup groups importSpec.key file
   pure
   <| groups.reverse.filterMap
       fun (_, files) =>
         match files.reverse with
         | [] => none
-        | envFile :: _ => some { environmentFile := envFile, files := files.reverse }
-
-def importFileGroups (_cwd? : Option FilePath) (files : List FilePath)
-    : IO (List ImportWorkerGroup) := do
-  exactImportFileGroups files
-
-def importFileGroupsWithEnvironmentCandidates
-    (_cwd? : Option FilePath) (_environmentFiles files : List FilePath)
-    : IO (List ImportWorkerGroup) := do
-  exactImportFileGroups files
+        | _ => some { files := files.reverse }
 
 end LeanFmt.Driver

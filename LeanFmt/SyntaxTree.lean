@@ -1,4 +1,4 @@
-import Lean
+import LeanFmt.LeanEnvironment
 
 namespace LeanFmt
 namespace SyntaxTree
@@ -1185,9 +1185,8 @@ def extractTree
 def importEnvironment
     (imports : Array Import) (leakEnv := false)
     (level : OLeanLevel := .private)
-    : IO Environment := do
-  unsafe enableInitializersExecution
-  importModules (leakEnv := leakEnv) (loadExts := true) (level := level) imports {} 0
+    : IO Environment :=
+  LeanEnvironment.importEnvironment { imports, level } (leakEnv := leakEnv)
 
 def importLeanEnvironment : IO Environment := do
   importEnvironment #[{ module := `Lean }]
