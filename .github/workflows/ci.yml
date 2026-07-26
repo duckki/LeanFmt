@@ -37,6 +37,8 @@ jobs:
   compatibility:
     name: Previous minor compatibility
     runs-on: ubuntu-latest
+    env:
+      LEANFMT_COMPATIBILITY_TEST: "1"
     strategy:
       fail-fast: false
       matrix:

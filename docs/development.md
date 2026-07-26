@@ -99,9 +99,12 @@ added to a baseline.
 leanfmt supports one source and release line across our current toolchain and
 supported previous minor versions. The current-toolchain CI job runs the complete
 maintenance gate. Compatibility jobs select each previous minor version in a
-disposable checkout and run only the build and test suite. Linting, fixtures,
-self-formatting, formatter diagnostics, and idempotency checks run once with our
-current toolchain.
+disposable checkout and run the build plus a stable compatibility smoke suite.
+The smoke suite checks parsing, formatting, preservation, idempotency, CLI
+parsing, exact environment loading, and executable configuration without
+asserting parser-version-specific layouts. Linting, fixtures, comprehensive
+formatting rules, self-formatting, formatter diagnostics, and idempotency checks
+run once with our current toolchain.
 
 When adding or updating leanfmt in a project on an older supported Lean version,
 preserve the project's toolchain during dependency resolution:
@@ -330,7 +333,7 @@ A published repository can be consumed with Lake's Git dependency form:
 [[require]]
 name = "leanfmt"
 git = "https://github.com/duckki/leanfmt.git"
-rev = "v0.2.6"
+rev = "vX.Y.Z"
 ```
 
 Resolve it without replacing the downstream project's Lean version:

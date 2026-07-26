@@ -277,17 +277,19 @@ def defaultImportedEnvironmentsPerWorker : Nat := 2
 
 def maxDefaultImportedEnvironmentWorkerJobs : Nat := 2
 
-def defaultWorkerJobs : Nat :=
-  max 1 (System.Platform.Internal.getHardwareConcurrency ()).toNat
+def defaultWorkerJobs (hardwareConcurrency : Nat) : Nat :=
+  max 1 hardwareConcurrency
 
-def defaultImportedEnvironmentWorkerJobs : Nat :=
-  min maxDefaultImportedEnvironmentWorkerJobs defaultWorkerJobs
+def defaultImportedEnvironmentWorkerJobs (hardwareConcurrency : Nat) : Nat :=
+  min maxDefaultImportedEnvironmentWorkerJobs (defaultWorkerJobs hardwareConcurrency)
 
 def configuredDefaultEnvironmentWorkerJobs (options : Options) : Nat :=
-  max 1 <| options.workerJobs?.getD defaultWorkerJobs
+  max 1 <| options.workerJobs?.getD (defaultWorkerJobs options.hardwareConcurrency)
 
 def configuredImportedEnvironmentWorkerJobs (options : Options) : Nat :=
-  max 1 <| options.workerJobs?.getD defaultImportedEnvironmentWorkerJobs
+  max 1
+  <| options.workerJobs?.getD
+      (defaultImportedEnvironmentWorkerJobs options.hardwareConcurrency)
 
 def configuredImportedEnvironmentsPerWorker (options : Options) : Nat :=
   max 1 <| options.workerEnvironmentLimit?.getD defaultImportedEnvironmentsPerWorker

@@ -14,6 +14,7 @@ structure Options where
   includeHidden : Bool := false
   worker : Bool := false
   workerDefaultEnvironment : Bool := false
+  hardwareConcurrency : Nat := 1
   formatterOptions : Formatter.Options := {}
   workerEnvironmentLimit? : Option Nat := none
   workerJobs? : Option Nat := none

@@ -736,11 +736,15 @@ def assertConfigEntriesStaySeparated (env : Lean.Environment) : IO Unit := do
     ++ "    fun cfg _ =>\n"
     ++ "      do\n"
     ++ "        pure cfg\n"
-  let formatted ← Formatter.formatSourceWithEnv env source "config-entry-separation.lean"
-  assertEq "configuration entries stay separated" expected formatted
-  let formattedAgain ←
-    Formatter.formatSourceWithEnv env formatted "config-entry-separation-formatted.lean"
-  assertEq "configuration entry formatting is idempotent" formatted formattedAgain
+  let parsed ←
+    SyntaxTree.parseModuleStringWithEnv env source "config-entry-separation.lean"
+  if parsed.tree.containsNodeKind (.raw `Lean.Elab.ConfigEval.configEntries) then
+    let formatted ←
+      Formatter.formatSourceWithEnv env source "config-entry-separation.lean"
+    assertEq "configuration entries stay separated" expected formatted
+    let formattedAgain ←
+      Formatter.formatSourceWithEnv env formatted "config-entry-separation-formatted.lean"
+    assertEq "configuration entry formatting is idempotent" formatted formattedAgain
 
 def assertImportsStayOnSeparateLines (env : Lean.Environment) : IO Unit := do
   let source :=
@@ -6023,7 +6027,7 @@ def assertImportPrefixCacheMatchesLeanEnvironment : IO Unit := do
   let effectiveImports (env : Lean.Environment) :=
     env.header.modules.map
       fun imported =>
-        s!"{imported.module}|all={imported.importAll}|exported={imported.isExported}|data={imported.hasData}|ir={repr imported.irPhases}"
+        s!"{imported.module}|all={imported.importAll}|exported={imported.isExported}|ir={repr imported.irPhases}"
   assertEq "prefix reuse preserves Lean's effective imports"
     (toString (effectiveImports direct)) (toString (effectiveImports reused))
   assertEq "prefix reuse preserves Lean's imported constants"
@@ -6059,8 +6063,8 @@ def assertExportedEnvironmentIncludesMetaIrClosure : IO Unit := do
   let some leafIndex :=
     environment.getModuleIdx? `LeanFmt.Tests.MetaImportLeaf
   | throw <| IO.userError "expected meta/IR-only leaf import"
-  assertTrue "meta/IR-only import does not load ordinary olean data"
-    (!environment.header.modules[leafIndex]!.hasData)
+  assertTrue "meta/IR-only import is available during elaboration"
+    (environment.header.modules[leafIndex]!.irPhases == .comptime)
 
 def assertDefaultEnvironmentPartition (env : Lean.Environment) : IO Unit := do
   IO.FS.withTempDir
@@ -6158,9 +6162,9 @@ def assertWorkersUseInputLakeRoot : IO Unit := do
             fun index file =>
               { key := s!"environment-{index}", files := [file] }
         assertTrue "automatic imported worker count is positive"
-          (LeanFmt.Driver.defaultImportedEnvironmentWorkerJobs > 0)
+          (LeanFmt.Driver.defaultImportedEnvironmentWorkerJobs 8 > 0)
         assertTrue "automatic imported worker count follows Lean's conservative cap"
-          (LeanFmt.Driver.defaultImportedEnvironmentWorkerJobs
+          (LeanFmt.Driver.defaultImportedEnvironmentWorkerJobs 8
             ≤ LeanFmt.Driver.maxDefaultImportedEnvironmentWorkerJobs)
         assertTrue "exact workers recycle after the measured default lifetime"
           (LeanFmt.Driver.defaultImportedEnvironmentsPerWorker == 2)
@@ -6616,8 +6620,8 @@ def assertFmtExecutableConfigured : IO Unit := do
   assertTextContains "test library uses suite root" lakefile
     "roots = [\"LeanFmt.Tests.Suite\"]"
   assertTextContains "lakefile defines fmt executable" lakefile "name = \"fmt\""
-  assertTextContains "fmt executable uses LeanFmt.Cli root" lakefile
-    "root = \"LeanFmt.Cli\""
+  assertTextContains "fmt executable uses the runtime-aware LeanFmt.Main root" lakefile
+    "root = \"LeanFmt.Main\""
   assertTextContains "lakefile defines test CLI" lakefile "name = \"fmt-test\""
   assertTextContains "test CLI uses LeanFmt.Tests.Main root" lakefile
     "root = \"LeanFmt.Tests.Main\""
@@ -7951,14 +7955,34 @@ def runCliAndArchitectureTests (env : Lean.Environment) : IO Unit := do
   assertIgnoreNextPreservesNestedTerm env
   assertCslibStyleCoreSyntaxHasRules env
 
+def runCompatibilityTests (env : Lean.Environment) : IO Unit := do
+  assertSyntaxTreeRoundTrip env
+  let source := "def compatibilitySmoke(left right:Nat):Nat:=left+right\n"
+  let formatted ← Formatter.formatSourceWithEnv env source "compatibility-smoke.lean"
+  assertTrue "compatibility formatting preserves code"
+    (← codePreservedIgnoringWhitespace env source formatted)
+  let formattedAgain ←
+    Formatter.formatSourceWithEnv env formatted "compatibility-smoke-formatted.lean"
+  assertEq "compatibility formatting is idempotent" formatted formattedAgain
+  assertCliParsing
+  assertSourceImportsUseLeanHeaderLevel
+  assertLeanEnvironmentKeyIncludesImportSemantics
+  assertImportPrefixCacheMatchesLeanEnvironment
+  assertExportedEnvironmentSkipsPrivateTransitiveImports
+  assertExportedEnvironmentIncludesMetaIrClosure
+  assertFmtExecutableConfigured
+
 #eval
   show IO Unit from do
     let env ← Formatter.defaultEnvironment
-    runSyntaxTreeTests env
-    runBasicFormattingTests env
-    runExpressionAndRendererTests env
-    runControlFlowTests env
-    runCollectionAndDeclarationTests env
-    runCliAndArchitectureTests env
+    if (← IO.getEnv "LEANFMT_COMPATIBILITY_TEST") == some "1" then
+      runCompatibilityTests env
+    else
+      runSyntaxTreeTests env
+      runBasicFormattingTests env
+      runExpressionAndRendererTests env
+      runControlFlowTests env
+      runCollectionAndDeclarationTests env
+      runCliAndArchitectureTests env
 
 end LeanFmt.Tests

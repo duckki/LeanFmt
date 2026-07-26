@@ -30,7 +30,7 @@ def usage : String :=
       "  --environments-per-worker N",
       s!"            Load at most N exact environments per worker; default is {Driver.defaultImportedEnvironmentsPerWorker}.",
       "  -j, --jobs N",
-      s!"            Run at most N workers concurrently; ordinary files default to {Driver.defaultWorkerJobs}, imported environments to {Driver.defaultImportedEnvironmentWorkerJobs}.",
+      s!"            Run at most N workers concurrently; ordinary files default to hardware concurrency, imported environments to at most {Driver.maxDefaultImportedEnvironmentWorkerJobs}.",
       "            Reduce this when imported environments cause memory pressure.",
       "  -h, --help",
       "",
@@ -124,12 +124,12 @@ def parseArgs (args : List String) : ParseResult :=
           loop options (FilePath.mk arg :: files) rest
   loop {} [] args
 
-def runMain (args : List String) : IO UInt32 := do
+def runMain (args : List String) (hardwareConcurrency := 1) : IO UInt32 := do
   match parseArgs args with
-  | .run options => LeanFmt.Driver.runOptions options
+  | .run options =>
+      LeanFmt.Driver.runOptions
+        { options with hardwareConcurrency := max 1 hardwareConcurrency }
   | .help => IO.println usage; pure 0
   | .error message => IO.eprintln s!"leanfmt: {message}"; IO.eprintln usage; pure 1
 
 end LeanFmt.Cli
-
-def main (args : List String) : IO UInt32 := LeanFmt.Cli.runMain args

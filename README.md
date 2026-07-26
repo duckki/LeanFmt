@@ -60,7 +60,7 @@ Add the Git dependency to `lakefile.toml`:
 [[require]]
 name = "leanfmt"
 git = "https://github.com/duckki/leanfmt.git"
-rev = "v0.2.6"
+rev = "vX.Y.Z"
 ```
 
 Preserve the package's Lean version when resolving the dependency:

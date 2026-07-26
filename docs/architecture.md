@@ -42,7 +42,8 @@ The implementation is split by responsibility:
 | `LeanFmt.Formatter.Trace` | Record and format renderer traces for debugging. |
 | `LeanFmt.Formatter.Diagnostics` | Analyze compact bang syntax, code preservation, overflow, and missing formatting rules. |
 | `LeanFmt.Formatter` | Public formatting API plus `Debug` and `Internal` namespaces for tracing, profiling, and shared pipeline phases. |
-| `LeanFmt.Cli` | Command-line argument parsing, hidden-aware file discovery, check mode, validation checks, and executable entry point. |
+| `LeanFmt.Cli` | Command-line argument parsing, hidden-aware file discovery, check mode, and validation checks. |
+| `LeanFmt.Main` | Thin executable entry point that supplies runtime hardware concurrency to the toolchain-independent driver. |
 
 The test-only executable is separate:
 
