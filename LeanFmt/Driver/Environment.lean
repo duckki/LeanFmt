@@ -7,11 +7,15 @@ open System
 
 namespace LeanFmt.Driver
 
+structure ImportPrefixCache where
+  maxEntries : Nat
+  entries : IO.Ref (List (String × LeanEnvironment.ImportPrefixState))
+
 structure EnvironmentCache where
   default : Lean.Environment
   maxEntries : Nat
   entries : IO.Ref (List (String × Lean.Environment))
-  importSession? : Option LeanEnvironment.Session := none
+  importPrefixes? : Option ImportPrefixCache := none
 
 structure ImportHeaderGroup where
   key : String
@@ -39,16 +43,50 @@ def usesDefaultEnvironmentImports (imports : Array Lean.Import) : Bool :=
 def shouldReuseImportPrefixes (options : Options) : Bool :=
   options.worker && options.environmentCacheSize != 0
 
+def ImportPrefixCache.create (maxEntries : Nat) : IO ImportPrefixCache := do
+  pure { maxEntries, entries := ← IO.mkRef [] }
+
+def ImportPrefixCache.remember
+    (cache : ImportPrefixCache) (key : String)
+    (state : LeanEnvironment.ImportPrefixState)
+    : IO Unit := do
+  cache.entries.modify
+    fun entries =>
+      ((key, state) :: entries.filter (fun entry => entry.1 != key))
+      |>.take cache.maxEntries
+
+def ImportPrefixCache.find? (cache : ImportPrefixCache) (key : String)
+    : IO (Option LeanEnvironment.ImportPrefixState) := do
+  match (← cache.entries.get).find? (fun entry => entry.1 == key) with
+  | some (_, state) => cache.remember key state *> pure (some state)
+  | none => pure none
+
+def ImportPrefixCache.importEnvironment
+    (cache : ImportPrefixCache) (spec : LeanEnvironment.Spec)
+    : IO Lean.Environment := do
+  let firstImportKey? := spec.imports[0]?.map (LeanEnvironment.firstImportKey spec.level)
+  let firstImportState? ←
+    match firstImportKey? with
+    | some key => cache.find? key
+    | none => pure none
+  let (environment, importedFirstState?) ←
+    LeanEnvironment.importEnvironmentReusingFirstImport spec firstImportState?
+  if firstImportState?.isNone then
+    match firstImportKey?, importedFirstState? with
+    | some key, some state => cache.remember key state
+    | _, _ => pure ()
+  pure environment
+
 def loadFormatterEnvironment (options : Options) : IO EnvironmentCache := do
   Lean.initSearchPath (← Lean.findSysroot)
   let default ← Formatter.defaultEnvironment
   let entries ← IO.mkRef []
-  let importSession? ←
+  let importPrefixes? ←
     if shouldReuseImportPrefixes options then
-      some <$> LeanEnvironment.Session.create options.environmentCacheSize
+      some <$> ImportPrefixCache.create options.environmentCacheSize
     else
       pure none
-  pure { default, maxEntries := options.environmentCacheSize, entries, importSession? }
+  pure { default, maxEntries := options.environmentCacheSize, entries, importPrefixes? }
 
 def EnvironmentCache.rememberEnvironment
     (cache : EnvironmentCache) (key : String) (env : Lean.Environment)
@@ -74,8 +112,8 @@ def EnvironmentCache.environmentForImports
     | some (_, env) => cache.rememberEnvironment key env *> pure env
     | none =>
         let env ←
-          match cache.importSession? with
-          | some session => session.importEnvironment spec
+          match cache.importPrefixes? with
+          | some prefixes => prefixes.importEnvironment spec
           | none => LeanEnvironment.importEnvironment spec
         cache.rememberEnvironment key env
         pure env
@@ -123,8 +161,8 @@ def EnvironmentCache.environmentForSourceProfiled
       | none =>
           let (env, importMs) ←
             timeIO
-            <| match cache.importSession? with
-                | some session => session.importEnvironment importSpec
+            <| match cache.importPrefixes? with
+                | some prefixes => prefixes.importEnvironment importSpec
                 | none => LeanEnvironment.importEnvironment importSpec
           let (_, rememberMs) ← timeIO <| cache.rememberEnvironment key env
           profileLine options
@@ -163,8 +201,8 @@ def EnvironmentCache.environmentForSourceProfiled
         | none =>
             let (env, importMs) ←
               timeIO
-              <| match cache.importSession? with
-                  | some session => session.importEnvironment importSpec
+              <| match cache.importPrefixes? with
+                  | some prefixes => prefixes.importEnvironment importSpec
                   | none => LeanEnvironment.importEnvironment importSpec
             let (_, rememberMs) ← timeIO <| cache.rememberEnvironment key env
             profileLine options

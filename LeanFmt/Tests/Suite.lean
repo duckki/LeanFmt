@@ -5996,7 +5996,7 @@ def assertLeanEnvironmentKeyIncludesImportSemantics : IO Unit := do
   assertTrue "environment cache keys include level and every import modifier"
     (keys.length == specs.size)
 
-def assertImportSessionMatchesLeanEnvironment : IO Unit := do
+def assertImportPrefixCacheMatchesLeanEnvironment : IO Unit := do
   let spec : LeanFmt.LeanEnvironment.Spec :=
     {
       imports :=
@@ -6007,8 +6007,8 @@ def assertImportSessionMatchesLeanEnvironment : IO Unit := do
       level := .private
     }
   let direct ← LeanFmt.LeanEnvironment.importEnvironmentDirect spec
-  let session ← LeanFmt.LeanEnvironment.Session.create 1
-  let reused ← session.importEnvironment spec
+  let prefixes ← LeanFmt.Driver.ImportPrefixCache.create 1
+  let reused ← prefixes.importEnvironment spec
   let effectiveImports (env : Lean.Environment) :=
     env.header.modules.map
       fun imported =>
@@ -6043,8 +6043,8 @@ def assertExportedEnvironmentSkipsPrivateTransitiveImports : IO Unit := do
 def assertExportedEnvironmentIncludesMetaIrClosure : IO Unit := do
   let imports : Array Lean.Import :=
     #[{ module := `LeanFmt.Tests.MetaImportRoot, isExported := true }]
-  let session ← LeanFmt.LeanEnvironment.Session.create 1
-  let environment ← session.importEnvironment { imports, level := .exported }
+  let prefixes ← LeanFmt.Driver.ImportPrefixCache.create 1
+  let environment ← prefixes.importEnvironment { imports, level := .exported }
   let some leafIndex :=
     environment.getModuleIdx? `LeanFmt.Tests.MetaImportLeaf
   | throw <| IO.userError "expected meta/IR-only leaf import"
@@ -7890,7 +7890,7 @@ def runCliAndArchitectureTests (env : Lean.Environment) : IO Unit := do
   assertEnvironmentCacheBound env
   assertSourceImportsUseLeanHeaderLevel
   assertLeanEnvironmentKeyIncludesImportSemantics
-  assertImportSessionMatchesLeanEnvironment
+  assertImportPrefixCacheMatchesLeanEnvironment
   assertExportedEnvironmentSkipsPrivateTransitiveImports
   assertExportedEnvironmentIncludesMetaIrClosure
   assertDefaultEnvironmentPartition env

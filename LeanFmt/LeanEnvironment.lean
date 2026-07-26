@@ -12,9 +12,13 @@ structure Spec where
   imports : Array Lean.Import
   level : Lean.OLeanLevel
 
-structure Session where
-  maxEntries : Nat
-  firstImportStates : IO.Ref (List (String × Lean.ImportState))
+/-!
+`ImportPrefixState` is intentionally opaque to the driver by convention. The
+driver may retain and return it, but every operation on it stays in this module
+so Lean API changes remain localized here.
+-/
+
+abbrev ImportPrefixState := Lean.ImportState
 
 def importKey (importDecl : Lean.Import) : String :=
   s!"{importDecl.module}|all={importDecl.importAll}|exported={importDecl.isExported}|meta={importDecl.isMeta}"
@@ -47,47 +51,31 @@ def importEnvironmentDirect (spec : Spec) (leakEnv := false) : IO Lean.Environme
   Lean.importModules (leakEnv := leakEnv) (loadExts := true)
     (level := spec.level) spec.imports {} 0
 
-def Session.create (maxEntries : Nat) : IO Session := do
-  pure { maxEntries, firstImportStates := ← IO.mkRef [] }
-
 def firstImportKey (level : Lean.OLeanLevel) (importDecl : Lean.Import) : String :=
   levelKey level ++ "\n" ++ importKey importDecl
 
-def Session.rememberFirstImportState
-    (session : Session) (key : String) (state : Lean.ImportState)
-    : IO Unit := do
-  if session.maxEntries != 0 then
-    session.firstImportStates.modify
-      fun entries =>
-        ((key, state) :: entries.filter (fun entry => entry.1 != key))
-        |>.take session.maxEntries
-
-def Session.firstImportState
-    (session : Session) (level : Lean.OLeanLevel) (importDecl : Lean.Import)
-    : IO Lean.ImportState := do
-  let key := firstImportKey level importDecl
-  match (← session.firstImportStates.get).find? (fun entry => entry.1 == key) with
-  | some (_, state) =>
-      session.rememberFirstImportState key state
-      pure state
-  | none =>
-      let (_, state) ← (Lean.importModulesCore #[importDecl] level).run
-      session.rememberFirstImportState key state
-      pure state
-
-def Session.importEnvironment (session : Session) (spec : Spec) (leakEnv := false)
-    : IO Lean.Environment := do
+def importEnvironmentReusingFirstImport
+    (spec : Spec) (firstImportState? : Option ImportPrefixState)
+    (leakEnv := false)
+    : IO (Lean.Environment × Option ImportPrefixState) := do
   unsafe Lean.enableInitializersExecution
   Lean.withImporting
     do
-      let state ←
+      let (firstImportState?, state) ←
         match spec.imports[0]? with
-        | none => pure default
-        | some firstImport => session.firstImportState spec.level firstImport
+        | none => pure (none, default)
+        | some firstImport =>
+            match firstImportState? with
+            | some state => pure (some state, state)
+            | none =>
+                let (_, state) ← (Lean.importModulesCore #[firstImport] spec.level).run
+                pure (some state, state)
       let remainingImports := spec.imports.extract 1 spec.imports.size
       let (_, state) ← (Lean.importModulesCore remainingImports spec.level).run state
-      Lean.finalizeImport state spec.imports {} 0 leakEnv true spec.level
-        (spec.level != .private)
+      let environment ←
+        Lean.finalizeImport state spec.imports {} 0 leakEnv true spec.level
+          (spec.level != .private)
+      pure (environment, firstImportState?)
 
 def importEnvironment (spec : Spec) (leakEnv := false) : IO Lean.Environment :=
   importEnvironmentDirect spec leakEnv
