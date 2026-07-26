@@ -2,6 +2,7 @@ import LeanFmt
 import LeanFmt.Cli
 import LeanFmt.Tests.Cli
 import LeanFmt.Tests.ExportedModuleSyntax
+import LeanFmt.Tests.MetaImportRoot
 import LeanFmt.Tests.ProjectSyntax
 
 open System
@@ -6013,6 +6014,25 @@ def assertExportedReservoirSkipsPrivateTransitiveImports : IO Unit := do
   assertTrue "exported parser syntax remains available"
     (parsed.tree.containsNodeKind (.raw `exportedModuleSyntax))
 
+def assertExportedReservoirIncludesMetaIrClosure : IO Unit := do
+  let imports : Array Lean.Import :=
+    #[{ module := `LeanFmt.Tests.MetaImportRoot, isExported := true }]
+  let environment ← SyntaxTree.importEnvironment imports (level := .exported)
+  let moduleIndices ←
+    LeanFmt.Driver.moduleIndicesForImports environment imports (level := .exported)
+  let exactNames := environment.header.modules.map (·.module)
+  let derivedNames :=
+    moduleIndices.map
+      fun moduleIndex =>
+        environment.header.modules[moduleIndex]!.module
+  assertEq "shared parser environment follows Lean's meta/IR import closure"
+    (toString exactNames) (toString derivedNames)
+  let some leafIndex :=
+    environment.getModuleIdx? `LeanFmt.Tests.MetaImportLeaf
+  | throw <| IO.userError "expected meta/IR-only leaf import"
+  assertTrue "meta/IR-only import does not load ordinary olean data"
+    (!environment.header.modules[leafIndex]!.hasData)
+
 def assertDefaultEnvironmentPartition (env : Lean.Environment) : IO Unit := do
   IO.FS.withTempDir
     fun root =>
@@ -7894,6 +7914,7 @@ def runCliAndArchitectureTests (env : Lean.Environment) : IO Unit := do
   assertParserReservoirIsolatesExactImports
   assertSourceImportsUseLeanHeaderLevel
   assertExportedReservoirSkipsPrivateTransitiveImports
+  assertExportedReservoirIncludesMetaIrClosure
   assertDefaultEnvironmentPartition env
   assertWorkersUseInputLakeRoot
   assertImportFilesGroupByHeader

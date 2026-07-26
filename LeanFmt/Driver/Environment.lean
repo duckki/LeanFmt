@@ -121,46 +121,61 @@ def loadParserEnvironmentReservoir (files : List FilePath)
               (leakEnv := true) (level := .private)
     pure <| some { exported?, private? }
 
+structure ModuleImportRequirement where
+  importAll : Bool
+  isExported : Bool
+  needsData : Bool
+  needsIRTrans : Bool
+deriving BEq
+
 partial def moduleIndicesForImports
     (environment : Lean.Environment) (imports : Array Lean.Import)
     (level : Lean.OLeanLevel := .private)
     : IO (Array Lean.ModuleIdx) := do
-  let requirementsRef ← IO.mkRef ({} : Lean.NameMap (Bool × Bool))
+  let requirementsRef ← IO.mkRef ({} : Lean.NameMap ModuleImportRequirement)
   let indicesRef ← IO.mkRef (#[] : Array Lean.ModuleIdx)
   let rec visitImports
       (moduleImports : Array Lean.Import)
-      (importAll isExported needsData : Bool)
+      (importAll isExported needsData needsIRTrans : Bool)
       : IO Unit := do
         for imported in moduleImports do
           let importedNeedsData := needsData && (imported.isExported || importAll)
           let importedImportAll := level == .private || importAll && imported.importAll
           let importedIsExported := isExported && imported.isExported
-          unless importedNeedsData do
+          let importedNeedsIRTrans := needsIRTrans || importedNeedsData && imported.isMeta
+          let importedNeedsIR :=
+            importedNeedsIRTrans || importedImportAll || level > .exported
+          if !importedNeedsData && !importedNeedsIR then
             continue
           let requirements ← requirementsRef.get
           let previous? := requirements.find? imported.module
-          let effectiveImportAll := importedImportAll || previous?.any (·.1)
-          let effectiveIsExported := importedIsExported || previous?.any (·.2)
-          let changed :=
-            previous?.isNone
-            || previous?.any
-                fun previous =>
-                  previous.1 != effectiveImportAll || previous.2 != effectiveIsExported
+          let effective :=
+            {
+              importAll :=
+                importedImportAll || previous?.any (·.importAll)
+              isExported :=
+                importedIsExported || previous?.any (·.isExported)
+              needsData :=
+                importedNeedsData || previous?.any (·.needsData)
+              needsIRTrans :=
+                importedNeedsIRTrans || previous?.any (·.needsIRTrans)
+            }
+          let changed := previous?.isNone || previous?.any (· != effective)
           unless changed do
             continue
-          requirementsRef.set
-          <| requirements.insert imported.module (effectiveImportAll, effectiveIsExported)
+          requirementsRef.set <| requirements.insert imported.module effective
           let some moduleIndex := environment.getModuleIdx? imported.module
           | throw
             <| IO.userError
                 s!"shared parser environment is missing module {imported.module}"
           let moduleData := environment.header.moduleData[moduleIndex]!
-          visitImports moduleData.imports effectiveImportAll
-            effectiveIsExported importedNeedsData
+          visitImports moduleData.imports effective.importAll
+            effective.isExported effective.needsData effective.needsIRTrans
           if previous?.isNone then
             indicesRef.modify (·.push moduleIndex)
   visitImports imports (importAll := true)
     (isExported := level < .private) (needsData := true)
+    (needsIRTrans := false)
   indicesRef.get
 
 def ParserEnvironmentReservoir.environmentForImports
