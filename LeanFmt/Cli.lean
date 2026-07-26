@@ -27,8 +27,11 @@ def usage : String :=
       "            Include hidden entries discovered during directory traversal.",
       "  --line-width N",
       s!"            Use N as the formatter line limit; default is {Formatter.maxLineWidth}.",
-      "  --worker-batch-size N",
-      s!"            Format at most N imported files per worker; default is {Driver.defaultImportedEnvironmentWorkerBatchSize}.",
+      "  --environments-per-worker N",
+      s!"            Load at most N exact environments per worker; default is {Driver.defaultImportedEnvironmentsPerWorker}.",
+      "  -j, --jobs N",
+      s!"            Run at most N workers concurrently; ordinary files default to {Driver.defaultWorkerJobs}, imported environments to {Driver.defaultImportedEnvironmentWorkerJobs}.",
+      "            Reduce this when imported environments cause memory pressure.",
       "  -h, --help",
       "",
       "Internal debugging options (not intended for general use):",
@@ -85,18 +88,30 @@ def parseArgs (args : List String) : ParseResult :=
         | none => .error s!"invalid --line-width value: {value}"
     | "--line-width" :: [] =>
         .error "--line-width requires a value"
-    | "--worker-batch-size" :: value :: rest =>
+    | "--environments-per-worker" :: value :: rest =>
         match value.toNat? with
         | some size =>
             if size == 0 then
-              .error s!"invalid --worker-batch-size value: {value}"
+              .error s!"invalid --environments-per-worker value: {value}"
             else
-              loop { options with workerBatchSize? := some size } files rest
-        | none => .error s!"invalid --worker-batch-size value: {value}"
-    | "--worker-batch-size" :: [] =>
-        .error "--worker-batch-size requires a value"
+              loop { options with workerEnvironmentLimit? := some size } files rest
+        | none => .error s!"invalid --environments-per-worker value: {value}"
+    | "--environments-per-worker" :: [] =>
+        .error "--environments-per-worker requires a value"
+    | "--jobs" :: value :: rest | "-j" :: value :: rest =>
+        match value.toNat? with
+        | some jobs =>
+            if jobs == 0 then
+              .error s!"invalid --jobs value: {value}"
+            else
+              loop { options with workerJobs? := some jobs } files rest
+        | none => .error s!"invalid --jobs value: {value}"
+    | "--jobs" :: [] | "-j" :: [] =>
+        .error "--jobs requires a value"
     | "--worker" :: rest =>
         loop { options with worker := true } files rest
+    | "--worker-default-environment" :: rest =>
+        loop { options with worker := true, workerDefaultEnvironment := true } files rest
     | "--recursive" :: rest | "-r" :: rest =>
         loop { options with recursive := true } files rest
     | "--include-hidden" :: rest =>

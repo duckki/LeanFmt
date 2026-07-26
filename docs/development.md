@@ -411,8 +411,8 @@ build over every candidate written through that point, even when the final forma
 batch failed, so it can also report elaboration or linting failures. Within each batch,
 leanfmt manages formatter worker processes and batch sizing. The validator prints the
 total file count, total batch count, selected batch, batch index range, first/last file
-for each batch, and whether a formatter worker batch override was supplied. Without
-`--batch`, it runs batches in order and stops formatting at the first failed batch.
+for each batch, and any worker job or environment-lifetime override. Without `--batch`,
+it runs batches in order and stops formatting at the first failed batch.
 Pass `--batch N` to run only a specific 1-based validation batch:
 
 ```sh
@@ -437,8 +437,9 @@ scripts/validate-external-projects.sh \
   mathlib=$HOME/work/lean-libs/mathlib4
 ```
 
-Formatter execution remains serial even though the CLI isolates imported-syntax work in
-a worker process. Each batch writes its formatter output to
+Validation batches remain serial so a failure has one unambiguous stopping point.
+Within each formatter invocation, worker batches run concurrently up to the configured
+job limit. Each validation batch writes its formatter output to
 `.scratch/external-validation/logs/PROJECT/batch-N.log` and updates the adjacent
 `state` file with the running, passed, or failed batch, so interrupted runs can
 be diagnosed and resumed without overlapping formatter invocations.
@@ -460,28 +461,45 @@ the corresponding existing clone there. Set
 `LEANFMT_VALIDATION_SKIP_CACHE=1` to build without downloading caches,
 `LEANFMT_VALIDATION_FILE_PATTERN` to change the default file selector, or
 `LEANFMT_VALIDATION_BATCH_SIZE` to change the validation batch size.
-`LEANFMT_VALIDATION_FORMATTER_BATCH_SIZE` passes `--worker-batch-size` to
-leanfmt to override its automatic worker batch choice. Multi-file package formatter
-invocations first format files that parse in leanfmt's default Lean environment, then
-process files that need imported syntax in a short-lived worker running under the
-target package's `lake env`. The worker orders files by exact normalized import header
-and retains only its most recent Lean-created environment, so adjacent identical
-headers reuse one environment without a general LRU. It also reuses Lean's opaque
-state after an identical first direct import and lets Lean extend and finalize that
-state for the remaining imports.
+`LEANFMT_VALIDATION_ENVIRONMENTS_PER_WORKER` passes
+`--environments-per-worker` to leanfmt to override the maximum exact
+environments loaded during one worker's lifetime.
+`LEANFMT_VALIDATION_FORMATTER_JOBS` passes `--jobs` to limit concurrent workers;
+default-environment work uses the machine's hardware concurrency, while the automatic
+imported-environment default is capped at two. Multi-file package formatter
+invocations first process files that parse in leanfmt's default Lean environment, then
+process files that need imported syntax in workers running under the target package's
+`lake env`. Imported files are grouped by exact normalized import header. A group is
+never split across workers, even when it contains many files. Environment groups are
+balanced into lifetime-bounded batches and fed through a work-conserving concurrent
+queue.
+Each worker retains
+only its most recent Lean-created environment, so adjacent identical headers reuse one
+environment without a general LRU. It also reuses Lean's opaque state after an
+identical first direct import and lets Lean extend and finalize that state for the
+remaining imports. Worker output is buffered independently and emitted in batch order
+after all workers complete, preventing concurrent diagnostics from interleaving.
 The import-prefix cache is bounded by `--env-cache-size`. Files with a `module` header use
 exported `.olean` data; scripts use private data, matching Lean's frontend. Lean itself
 computes every transitive import, IR phase, initializer, and persistent extension;
-leanfmt does not derive environments from a superset. Imported files run serially in
-workers of at most 16 files by default. Restarting the worker also bounds Lean runtime
-state outside the explicit caches. Supplying a worker batch size overrides that
-lifetime, trading process and environment setup time for peak memory. Setting
+leanfmt does not derive environments from a superset. An imported worker handles at
+most 16 exact environments by default. Restarting it bounds Lean runtime state outside
+the explicit caches. Lowering the worker-job count reduces peak memory; changing the
+environment limit trades process setup time for each process's lifetime and retained
+state. Setting
 `--env-cache-size 0` disables prefix reuse and uses Lean's direct importer when a new
 exact environment is required. The immediately preceding exact environment remains
 available for files with an identical header. This direct path is
 useful when checking compatibility with a new Lean release. Set
 `LEANFMT_VALIDATION_LINE_WIDTH=N` to pass a project-specific line width to every
 formatter invocation.
+
+Imported environments can dominate both runtime and memory. Compare one and two
+workers on the target machine with
+`LEANFMT_VALIDATION_FORMATTER_JOBS=1` and
+`LEANFMT_VALIDATION_FORMATTER_JOBS=2`. Lean's own memory ceiling is a soft,
+per-process runtime check rather than a total budget for all workers, so worker count
+is the reliable control for avoiding system-wide memory pressure.
 
 For example, mathlib and CSLib can be validated at their 100-column convention
 while continuing to use fresh scratch clones:

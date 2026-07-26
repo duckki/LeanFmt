@@ -96,7 +96,11 @@ directories discovered inside directory arguments are skipped by default.
 Explicitly supplied hidden paths are still processed. Pass `--include-hidden`
 to include hidden descendants during directory traversal. leanfmt uses a
 90-character line limit by default; pass `--line-width N` when a project uses a
-different convention.
+different convention. Multi-file package invocations use concurrent workers:
+default-environment files use the machine's hardware concurrency, while files that
+require project-specific syntax environments use a conservative automatic limit.
+Pass `--jobs N` to tune concurrency for the machine's memory and storage, or
+`--environments-per-worker N` to bound exact environments retained by one worker.
 
 To preserve the next complete syntax node exactly, put `-- leanfmt: off next`
 immediately before it. The marker works for top-level commands and nested terms:

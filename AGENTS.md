@@ -155,8 +155,11 @@ post-format build while retaining the initial clean build. To resume an existing
 scratch clone after a successful batch, combine `--start-batch N`,
 `--reuse-clone`, and `--skip-initial-build`; the validator then continues from
 batch `N` without recloning or repeating the completed pre-format build.
-Formatter workers run serially. Per-batch output and the last batch state are
-persisted under `.scratch/external-validation/logs/PROJECT/`.
+Validation batches run serially, while formatter worker batches within one invocation
+run concurrently up to the formatter's worker-job limit. Imported files are grouped
+by exact environment, and a group is never split across workers.
+Per-batch output and the last batch state are persisted under
+`.scratch/external-validation/logs/PROJECT/`.
 
 Review external changes and diagnostics in the scratch clone. Treat code changes,
 non-idempotence, missing rules, actionable overflow, and either build failure as

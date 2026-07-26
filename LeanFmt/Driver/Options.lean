@@ -13,8 +13,10 @@ structure Options where
   recursive : Bool := false
   includeHidden : Bool := false
   worker : Bool := false
+  workerDefaultEnvironment : Bool := false
   formatterOptions : Formatter.Options := {}
-  workerBatchSize? : Option Nat := none
+  workerEnvironmentLimit? : Option Nat := none
+  workerJobs? : Option Nat := none
   importPrefixCacheSize : Nat := 1
   files : List FilePath := []
 deriving Repr

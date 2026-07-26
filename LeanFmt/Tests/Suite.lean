@@ -5808,6 +5808,10 @@ def assertCliParsing : IO Unit := do
     LeanFmt.Cli.usage "--include-hidden"
   assertTextContains "CLI help documents line-width override"
     LeanFmt.Cli.usage "--line-width"
+  assertTextContains "CLI help documents imported worker concurrency"
+    LeanFmt.Cli.usage "--jobs"
+  assertTextContains "CLI help documents worker environment lifetime"
+    LeanFmt.Cli.usage "--environments-per-worker"
   assertTextLacks "CLI help omits replaced preservation option"
     LeanFmt.Cli.usage "--check-preserves-code"
   assertTextLacks "CLI help omits replaced unknown-rule option"
@@ -5848,14 +5852,25 @@ def assertCliParsing : IO Unit := do
   | result =>
       throw
       <| IO.userError s!"CLI parser should accept combined check flags: {repr result}"
-  match LeanFmt.Cli.parseArgs ["--worker-batch-size", "8", "GraphQL.lean"] with
+  match LeanFmt.Cli.parseArgs ["--environments-per-worker", "8", "GraphQL.lean"] with
   | .run options =>
-      assertTrue "CLI worker batch size flag" (options.workerBatchSize? == some 8)
-      assertTrue "CLI worker batch size does not imply dry run" (!options.check)
+      assertTrue "CLI worker environment limit flag"
+        (options.workerEnvironmentLimit? == some 8)
+      assertTrue "CLI worker environment limit does not imply dry run" (!options.check)
   | result =>
       throw
       <| IO.userError
-          s!"CLI parser should accept --worker-batch-size and files: {repr result}"
+          s!"CLI parser should accept --environments-per-worker and files: {repr result}"
+  match LeanFmt.Cli.parseArgs ["--jobs", "4", "GraphQL.lean"] with
+  | .run options =>
+      assertTrue "CLI imported worker jobs flag" (options.workerJobs? == some 4)
+  | result =>
+      throw <| IO.userError s!"CLI parser should accept --jobs and files: {repr result}"
+  match LeanFmt.Cli.parseArgs ["-j", "3", "GraphQL.lean"] with
+  | .run options =>
+      assertTrue "CLI short imported worker jobs flag" (options.workerJobs? == some 3)
+  | result =>
+      throw <| IO.userError s!"CLI parser should accept -j and files: {repr result}"
   match LeanFmt.Cli.parseArgs ["--line-width", "100", "GraphQL.lean"] with
   | .run options =>
       assertTrue "CLI line-width flag" (options.formatterOptions.lineWidth == 100)
@@ -5880,12 +5895,16 @@ def assertLineWidthOptionAffectsFormatting (env : Lean.Environment) : IO Unit :=
       throw
       <| IO.userError
           s!"CLI parser should accept --env-cache-size and files: {repr result}"
-  match LeanFmt.Cli.parseArgs ["--worker-batch-size", "0", "GraphQL.lean"] with
-  | .error "invalid --worker-batch-size value: 0" => pure ()
+  match LeanFmt.Cli.parseArgs ["--environments-per-worker", "0", "GraphQL.lean"] with
+  | .error "invalid --environments-per-worker value: 0" => pure ()
   | result =>
       throw
       <| IO.userError
-          s!"CLI parser should reject invalid --worker-batch-size: {repr result}"
+          s!"CLI parser should reject invalid --environments-per-worker: {repr result}"
+  match LeanFmt.Cli.parseArgs ["--jobs", "0", "GraphQL.lean"] with
+  | .error "invalid --jobs value: 0" => pure ()
+  | result =>
+      throw <| IO.userError s!"CLI parser should reject invalid --jobs: {repr result}"
   match LeanFmt.Cli.parseArgs ["--import-env-first", "GraphQL.lean"] with
   | .run options =>
       assertTrue "CLI import environment first flag" options.importEnvFirst
@@ -6099,11 +6118,11 @@ def assertWorkersUseInputLakeRoot : IO Unit := do
         let explicitCwd? ← LeanFmt.Driver.workerCwd? { files := [file, otherFile] }
         assertEq "explicit files use their common Lake package root"
           (toString (some project)) (toString explicitCwd?)
-        assertTrue "recursive external package uses worker even for one large batch"
+        assertTrue "recursive external package uses workers for multiple files"
           (LeanFmt.Driver.shouldUseWorker
             {
               recursive := true,
-              workerBatchSize? := some 100,
+              workerEnvironmentLimit? := some 100,
               files := [project / "QuantumComputing"]
             }
             cwd? 2)
@@ -6130,23 +6149,42 @@ def assertWorkersUseInputLakeRoot : IO Unit := do
           LeanFmt.Driver.workerCwd? { files := [file, otherProjectFile] }
         assertTrue "files from different packages do not share a worker cwd"
           crossPackageCwd?.isNone
-        assertTrue
-          "invocation without a package root or explicit batch stays in process"
+        assertTrue "invocation without a package root stays in process"
           (!LeanFmt.Driver.shouldUseWorker { recursive := true } none 100)
-        assertTrue "explicit batch size enables workers without recursive traversal"
-          (LeanFmt.Driver.shouldUseWorker { workerBatchSize? := some 16 } none 100)
-        assertTrue "external package starts with all remaining files"
-          ((← LeanFmt.Driver.initialWorkerBatchSize
-                { recursive := true, files := [project / "QuantumComputing"] }
-                cwd? [file, otherFile])
-            == 2)
         let manyFiles :=
           List.range 20 |>.map fun index => project / s!"Imported{index}.lean"
-        assertTrue "automatic worker lifetime is bounded"
-          ((← LeanFmt.Driver.initialWorkerBatchSize
-                { recursive := true, files := [project / "QuantumComputing"] }
-                cwd? manyFiles)
-            == LeanFmt.Driver.defaultImportedEnvironmentWorkerBatchSize)
+        let manyGroups : List LeanFmt.Driver.ImportHeaderGroup :=
+          manyFiles.mapIdx
+            fun index file =>
+              { key := s!"environment-{index}", files := [file] }
+        assertTrue "automatic imported worker count is positive"
+          (LeanFmt.Driver.defaultImportedEnvironmentWorkerJobs > 0)
+        assertTrue "automatic imported worker count follows Lean's conservative cap"
+          (LeanFmt.Driver.defaultImportedEnvironmentWorkerJobs
+            ≤ LeanFmt.Driver.maxDefaultImportedEnvironmentWorkerJobs)
+        assertTrue "explicit imported worker count overrides the machine default"
+          (LeanFmt.Driver.configuredImportedEnvironmentWorkerJobs
+              { workerJobs? := some 3 }
+            == 3)
+        let concurrentBatches :=
+          LeanFmt.Driver.exactEnvironmentWorkerBatches 16 8 manyGroups
+        assertTrue "worker batch planner fills requested concurrency"
+          (concurrentBatches.length == 8)
+        assertTrue "worker batches preserve every environment in order"
+          (concurrentBatches.flatten.flatMap (·.files) == manyFiles)
+        assertTrue "worker batches preserve the environment lifetime bound"
+          (concurrentBatches.all (fun batch => batch.length ≤ 16))
+        let lifetimeBoundBatches :=
+          LeanFmt.Driver.exactEnvironmentWorkerBatches 4 2 manyGroups
+        assertTrue "environment lifetime creates additional bounded batches"
+          (lifetimeBoundBatches.length == 5)
+        let sharedEnvironmentGroup : LeanFmt.Driver.ImportHeaderGroup :=
+          { key := "shared-environment", files := manyFiles }
+        let sharedEnvironmentBatches :=
+          LeanFmt.Driver.exactEnvironmentWorkerBatches 1 8 [sharedEnvironmentGroup]
+        assertTrue "files sharing one exact environment stay in one worker"
+          (sharedEnvironmentBatches.length == 1
+            && sharedEnvironmentBatches[0]!.flatMap (·.files) == manyFiles)
         let workerPaths ← LeanFmt.Driver.pathsForWorkerCwd cwd? [file, otherFile]
         assertEq "recursive external worker paths are relative to worker cwd"
           (toString
@@ -6155,22 +6193,10 @@ def assertWorkersUseInputLakeRoot : IO Unit := do
               FilePath.mk "QuantumComputing/Gates/Actions.lean"
             ])
           (toString workerPaths)
-        assertTrue "explicit recursive external worker batch size overrides default"
-          ((← LeanFmt.Driver.initialWorkerBatchSize
-                {
-                  recursive := true,
-                  workerBatchSize? := some 4,
-                  files := [project / "QuantumComputing"]
-                }
-                cwd? [file, otherFile])
+        assertTrue "explicit exact environment limit overrides the default"
+          (LeanFmt.Driver.configuredImportedEnvironmentsPerWorker
+              { workerEnvironmentLimit? := some 4 }
             == 4)
-        IO.FS.writeFile (project / "lake-manifest.json")
-          "{\"packages\":[{\"name\":\"other\"}],\"name\":\"external_project\"}\n"
-        assertTrue "automatic worker limit does not depend on package dependencies"
-          ((← LeanFmt.Driver.initialWorkerBatchSize
-                { recursive := true, files := [project / "QuantumComputing"] }
-                cwd? [file, otherFile])
-            == 2)
 
 def assertImportFilesGroupByHeader : IO Unit := do
   IO.FS.withTempDir
@@ -6499,7 +6525,7 @@ def assertCliFormatsDirectoryRecursively
   IO.FS.writeFile topFile topSource
   IO.FS.writeFile nestedFile nestedSource
   match LeanFmt.Cli.parseArgs
-          ["-r", "--include-hidden", "--worker-batch-size", "1", root.toString] with
+          ["-r", "--include-hidden", "--environments-per-worker", "1", root.toString] with
   | .run options =>
       let exitCode ← LeanFmt.Driver.runOptionsWithLoader loader options
       assertTrue "CLI recursive directory format succeeds" (exitCode == 0)

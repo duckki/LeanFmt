@@ -10,7 +10,8 @@ readonly REPO_ROOT
 readonly FORMATTER="$REPO_ROOT/.lake/build/bin/fmt"
 readonly WORK_DIR="${LEANFMT_VALIDATION_DIR:-$REPO_ROOT/.scratch/external-validation}"
 readonly VALIDATION_FILES_PER_BATCH="${LEANFMT_VALIDATION_BATCH_SIZE:-100}"
-readonly FORMATTER_WORKER_BATCH_SIZE="${LEANFMT_VALIDATION_FORMATTER_BATCH_SIZE:-}"
+readonly FORMATTER_ENVIRONMENTS_PER_WORKER="${LEANFMT_VALIDATION_ENVIRONMENTS_PER_WORKER:-}"
+readonly FORMATTER_WORKER_JOBS="${LEANFMT_VALIDATION_FORMATTER_JOBS:-}"
 readonly FORMATTER_LINE_WIDTH="${LEANFMT_VALIDATION_LINE_WIDTH:-}"
 readonly DEFAULT_FILE_SELECTOR="${LEANFMT_VALIDATION_FILE_PATTERN:-*.lean}"
 
@@ -36,6 +37,12 @@ invocation. For example, validate mathlib at width 100 with:
 
   LEANFMT_VALIDATION_LINE_WIDTH=100 scripts/validate-external-projects.sh \
     --files Mathlib mathlib=$HOME/work/lean-libs/mathlib4
+
+Set LEANFMT_VALIDATION_FORMATTER_JOBS=N to limit concurrent formatter workers.
+Default-environment work uses the hardware count; the imported-environment
+automatic default is capped at two.
+Set LEANFMT_VALIDATION_ENVIRONMENTS_PER_WORKER=N to bound the number of exact
+import environments loaded during one worker's lifetime.
 EOF
 }
 
@@ -241,8 +248,13 @@ run_formatter_file_list() {
   if [[ -n "$FORMATTER_LINE_WIDTH" ]]; then
     formatter_command+=(--line-width "$FORMATTER_LINE_WIDTH")
   fi
-  if [[ -n "$FORMATTER_WORKER_BATCH_SIZE" ]]; then
-    formatter_command+=(--worker-batch-size "$FORMATTER_WORKER_BATCH_SIZE")
+  if [[ -n "$FORMATTER_ENVIRONMENTS_PER_WORKER" ]]; then
+    formatter_command+=(
+      --environments-per-worker "$FORMATTER_ENVIRONMENTS_PER_WORKER"
+    )
+  fi
+  if [[ -n "$FORMATTER_WORKER_JOBS" ]]; then
+    formatter_command+=(--jobs "$FORMATTER_WORKER_JOBS")
   fi
 
   (
@@ -260,7 +272,7 @@ run_logged_formatter_file_list() {
   {
     printf 'Project directory: %s\n' "$project_dir"
     printf 'File list: %s\n' "$list_file"
-    printf 'Formatter worker execution: serial\n'
+    printf 'Formatter invocations: serial; formatter workers: concurrent\n'
     run_formatter_file_list "$project_dir" "$list_file" "$@"
   } 2>&1 | tee "$log_file"
 }
@@ -311,11 +323,16 @@ run_project_validation_batches() {
   printf 'Total Lean files: %d\n' "$total_files"
   printf 'Validation batch size: %d file(s); total batches: %d\n' \
     "$VALIDATION_FILES_PER_BATCH" "$total_batches"
-  if [[ -n "$FORMATTER_WORKER_BATCH_SIZE" ]]; then
-    printf 'Formatter worker batch override: %d file(s)\n' \
-      "$FORMATTER_WORKER_BATCH_SIZE"
+  if [[ -n "$FORMATTER_ENVIRONMENTS_PER_WORKER" ]]; then
+    printf 'Formatter environment lifetime override: %d environment(s)\n' \
+      "$FORMATTER_ENVIRONMENTS_PER_WORKER"
   else
-    printf 'Formatter worker batch override: auto\n'
+    printf 'Formatter environment lifetime override: auto\n'
+  fi
+  if [[ -n "$FORMATTER_WORKER_JOBS" ]]; then
+    printf 'Formatter worker jobs override: %d\n' "$FORMATTER_WORKER_JOBS"
+  else
+    printf 'Formatter worker jobs override: automatic (hardware count; exact environments up to 2)\n'
   fi
   if [[ -n "$selected_batch" ]]; then
     printf 'Running selected validation batch: %d\n' "$selected_batch"
@@ -437,9 +454,13 @@ main() {
 
   validate_positive_integer LEANFMT_VALIDATION_BATCH_SIZE \
     "$VALIDATION_FILES_PER_BATCH" || return $?
-  if [[ -n "$FORMATTER_WORKER_BATCH_SIZE" ]]; then
-    validate_positive_integer LEANFMT_VALIDATION_FORMATTER_BATCH_SIZE \
-      "$FORMATTER_WORKER_BATCH_SIZE" || return $?
+  if [[ -n "$FORMATTER_ENVIRONMENTS_PER_WORKER" ]]; then
+    validate_positive_integer LEANFMT_VALIDATION_ENVIRONMENTS_PER_WORKER \
+      "$FORMATTER_ENVIRONMENTS_PER_WORKER" || return $?
+  fi
+  if [[ -n "$FORMATTER_WORKER_JOBS" ]]; then
+    validate_positive_integer LEANFMT_VALIDATION_FORMATTER_JOBS \
+      "$FORMATTER_WORKER_JOBS" || return $?
   fi
   if [[ -n "$FORMATTER_LINE_WIDTH" ]]; then
     validate_positive_integer LEANFMT_VALIDATION_LINE_WIDTH \

@@ -13,7 +13,9 @@ def runOptionsWithLoader (loader : EnvironmentLoader) (options : Options)
   let (cwd?, cwdMs) ← timeIO <| workerCwd? options
   profileLine options
     s!"inputs: files={files.length} expand={expandMs}ms worker-cwd={cwd?.isSome} cwd-check={cwdMs}ms"
-  if shouldUseWorker options cwd? files.length then
+  if options.workerDefaultEnvironment then
+    formatDefaultEnvironmentFiles loader options files
+  else if shouldUseWorker options cwd? files.length then
     if (← checkWorkerToolchain cwd?) then
       runMixedWorkerBatches loader options cwd? files
     else

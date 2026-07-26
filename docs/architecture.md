@@ -75,28 +75,45 @@ Formatting a file follows this pipeline:
    command's parser scope is active, probe every layout-delimited `let` body with Lean's
    term parser at application-argument precedence and retain the result as a parser
    fact. The CLI first tries the default environment, then loads an import-specific
-   environment when project syntax requires it. Multi-file package formatting first
-   handles files that parse in the default environment. A short-lived worker then
-   runs in the target package's Lake environment. Files are ordered by their exact
-   normalized import header so identical environments are adjacent. The worker asks
-   Lean to construct each exact environment and retains only the most recent one,
-   keyed by the ordered imports and import level. Because files are ordered by exact
-   header, this lets adjacent files with the same header share one environment without
-   retaining a general environment LRU. A separate bounded cache retains Lean's opaque
-   `ImportState` after the first direct import; adjacent headers with the same prefix
-   ask `importModulesCore` to extend that state in original order before
-   `finalizeImport` constructs the exact environment. LeanFmt never inspects or
-   reconstructs the state. Files with a `module` header use exported `.olean` data;
-   scripts use private data, matching Lean's frontend. Lean therefore remains
-   responsible for its import fixed point, public/private data selection, IR phases,
-   user initializers, and persistent extensions. `LeanEnvironment.lean` is the narrow
-   maintenance boundary for these APIs. Driver policy is deliberately separate:
-   imported files run serially in short-lived workers of at most 16 files by default.
-   Restarting the process bounds Lean runtime state that is not owned by the explicit
-   loader state. `--worker-batch-size` overrides that limit. Setting
+   environment when project syntax requires it. For multi-file package formatting,
+   files that use the default environment are balanced across worker processes using
+   the machine's hardware concurrency. Imported files are grouped by exact normalized
+   import header, and every file in one group stays in the same worker. Workers run in
+   the target package's Lake environment.
+
+   An imported worker asks Lean to construct each exact environment and retains only
+   the most recent one, keyed by the ordered imports and import level. Consecutive
+   files in one header group therefore share the environment without a general
+   environment LRU. A separate bounded cache retains Lean's opaque `ImportState` after
+   the first direct import; subsequent headers with the same prefix ask
+   `importModulesCore` to extend that state in original order before `finalizeImport`
+   constructs the exact environment. LeanFmt never inspects or reconstructs the state.
+   Files with a `module` header use exported `.olean` data; scripts use private data,
+   matching Lean's frontend. Lean therefore remains responsible for its import fixed
+   point, public/private data selection, IR phases, user initializers, and persistent
+   extensions. `LeanEnvironment.lean` is the narrow maintenance boundary for these
+   APIs. Driver policy is deliberately separate.
+
+   The automatic imported-environment worker count is capped at two to avoid
+   multiplying cold `.olean` I/O and retained environments without bound. Each
+   imported worker loads at most 16 exact environments by default, regardless of how
+   many files share each environment. The scheduler keeps the configured number of
+   jobs active until its queue is empty. Worker output is buffered and reported in
+   batch order so diagnostics remain readable and deterministic.
+   `-j` or `--jobs` limits concurrent workers, while
+   `--environments-per-worker` overrides the exact-environment lifetime bound. Setting
    `--env-cache-size` to zero also bypasses prefix-state reuse and calls Lean's direct
    importer, providing a compatibility and diagnostic path when Lean's incremental
    importer changes.
+
+   The parent process keeps the default environment alive while imported workers run,
+   so the peak is approximately one default environment plus one custom environment
+   per active imported worker. Lean's runtime memory limit is per process and is
+   sampled periodically at system-check points; it is not an aggregate budget or a
+   concurrency controller. Although Lean exposes current available and constrained
+   system memory, neither value predicts the size of the next imported environment.
+   LeanFmt therefore uses a conservative imported-worker default and leaves the
+   machine-specific choice between one and multiple imported workers to `--jobs`.
 3. Convert Lean `Syntax` to a `SyntaxTree.Tree` of tokens and raw parser nodes.
 4. Regroup selected raw nodes into logical `SyntaxTree.NodeKind` nodes.
 5. Render the resulting tree using line-break rules and space rules.
