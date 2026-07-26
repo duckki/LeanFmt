@@ -918,6 +918,8 @@ def RenderState.emitOriginalTree
                   leadingColumn
                 else
                   state.currentIndent
+              let movedIndent :=
+                if sourceAnchor < sourceIndent then movedIndent else sourceIndent
               some (sourceIndent, max movedIndent structuralIndent)
           | _, _ => none
       let sourceColumnRebasedFromLayoutBase :=
@@ -2154,7 +2156,14 @@ mutual
     let (sourceLayoutBaseColumn, outputLayoutBaseColumn) :=
       match sourceLayoutStart? with
       | some (sourceColumn, _) =>
-          (sourceColumn, state.segmentStartColumn childSegment)
+          let startsOnNewOutputLine :=
+            firstToken?.any
+              fun token =>
+                SpaceRules.hasLineStructure (state.defaultWhitespace token)
+          if inheritsBase && !startsOnNewOutputLine then
+            (state.sourceLayoutBaseColumn, state.outputLayoutBaseColumn)
+          else
+            (sourceColumn, state.segmentStartColumn childSegment)
       | none => (state.sourceLayoutBaseColumn, state.outputLayoutBaseColumn)
     let childState :=
       {

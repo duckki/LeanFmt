@@ -180,6 +180,8 @@ def defaultInheritBase (context : RuleContext) (segment : Segment) : Bool :=
   || (segment.rawKind? == some `null
       && context.parentIsStructureWhereWrapper
       && !context.parentStructureHasExtends)
+  || (segment.rawKind? == some `null
+      && context.parentRawKind? == some `Lean.Parser.Term.doReturn)
 
 def parentIsSignatureParameters (context : RuleContext) : Bool :=
   match context.ancestors with
@@ -609,7 +611,7 @@ def rawKindIsQuantifier (kind : Lean.SyntaxNodeKind) : Bool :=
   || kind == `«term∃_,_»
 
 def binderOperatorLexeme (lexeme : String) : Bool :=
-  ["∀", "∃", "⨆", "⨅", "∑", "∏", "𝔼", "∫", "∮"].any
+  ["∀", "∃", "⨆", "⨅", "⋃", "⋂", "∑", "∏", "𝔼", "∫", "∮"].any
     fun operatorPrefix => lexeme.startsWith operatorPrefix
 
 def treeHasBinderBodySeparator (tree : SyntaxTree.Tree) : Bool :=
@@ -717,6 +719,8 @@ def nullInheritBase (context : RuleContext) (segment : Segment) : Bool :=
   || parentIsRawKind context `Lean.Parser.Term.letRecDecls
   || parentIsRawKind context `Lean.Parser.Term.letRecDecl
   || parentIsRawKind context `BigOperators.bigOpBinder
+  || parentIsRawKind context `Batteries.ExtendedBinder.extBinder
+  || parentIsRawKind context `Batteries.ExtendedBinder.extBinderCollection
   || commandAttributeIdentifierList context
   || assertNotExistsIdentifierList context
   || wrappedByDoLetFallbackSequence context
@@ -769,6 +773,15 @@ def declarationValueBreak? (segment : Segment) : Option BreakPoint :=
 def declarationValueBreaks (_context : RuleContext) (segment : Segment)
     : List BreakPoint :=
   [declarationValueBreak? segment].filterMap id
+  ++ segment.indexes.filterMap
+      fun index =>
+        if segment.start < index
+            && (childStartsWithLexeme segment index "where"
+                || (childIsRawKind segment index `Lean.Parser.Termination.suffix
+                    && (segment.child? index).any treeHasContent)) then
+          boundaryBreak? segment index 0
+        else
+          none
 
 def attachedBodyInfixOperator (segment : Segment) (index : Nat) : Bool :=
   childStartsWithLexeme segment index "<|"
@@ -1155,6 +1168,13 @@ def quantifierBinderBreaks (context : RuleContext) (segment : Segment)
     | [] => []
     | [_] => []
     | _ :: rest => rest.filterMap fun index => boundaryBreak? segment index 2
+  else
+    []
+
+def extendedBinderCollectionBreaks (context : RuleContext) (segment : Segment)
+    : List BreakPoint :=
+  if parentIsRawKind context `Batteries.ExtendedBinder.extBinderCollection then
+    childBoundaryBreaks segment 0
   else
     []
 
@@ -2047,6 +2067,7 @@ def theoremRule : LineBreakRule :=
 def structInstRule : LineBreakRule :=
   {
     name := "structInst"
+    inheritBase := fun _ _ => true
     liftsTailIndentation :=
       fun _ segment =>
         structInstHasWith segment && !structInstHasMultipleUpdateSources segment
@@ -2471,6 +2492,7 @@ def nullBreaks (context : RuleContext) (segment : Segment) : List BreakPoint :=
   ++ structInstFieldBreaks context segment
   ++ inductiveAlternativeBreaks context segment
   ++ quantifierBinderBreaks context segment
+  ++ extendedBinderCollectionBreaks context segment
   ++ binderIdentifierBreaks context segment
   ++ commandBinderBreaks context segment
   ++ openIdentifierBreaks context segment
@@ -2519,6 +2541,7 @@ def nullRule : LineBreakRule :=
       fun context segment =>
         !(structureParentBreaks context segment).isEmpty
         || !(quantifierBinderBreaks context segment).isEmpty
+        || !(extendedBinderCollectionBreaks context segment).isEmpty
         || !(binderIdentifierBreaks context segment).isEmpty
         || !(commandBinderBreaks context segment).isEmpty
         || !(openIdentifierBreaks context segment).isEmpty
@@ -3297,9 +3320,10 @@ def ruleFor : SyntaxTree.Tree → Option LineBreakRule
   | .node (.raw `Algebra.subalgebra_adjoin) _ => some defaultRule
   | .node (.raw `Std.termF!_) _ => some defaultRule
   | .node (.raw `Batteries.ExtendedBinder.extBinders) _ => some defaultRule
-  | .node (.raw `Batteries.ExtendedBinder.extBinder) _ => some defaultRule
+  | .node (.raw `Batteries.ExtendedBinder.extBinder) _ => some binderRule
   | .node (.raw `Batteries.ExtendedBinder.extBinderCollection) _ => some defaultRule
-  | .node (.raw `Batteries.ExtendedBinder.extBinderParenthesized) _ => some defaultRule
+  | .node (.raw `Batteries.ExtendedBinder.extBinderParenthesized) _ =>
+      some binderRule
   | .node (.raw `choice) _ => some transparentRule
   | .node (.raw `Lean.Parser.Syntax.atom) _ => some transparentRule
   | .node (.raw `Lean.Parser.Syntax.unary) _ => some defaultRule
@@ -3605,7 +3629,8 @@ def ruleFor : SyntaxTree.Tree → Option LineBreakRule
   | .node (.raw `Lean.Parser.Term.doIf) _ => some doIfRule
   | .node (.raw `Lean.Parser.Term.doReassign) _ => some transparentRule
   | .node (.raw `Lean.Parser.Term.doReassignArrow) _ => some transparentRule
-  | .node (.raw `Lean.Parser.Term.doReturn) _ => some transparentRule
+  | .node (.raw `Lean.Parser.Term.doReturn) _ =>
+      some <| prefixedTermRule "doReturn"
   | .node (.raw `Lean.Parser.Term.doIfProp) _ => some transparentRule
   | .node (.raw `Lean.Parser.Term.doUnless) _ => some doUnlessRule
   | .node (.raw `Lean.Parser.Term.doForDecl) _ => some transparentRule

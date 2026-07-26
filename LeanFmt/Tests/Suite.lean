@@ -2002,6 +2002,54 @@ def assertMovedProofBodiesKeepRelativeIndentation (env : Lean.Environment) : IO 
   assertEq "moved where declaration proof is idempotent"
     whereFormatted whereFormattedAgain
 
+def assertMovedChildrenUseLogicalLayoutBases (env : Lean.Environment) : IO Unit := do
+  let calcSource :=
+    "theorem longCalcLayoutBase (left right : Nat) :\n"
+    ++ "    veryLongLeftSide left right = veryLongRightSide left right := by calc\n"
+    ++ "  veryLongLeftSide left right = intermediateValue left right := firstProof\n"
+    ++ "  _ = anotherIntermediateValue left right := secondProof\n"
+    ++ "  _ = veryLongRightSide left right := thirdProof\n"
+  let calcExpected :=
+    "theorem longCalcLayoutBase (left right : Nat)\n"
+    ++ "    : veryLongLeftSide left right = veryLongRightSide left right := by calc\n"
+    ++ "  veryLongLeftSide left right = intermediateValue left right := firstProof\n"
+    ++ "  _ = anotherIntermediateValue left right := secondProof\n"
+    ++ "  _ = veryLongRightSide left right := thirdProof\n"
+  let calcFormatted ←
+    Formatter.formatSourceWithEnv env calcSource "moved-calc-layout-base.lean"
+      { lineWidth := 100 }
+  assertEq "moved inline calc keeps its logical proof base" calcExpected calcFormatted
+
+  let recordSource :=
+    "def delayedRecordLiteral := do\n"
+    ++ "  return { ref := .missing, fvarDecls, patterns }\n"
+  let recordExpected :=
+    "def delayedRecordLiteral := do\n"
+    ++ "  return {\n"
+    ++ "    ref := .missing,\n"
+    ++ "    fvarDecls,\n"
+    ++ "    patterns\n"
+    ++ "  }\n"
+  let recordFormatted ←
+    Formatter.formatSourceWithEnv env recordSource "delayed-record-layout-base.lean"
+      { lineWidth := 30 }
+  assertEq "delayed record literal uses the return expression base"
+    recordExpected recordFormatted
+
+  let whereSource :=
+    "noncomputable instance longWhereFinallyLayoutBase : Foo :=\n"
+    ++ "  someLongTerm anExtremelyLongArgumentName anotherLongArgument\n"
+    ++ "where finally\n"
+    ++ "  exacts [foo]\n"
+  let whereExpected :=
+    "noncomputable instance longWhereFinallyLayoutBase : Foo :=\n"
+    ++ "  someLongTerm anExtremelyLongArgumentName anotherLongArgument\n"
+    ++ "where finally\n"
+    ++ "  exacts [foo]\n"
+  let whereFormatted ←
+    Formatter.formatSourceWithEnv env whereSource "moved-where-finally-layout-base.lean"
+  assertEq "where finally uses the declaration base" whereExpected whereFormatted
+
 def assertMovedInlineProofBodiesRemainParseable (env : Lean.Environment) : IO Unit := do
   let source :=
     "theorem nestedInlineProofs (left right : True) : True :=\n"
@@ -7230,6 +7278,20 @@ def assertMathlibLowRiskSyntaxKindsHaveRules : IO Unit := do
     let tree := SyntaxTree.Tree.node (.raw kind) #[]
     assertTrue s!"mathlib low-risk syntax has rule: {kind}"
       (Formatter.LineBreakRules.ruleFor tree).isSome
+  assertTrue "indexed union notation is classified as a binder operator"
+    (Formatter.LineBreakRules.binderOperatorLexeme "⋃")
+  assertTrue "indexed intersection notation is classified as a binder operator"
+    (Formatter.LineBreakRules.binderOperatorLexeme "⋂")
+  for kind
+      in [
+        `Batteries.ExtendedBinder.extBinder,
+        `Batteries.ExtendedBinder.extBinderParenthesized
+      ] do
+    let tree := SyntaxTree.Tree.node (.raw kind) #[]
+    let segment := Formatter.LineBreakRules.Segment.ofTree tree
+    let rule := Formatter.LineBreakRules.formattingRuleFor tree
+    assertTrue s!"extended binder inherits its logical collection base: {kind}"
+      (rule.inheritBase {} segment)
   let linterItems :=
     SyntaxTree.Tree.node (.raw `null)
       #[.leaf (syntheticAtomToken "linter.one"), .leaf (syntheticAtomToken "linter.two")]
@@ -7819,6 +7881,7 @@ def runBasicFormattingTests (env : Lean.Environment) : IO Unit := do
   assertWhereFinallyKeepsHeaderAndProofBody env
   assertProofBodyUntouched env
   assertMovedProofBodiesKeepRelativeIndentation env
+  assertMovedChildrenUseLogicalLayoutBases env
   assertMovedInlineProofBodiesRemainParseable env
   assertShowProofTermUntouched env
   assertTheoremTermProofBodyUntouched env
