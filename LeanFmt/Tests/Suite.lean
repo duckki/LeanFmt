@@ -7302,9 +7302,14 @@ def assertMathlibLowRiskSyntaxKindsHaveRules : IO Unit := do
       ] do
     let tree := SyntaxTree.Tree.node (.raw kind) #[]
     let segment := Formatter.LineBreakRules.Segment.ofTree tree
+    let parent :=
+      SyntaxTree.Tree.node (.raw `Batteries.ExtendedBinder.extBinderCollection) #[tree]
+    let context : Formatter.LineBreakRules.RuleContext :=
+      ({} : Formatter.LineBreakRules.RuleContext).push
+        (Formatter.LineBreakRules.Segment.ofTree parent) 0
     let rule := Formatter.LineBreakRules.formattingRuleFor tree
     assertTrue s!"extended binder inherits its logical collection base: {kind}"
-      (rule.inheritBase {} segment)
+      (rule.inheritBase context segment)
   let linterItems :=
     SyntaxTree.Tree.node (.raw `null)
       #[.leaf (syntheticAtomToken "linter.one"), .leaf (syntheticAtomToken "linter.two")]

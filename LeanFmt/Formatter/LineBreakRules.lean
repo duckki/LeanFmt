@@ -1456,7 +1456,10 @@ def signatureParametersRule : LineBreakRule :=
 def binderRule : LineBreakRule :=
   {
     name := "binder"
-    inheritBase := fun context _ => parentIsSignatureParameters context
+    inheritBase :=
+      fun context _ =>
+        parentIsSignatureParameters context
+        || parentIsRawKind context `Batteries.ExtendedBinder.extBinderCollection
     breakPoints := binderBreaks
   }
 
