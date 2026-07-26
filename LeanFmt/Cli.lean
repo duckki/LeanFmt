@@ -27,10 +27,9 @@ def usage : String :=
       "            Include hidden entries discovered during directory traversal.",
       "  --line-width N",
       s!"            Use N as the formatter line limit; default is {Formatter.maxLineWidth}.",
-      "  --environments-per-worker N",
-      s!"            Load at most N exact environments per worker; default is {Driver.defaultImportedEnvironmentsPerWorker}.",
       "  -j, --jobs N",
       s!"            Run at most N workers concurrently; ordinary files default to hardware concurrency, imported environments to at most {Driver.maxDefaultImportedEnvironmentWorkerJobs}.",
+      "            Each imported worker handles one exact import header and then exits.",
       "            Reduce this when imported environments cause memory pressure.",
       "  -h, --help",
       "",
@@ -88,16 +87,9 @@ def parseArgs (args : List String) : ParseResult :=
         | none => .error s!"invalid --line-width value: {value}"
     | "--line-width" :: [] =>
         .error "--line-width requires a value"
-    | "--environments-per-worker" :: value :: rest =>
-        match value.toNat? with
-        | some size =>
-            if size == 0 then
-              .error s!"invalid --environments-per-worker value: {value}"
-            else
-              loop { options with workerEnvironmentLimit? := some size } files rest
-        | none => .error s!"invalid --environments-per-worker value: {value}"
-    | "--environments-per-worker" :: [] =>
-        .error "--environments-per-worker requires a value"
+    | "--environments-per-worker" :: _ =>
+        .error
+          "--environments-per-worker was removed; each exact import environment now runs in its own worker"
     | "--jobs" :: value :: rest | "-j" :: value :: rest =>
         match value.toNat? with
         | some jobs =>

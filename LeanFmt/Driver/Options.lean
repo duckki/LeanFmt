@@ -16,9 +16,8 @@ structure Options where
   workerDefaultEnvironment : Bool := false
   hardwareConcurrency : Nat := 1
   formatterOptions : Formatter.Options := {}
-  workerEnvironmentLimit? : Option Nat := none
   workerJobs? : Option Nat := none
-  importPrefixCacheSize : Nat := 1
+  importPrefixCacheSize : Nat := 0
   files : List FilePath := []
 deriving Repr
 

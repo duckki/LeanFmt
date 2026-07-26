@@ -5814,7 +5814,7 @@ def assertCliParsing : IO Unit := do
     LeanFmt.Cli.usage "--line-width"
   assertTextContains "CLI help documents imported worker concurrency"
     LeanFmt.Cli.usage "--jobs"
-  assertTextContains "CLI help documents worker environment lifetime"
+  assertTextLacks "CLI help omits obsolete worker environment lifetime"
     LeanFmt.Cli.usage "--environments-per-worker"
   assertTextLacks "CLI help omits replaced preservation option"
     LeanFmt.Cli.usage "--check-preserves-code"
@@ -5856,15 +5856,6 @@ def assertCliParsing : IO Unit := do
   | result =>
       throw
       <| IO.userError s!"CLI parser should accept combined check flags: {repr result}"
-  match LeanFmt.Cli.parseArgs ["--environments-per-worker", "8", "GraphQL.lean"] with
-  | .run options =>
-      assertTrue "CLI worker environment limit flag"
-        (options.workerEnvironmentLimit? == some 8)
-      assertTrue "CLI worker environment limit does not imply dry run" (!options.check)
-  | result =>
-      throw
-      <| IO.userError
-          s!"CLI parser should accept --environments-per-worker and files: {repr result}"
   match LeanFmt.Cli.parseArgs ["--jobs", "4", "GraphQL.lean"] with
   | .run options =>
       assertTrue "CLI imported worker jobs flag" (options.workerJobs? == some 4)
@@ -5899,12 +5890,14 @@ def assertLineWidthOptionAffectsFormatting (env : Lean.Environment) : IO Unit :=
       throw
       <| IO.userError
           s!"CLI parser should accept --env-cache-size and files: {repr result}"
-  match LeanFmt.Cli.parseArgs ["--environments-per-worker", "0", "GraphQL.lean"] with
-  | .error "invalid --environments-per-worker value: 0" => pure ()
+  match LeanFmt.Cli.parseArgs ["--environments-per-worker", "1", "GraphQL.lean"] with
+  | .error
+      "--environments-per-worker was removed; each exact import environment now runs in its own worker"
+    => pure ()
   | result =>
       throw
       <| IO.userError
-          s!"CLI parser should reject invalid --environments-per-worker: {repr result}"
+          s!"CLI parser should reject obsolete --environments-per-worker: {repr result}"
   match LeanFmt.Cli.parseArgs ["--jobs", "0", "GraphQL.lean"] with
   | .error "invalid --jobs value: 0" => pure ()
   | result =>
@@ -6124,11 +6117,7 @@ def assertWorkersUseInputLakeRoot : IO Unit := do
           (toString (some project)) (toString explicitCwd?)
         assertTrue "recursive external package uses workers for multiple files"
           (LeanFmt.Driver.shouldUseWorker
-            {
-              recursive := true,
-              workerEnvironmentLimit? := some 100,
-              files := [project / "QuantumComputing"]
-            }
+            { recursive := true, files := [project / "QuantumComputing"] }
             cwd? 2)
         assertTrue "explicit multi-file package invocation uses workers"
           (LeanFmt.Driver.shouldUseWorker { files := [file, otherFile] } explicitCwd? 2)
@@ -6136,6 +6125,16 @@ def assertWorkersUseInputLakeRoot : IO Unit := do
           (!LeanFmt.Driver.shouldUseWorker { files := [file] } explicitCwd? 1)
         assertTrue "worker subprocess does not spawn nested workers"
           (!LeanFmt.Driver.shouldUseWorker { worker := true } explicitCwd? 2)
+        assertTrue "exact worker imports its header before parsing"
+          (LeanFmt.Driver.shouldImportEnvironmentFirst { worker := true })
+        assertTrue "default-environment worker keeps default-first parsing"
+          (!LeanFmt.Driver.shouldImportEnvironmentFirst
+              { worker := true, workerDefaultEnvironment := true })
+        assertTrue "exact worker leaks its sole imported environment"
+          (LeanFmt.Driver.isExactEnvironmentWorker { worker := true })
+        assertTrue "default-environment worker does not leak an exact environment"
+          (!LeanFmt.Driver.isExactEnvironmentWorker
+              { worker := true, workerDefaultEnvironment := true })
         assertTrue "worker cache enables exact import-prefix reuse"
           (LeanFmt.Driver.shouldReuseImportPrefixes
             { worker := true, importPrefixCacheSize := 1 })
@@ -6166,31 +6165,29 @@ def assertWorkersUseInputLakeRoot : IO Unit := do
         assertTrue "automatic imported worker count follows Lean's conservative cap"
           (LeanFmt.Driver.defaultImportedEnvironmentWorkerJobs 8
             ≤ LeanFmt.Driver.maxDefaultImportedEnvironmentWorkerJobs)
-        assertTrue "exact workers recycle after the measured default lifetime"
-          (LeanFmt.Driver.defaultImportedEnvironmentsPerWorker == 2)
         assertTrue "explicit imported worker count overrides the machine default"
           (LeanFmt.Driver.configuredImportedEnvironmentWorkerJobs
               { workerJobs? := some 3 }
             == 3)
-        let concurrentBatches :=
-          LeanFmt.Driver.exactEnvironmentWorkerBatches 16 8 manyGroups
-        assertTrue "worker batch planner fills requested concurrency"
-          (concurrentBatches.length == 8)
-        assertTrue "worker batches preserve every environment in order"
-          (concurrentBatches.flatten.flatMap (·.files) == manyFiles)
-        assertTrue "worker batches preserve the environment lifetime bound"
-          (concurrentBatches.all (fun batch => batch.length ≤ 16))
-        let lifetimeBoundBatches :=
-          LeanFmt.Driver.exactEnvironmentWorkerBatches 4 2 manyGroups
-        assertTrue "environment lifetime creates additional bounded batches"
-          (lifetimeBoundBatches.length == 5)
+        let concurrentBatches := LeanFmt.Driver.exactEnvironmentWorkerBatches manyGroups
+        assertTrue "every exact environment receives its own worker batch"
+          (concurrentBatches.length == manyGroups.length)
+        assertTrue "exact worker batches preserve every environment in order"
+          (concurrentBatches.flatMap (·.files) == manyFiles)
+        assertTrue "exact worker batches contain exactly one environment"
+          (concurrentBatches.all (fun batch => batch.environmentCount == 1))
         let sharedEnvironmentGroup : LeanFmt.Driver.ImportHeaderGroup :=
           { key := "shared-environment", files := manyFiles }
         let sharedEnvironmentBatches :=
-          LeanFmt.Driver.exactEnvironmentWorkerBatches 1 8 [sharedEnvironmentGroup]
-        assertTrue "files sharing one exact environment stay in one worker"
-          (sharedEnvironmentBatches.length == 1
-            && sharedEnvironmentBatches[0]!.flatMap (·.files) == manyFiles)
+          LeanFmt.Driver.exactEnvironmentWorkerBatches [sharedEnvironmentGroup]
+        match sharedEnvironmentBatches with
+        | [batch] =>
+            assertTrue "files sharing one exact environment stay in one worker"
+              (batch.files == manyFiles)
+        | batches =>
+            throw
+            <| IO.userError
+                s!"expected one shared-environment worker batch, got {batches.length}"
         let workerPaths ← LeanFmt.Driver.pathsForWorkerCwd cwd? [file, otherFile]
         assertEq "recursive external worker paths are relative to worker cwd"
           (toString
@@ -6199,10 +6196,18 @@ def assertWorkersUseInputLakeRoot : IO Unit := do
               FilePath.mk "QuantumComputing/Gates/Actions.lean"
             ])
           (toString workerPaths)
-        assertTrue "explicit exact environment limit overrides the default"
-          (LeanFmt.Driver.configuredImportedEnvironmentsPerWorker
-              { workerEnvironmentLimit? := some 4 }
-            == 4)
+        match LeanFmt.Driver.parseLakeEnvironment
+                "LEAN_PATH=/project/.lake/build/lib/lean:/lean\nTOKEN=a=b=c\nLEAN_CC=\n" with
+        | .ok environment =>
+            assertTrue "Lake environment parser preserves path values"
+              (environment.contains
+                ("LEAN_PATH", some "/project/.lake/build/lib/lean:/lean"))
+            assertTrue "Lake environment parser preserves embedded equals signs"
+              (environment.contains ("TOKEN", some "a=b=c"))
+            assertTrue "Lake environment parser represents unset variables"
+              (environment.contains ("LEAN_CC", none))
+        | .error message =>
+            throw <| IO.userError s!"Lake environment parser failed: {message}"
 
 def assertImportFilesGroupByHeader : IO Unit := do
   IO.FS.withTempDir
@@ -6530,8 +6535,7 @@ def assertCliFormatsDirectoryRecursively
   let nestedSource := "def  nested  : Nat := 0\n"
   IO.FS.writeFile topFile topSource
   IO.FS.writeFile nestedFile nestedSource
-  match LeanFmt.Cli.parseArgs
-          ["-r", "--include-hidden", "--environments-per-worker", "1", root.toString] with
+  match LeanFmt.Cli.parseArgs ["-r", "--include-hidden", root.toString] with
   | .run options =>
       let exitCode ← LeanFmt.Driver.runOptionsWithLoader loader options
       assertTrue "CLI recursive directory format succeeds" (exitCode == 0)
@@ -6603,13 +6607,22 @@ def assertCliLoadsImportedSyntax (loader : LeanFmt.Driver.EnvironmentLoader)
     : IO Unit := do
   let root : FilePath := ".lake/leanfmt-cli-test/project-env"
   IO.FS.createDirAll root
-  let file := root / "ImportedSyntax.lean"
-  let source := "import LeanFmt.Tests.ProjectSyntax\n\n#check project_syntax\n"
-  IO.FS.writeFile file source
+  let firstFile := root / "ImportedSyntax.lean"
+  let firstSource :=
+    "import LeanFmt.Tests.ProjectSyntax\n\n#check ∀ᵉ x ∈ xs, project_syntax\n"
+  let secondFile := root / "ImportedSyntaxWithExtraHeader.lean"
+  let secondSource :=
+    "import LeanFmt\nimport LeanFmt.Tests.ProjectSyntax\n\n#check ∀ᵉ x ∈ xs, project_syntax\n"
+  IO.FS.writeFile firstFile firstSource
+  IO.FS.writeFile secondFile secondSource
   let exitCode ←
-    LeanFmt.Driver.runOptionsWithLoader loader { includeHidden := true, files := [file] }
-  assertTrue "CLI loads syntax from imported modules" (exitCode == 0)
-  assertEq "CLI preserves imported syntax source" source (← IO.FS.readFile file)
+    LeanFmt.Driver.runOptionsWithLoader loader
+      { includeHidden := true, files := [firstFile, secondFile] }
+  assertTrue "CLI loads syntax through one worker per exact header" (exitCode == 0)
+  assertEq "CLI preserves first imported-syntax source"
+    firstSource (← IO.FS.readFile firstFile)
+  assertEq "CLI preserves second imported-syntax source"
+    secondSource (← IO.FS.readFile secondFile)
 
 def assertFmtExecutableConfigured : IO Unit := do
   let lakefile ← IO.FS.readFile "lakefile.toml"

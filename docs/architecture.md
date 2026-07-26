@@ -79,16 +79,19 @@ Formatting a file follows this pipeline:
    environment when project syntax requires it. For multi-file package formatting,
    files that use the default environment are balanced across worker processes using
    the machine's hardware concurrency. Imported files are grouped by exact normalized
-   import header, and every file in one group stays in the same worker. Workers run in
-   the target package's Lake environment.
+   import header, and every file in one group stays in the same worker. The parent
+   obtains the target package's augmented environment from Lake once, then starts all
+   formatter workers directly with that process environment.
 
-   An imported worker asks Lean to construct each exact environment and retains only
-   the most recent one, keyed by the ordered imports and import level. Consecutive
-   files in one header group therefore share the environment without a general
-   environment LRU. A separate bounded cache retains Lean's opaque `ImportState` after
-   the first direct import; subsequent headers with the same prefix ask
-   `importModulesCore` to extend that state in original order before `finalizeImport`
-   constructs the exact environment. LeanFmt never inspects or reconstructs the state.
+   An imported worker skips the formatter's default `Lean` environment, reads its
+   group's header first, and asks Lean to construct that one exact environment with
+   `leakEnv := true`. Every file in the group shares the environment, keyed by the
+   ordered imports and import level, and the process exits after the group. This
+   matches Lean's one-module process lifetime and avoids reference-count work for an
+   environment that survives until process exit. An internal bounded cache can retain
+   Lean's opaque `ImportState` after the first direct import when explicitly enabled;
+   the normal one-environment worker path uses Lean's direct importer. LeanFmt never
+   inspects or reconstructs the state.
    Files with a `module` header use exported `.olean` data; scripts use private data,
    matching Lean's frontend. Lean therefore remains responsible for its import fixed
    point, public/private data selection, IR phases, user initializers, and persistent
@@ -96,18 +99,12 @@ Formatting a file follows this pipeline:
    APIs. Driver policy is deliberately separate.
 
    The automatic imported-environment worker count is capped at two to avoid
-   multiplying cold `.olean` I/O and retained environments without bound. Each
-   imported worker loads at most two exact environments by default, regardless of how
-   many files share each environment. Recycling workers at this boundary avoids the
-   increasing runtime and heap-management cost observed when one process constructs
-   many large environments. The scheduler keeps the configured number of jobs active
-   until its queue is empty. Worker output is buffered and reported in batch order so
-   diagnostics remain readable and deterministic.
-   `-j` or `--jobs` limits concurrent workers, while
-   `--environments-per-worker` overrides the exact-environment lifetime bound. Setting
-   `--env-cache-size` to zero also bypasses prefix-state reuse and calls Lean's direct
-   importer, providing a compatibility and diagnostic path when Lean's incremental
-   importer changes.
+   multiplying cold `.olean` I/O and retained environments without bound. The
+   scheduler keeps the configured number of one-environment workers active until its
+   queue is empty. Worker output is buffered and reported in batch order so diagnostics
+   remain readable and deterministic. `-j` or `--jobs` limits concurrent workers.
+   Setting `--env-cache-size` to a positive value enables the incremental
+   prefix-state path for compatibility testing; zero is the normal direct-import path.
 
    The parent process keeps the default environment alive while imported workers run,
    so the peak is approximately one default environment plus one custom environment

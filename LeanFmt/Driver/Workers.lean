@@ -273,8 +273,6 @@ def shouldUseWorker (options : Options) (cwd? : Option FilePath) (fileCount : Na
     : Bool :=
   !options.worker && cwd?.isSome && fileCount > 1
 
-def defaultImportedEnvironmentsPerWorker : Nat := 2
-
 def maxDefaultImportedEnvironmentWorkerJobs : Nat := 2
 
 def defaultWorkerJobs (hardwareConcurrency : Nat) : Nat :=
@@ -291,9 +289,6 @@ def configuredImportedEnvironmentWorkerJobs (options : Options) : Nat :=
   <| options.workerJobs?.getD
       (defaultImportedEnvironmentWorkerJobs options.hardwareConcurrency)
 
-def configuredImportedEnvironmentsPerWorker (options : Options) : Nat :=
-  max 1 <| options.workerEnvironmentLimit?.getD defaultImportedEnvironmentsPerWorker
-
 partial def splitIntoBatchCount (batchCount : Nat) (items : List α) : List (List α) :=
   if batchCount == 0 || items.isEmpty then
     []
@@ -301,18 +296,42 @@ partial def splitIntoBatchCount (batchCount : Nat) (items : List α) : List (Lis
     let batchSize := (items.length + batchCount - 1) / batchCount
     items.take batchSize :: splitIntoBatchCount (batchCount - 1) (items.drop batchSize)
 
-def exactEnvironmentWorkerBatches
-    (maxEnvironmentCount workerJobs : Nat) (groups : List ImportHeaderGroup)
-    : List (List ImportHeaderGroup) :=
-  if groups.isEmpty then
-    []
-  else
-    let maxEnvironmentCount := max 1 maxEnvironmentCount
-    let workerJobs := max 1 workerJobs
-    let minimumBatchCount :=
-      (groups.length + maxEnvironmentCount - 1) / maxEnvironmentCount
-    let batchCount := max minimumBatchCount (min workerJobs groups.length)
-    splitIntoBatchCount batchCount groups
+def parseLakeEnvironment (output : String)
+    : Except String (Array (String × Option String)) := do
+  let mut environment := #[]
+  for rawLine in output.splitOn "\n" do
+    let line := rawLine.trimAscii.toString
+    if !line.isEmpty then
+      match line.splitOn "=" with
+      | [] => throw s!"invalid empty `lake env` line"
+      | name :: values =>
+          if name.isEmpty || values.isEmpty then
+            throw s!"invalid `lake env` line: {line}"
+          let value := String.intercalate "=" values
+          environment :=
+            environment.push (name, if value.isEmpty then none else some value)
+  pure environment
+
+structure WorkerProcessContext where
+  executable : FilePath
+  environment : Array (String × Option String)
+
+def loadWorkerProcessContext (cwd? : Option FilePath) : IO WorkerProcessContext := do
+  let lake := (← IO.getEnv "LAKE").getD "lake"
+  let output ← IO.Process.output { cmd := lake, args := #["env"], cwd := cwd? }
+  if output.exitCode != 0 then
+    let detail := output.stderr.trimAscii.toString
+    throw
+    <| IO.userError
+    <|  if detail.isEmpty then
+          s!"`{lake} env` exited with code {output.exitCode}"
+        else
+          s!"`{lake} env` exited with code {output.exitCode}: {detail}"
+  let environment ←
+    match parseLakeEnvironment output.stdout with
+    | .ok environment => pure environment
+    | .error message => throw <| IO.userError message
+  pure { executable := ← workerExecutable, environment }
 
 structure WorkerBatchResult where
   exitCode : UInt32
@@ -324,6 +343,9 @@ structure WorkerBatch where
   files : List FilePath
   environmentCount : Nat
 
+def exactEnvironmentWorkerBatches (groups : List ImportHeaderGroup) : List WorkerBatch :=
+  groups.map fun group => { files := group.files, environmentCount := 1 }
+
 structure IndexedWorkerBatchResult where
   batchIndex : Nat
   fileCount : Nat
@@ -331,7 +353,8 @@ structure IndexedWorkerBatchResult where
   result : Except IO.Error WorkerBatchResult
 
 def runEnvironmentWorkerBatch
-    (executable : FilePath) (options : Options) (environment : WorkerEnvironment)
+    (process : WorkerProcessContext)
+    (options : Options) (environment : WorkerEnvironment)
     (cwd? : Option FilePath)
     (inputFiles : List FilePath)
     : IO WorkerBatchResult := do
@@ -340,10 +363,10 @@ def runEnvironmentWorkerBatch
     timeIO
     <| IO.Process.output
         {
-          cmd := "lake"
-          args :=
-            #["env", executable.toString] ++ options.workerArgs environment files
+          cmd := process.executable.toString
+          args := options.workerArgs environment files
           cwd := cwd?
+          env := process.environment
         }
   pure
     {
@@ -372,13 +395,13 @@ def reportWorkerBatchResult
       pure true
 
 def runEnvironmentWorkerBatches
+    (process : WorkerProcessContext)
     (options : Options) (environment : WorkerEnvironment)
     (cwd? : Option FilePath) (workerJobs : Nat) (batches : List WorkerBatch)
     : IO UInt32 := do
   if batches.isEmpty then
     return 0
   let workerJobs := min (max 1 workerJobs) batches.length
-  let executable ← workerExecutable
   let mut remaining := batches.zipIdx
   let mut active : List (Task IndexedWorkerBatchResult) := []
   let mut completed : Array (Option IndexedWorkerBatchResult) :=
@@ -390,7 +413,7 @@ def runEnvironmentWorkerBatches
       | (batch, batchIndex) :: rest =>
           let task ←
             IO.asTask (prio := .dedicated)
-              (runEnvironmentWorkerBatch executable options environment cwd? batch.files)
+              (runEnvironmentWorkerBatch process options environment cwd? batch.files)
           active :=
             (task.map (sync := true)
               fun result =>
@@ -420,20 +443,15 @@ def runEnvironmentWorkerBatches
   pure <| if failed then 1 else 0
 
 def runExactEnvironmentWorkerBatches
+    (process : WorkerProcessContext)
     (options : Options) (cwd? : Option FilePath) (groups : List ImportHeaderGroup)
     : IO UInt32 := do
-  let maxEnvironmentCount := configuredImportedEnvironmentsPerWorker options
   let requestedJobs := configuredImportedEnvironmentWorkerJobs options
-  let groupBatches :=
-    exactEnvironmentWorkerBatches maxEnvironmentCount requestedJobs groups
-  let batches :=
-    groupBatches.map
-      fun batch =>
-        { files := batch.flatMap (·.files), environmentCount := batch.length }
+  let groupBatches := exactEnvironmentWorkerBatches groups
   let fileCount := groups.foldl (fun count group => count + group.files.length) 0
   profileLine options
-    s!"worker-batches: environment=exact files={fileCount} environments={groups.length} batches={batches.length} jobs={min requestedJobs batches.length} max-environments={maxEnvironmentCount}"
-  runEnvironmentWorkerBatches options .exact cwd? requestedJobs batches
+    s!"worker-batches: environment=exact files={fileCount} environments={groups.length} batches={groupBatches.length} jobs={min requestedJobs groupBatches.length} environments-per-worker=1"
+  runEnvironmentWorkerBatches process options .exact cwd? requestedJobs groupBatches
 
 def summarizeOutcomes (options : Options) (outcomes : List FileOutcome) : IO UInt32 := do
   let changed := outcomes.any (·.changed)
@@ -456,6 +474,7 @@ def formatDefaultEnvironmentFiles
   summarizeOutcomes options outcomes
 
 def runDefaultEnvironmentFiles
+    (process : WorkerProcessContext)
     (loader : EnvironmentLoader) (options : Options) (cwd? : Option FilePath)
     (files : List FilePath)
     : IO UInt32 := do
@@ -470,7 +489,7 @@ def runDefaultEnvironmentFiles
   else
     profileLine options
       s!"worker-batches: environment=default files={files.length} environments=1 batches={batches.length} jobs={min requestedJobs batches.length}"
-    runEnvironmentWorkerBatches options .default cwd? requestedJobs batches
+    runEnvironmentWorkerBatches process options .default cwd? requestedJobs batches
 
 def runMixedWorkerBatches
     (loader : EnvironmentLoader) (options : Options) (cwd? : Option FilePath)
@@ -480,7 +499,18 @@ def runMixedWorkerBatches
     timeIO <| partitionDefaultEnvironmentFiles loader files
   profileLine options
     s!"partition: files={files.length} default={defaultFiles.length} import={importFiles.length} elapsed={partitionMs}ms"
-  let defaultExitCode ← runDefaultEnvironmentFiles loader options cwd? defaultFiles
+  let (process?, setupMs) ←
+    timeIO
+    <| try
+        some <$> loadWorkerProcessContext cwd?
+        catch error =>
+          IO.eprintln s!"leanfmt: could not establish target Lake environment: {error}"
+          pure none
+  let some process := process? | return 1
+  profileLine options
+    s!"worker-process-environment: variables={process.environment.size} elapsed={setupMs}ms"
+  let defaultExitCode ←
+    runDefaultEnvironmentFiles process loader options cwd? defaultFiles
   let importExitCode ←
     if importFiles.isEmpty then
       pure 0
@@ -488,7 +518,7 @@ def runMixedWorkerBatches
       let (exactGroups, groupingMs) ← timeIO <| exactImportHeaderGroups importFiles
       profileLine options
         s!"import-groups: files={importFiles.length} groups={exactGroups.length} strategy=exact-lean-environments elapsed={groupingMs}ms"
-      runExactEnvironmentWorkerBatches options cwd? exactGroups
+      runExactEnvironmentWorkerBatches process options cwd? exactGroups
   pure <| if defaultExitCode != 0 || importExitCode != 0 then 1 else 0
 
 end LeanFmt.Driver

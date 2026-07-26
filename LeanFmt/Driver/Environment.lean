@@ -15,6 +15,7 @@ structure EnvironmentLoader where
   default : Lean.Environment
   lastExact : IO.Ref (Option (String × Lean.Environment))
   importPrefixes? : Option ImportPrefixCache := none
+  leakExact : Bool := false
 
 inductive EnvironmentOrigin where
   | default
@@ -51,6 +52,12 @@ def usesDefaultEnvironmentImports (imports : Array Lean.Import) : Bool :=
 def shouldReuseImportPrefixes (options : Options) : Bool :=
   options.worker && options.importPrefixCacheSize != 0
 
+def isExactEnvironmentWorker (options : Options) : Bool :=
+  options.worker && !options.workerDefaultEnvironment
+
+def shouldImportEnvironmentFirst (options : Options) : Bool :=
+  options.importEnvFirst || isExactEnvironmentWorker options
+
 def ImportPrefixCache.create (maxEntries : Nat) : IO ImportPrefixCache := do
   pure { maxEntries, entries := ← IO.mkRef [] }
 
@@ -70,7 +77,7 @@ def ImportPrefixCache.find? (cache : ImportPrefixCache) (key : String)
   | none => pure none
 
 def ImportPrefixCache.importEnvironment
-    (cache : ImportPrefixCache) (spec : LeanEnvironment.Spec)
+    (cache : ImportPrefixCache) (spec : LeanEnvironment.Spec) (leakEnv := false)
     : IO Lean.Environment := do
   let firstImportKey? := spec.imports[0]?.map (LeanEnvironment.firstImportKey spec.level)
   let firstImportState? ←
@@ -78,7 +85,7 @@ def ImportPrefixCache.importEnvironment
     | some key => cache.find? key
     | none => pure none
   let (environment, importedFirstState?) ←
-    LeanEnvironment.importEnvironmentReusingFirstImport spec firstImportState?
+    LeanEnvironment.importEnvironmentReusingFirstImport spec firstImportState? leakEnv
   if firstImportState?.isNone then
     match firstImportKey?, importedFirstState? with
     | some key, some state => cache.remember key state
@@ -87,14 +94,19 @@ def ImportPrefixCache.importEnvironment
 
 def loadEnvironmentLoader (options : Options) : IO EnvironmentLoader := do
   Lean.initSearchPath (← Lean.findSysroot)
-  let default ← Formatter.defaultEnvironment
+  let exactWorker := isExactEnvironmentWorker options
+  let default ←
+    if exactWorker then
+      Lean.mkEmptyEnvironment
+    else
+      Formatter.defaultEnvironment
   let lastExact ← IO.mkRef none
   let importPrefixes? ←
     if shouldReuseImportPrefixes options then
       some <$> ImportPrefixCache.create options.importPrefixCacheSize
     else
       pure none
-  pure { default, lastExact, importPrefixes? }
+  pure { default, lastExact, importPrefixes?, leakExact := exactWorker }
 
 def EnvironmentLoader.lastExactEnvironment? (loader : EnvironmentLoader) (key : String)
     : IO (Option Lean.Environment) := do
@@ -111,7 +123,9 @@ def EnvironmentLoader.rememberExactEnvironment
 def EnvironmentLoader.environmentForSpec
     (loader : EnvironmentLoader) (spec : LeanEnvironment.Spec)
     : IO EnvironmentResult := do
-  if spec.level == .private && usesDefaultEnvironmentImports spec.imports then
+  if !loader.leakExact
+      && spec.level == .private
+      && usesDefaultEnvironmentImports spec.imports then
     pure { environment := loader.default, origin := .default }
   else
     let key := spec.key
@@ -120,8 +134,8 @@ def EnvironmentLoader.environmentForSpec
     | none =>
         let environment ←
           match loader.importPrefixes? with
-          | some prefixes => prefixes.importEnvironment spec
-          | none => LeanEnvironment.importEnvironment spec
+          | some prefixes => prefixes.importEnvironment spec loader.leakExact
+          | none => LeanEnvironment.importEnvironment spec loader.leakExact
         loader.rememberExactEnvironment key environment
         pure { environment, origin := .importedExact }
 
@@ -135,7 +149,7 @@ def EnvironmentLoader.environmentForSource
     (loader : EnvironmentLoader) (options : Options) (source fileName : String)
     : IO Lean.Environment := do
   let normalized := Formatter.Internal.normalizeSource source
-  if options.importEnvFirst then
+  if shouldImportEnvironmentFirst options then
     let importSpec ← LeanEnvironment.specForSource normalized fileName
     pure (← loader.environmentForSpec importSpec).environment
   else
@@ -165,7 +179,7 @@ def EnvironmentLoader.environmentForSourceProfiled
         profileLine options
           s!"{fileName}: environment.normalize={normalizeMs}ms default-parse={defaultParse} import-header={headerMs}ms import-env={environmentMs}ms origin={result.origin.description}"
         pure result.environment
-  if options.importEnvFirst then
+  if shouldImportEnvironmentFirst options then
     loadFromHeader "skipped"
   else
     let defaultParseStart ← IO.monoMsNow
