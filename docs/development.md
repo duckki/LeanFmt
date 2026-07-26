@@ -376,8 +376,8 @@ Do not commit before review unless the reviewer explicitly asks for a commit.
 The external validator clones one or more explicitly provided Git repositories,
 downloads their Lake build caches, builds each complete project, then formats every
 tracked Lean file from that project's `lake env` while checking preservation, unknown
-rules, and idempotence. It builds the complete project again after every batch has
-been formatted, or after the first failing batch:
+rules, and idempotence. It builds the complete project again only after every requested
+formatter batch succeeds:
 
 ```sh
 scripts/validate-external-projects.sh $HOME/lean-libs/mathlib4
@@ -409,9 +409,9 @@ scripts/validate-external-projects.sh \
 Validation runs in batches of 100 files by default. The validator first runs one
 complete project build. Each validation batch then formats its files directly with
 the exception and idempotency checks enabled. Batches continue until all are formatted
-or one reports a diagnostic failure. The validator then runs one complete project
-build over every candidate written through that point, even when the final formatter
-batch failed, so it can also report elaboration or linting failures. Within each batch,
+or one reports a diagnostic failure. After every requested batch succeeds, the
+validator runs one complete project build over all formatted candidates. A formatter
+failure stops validation immediately without running that build. Within each batch,
 leanfmt manages formatter worker processes and batch sizing. The validator prints the
 total file count, total batch count, selected batch, batch index range, first/last file
 for each batch, and any worker-job override. Without `--batch`,
@@ -448,8 +448,8 @@ job limit. Each validation batch writes its formatter output to
 be diagnosed and resumed without overlapping formatter invocations.
 
 For formatter-only iteration, pass `--skip-final-build`. The initial clean build
-still runs, but the validator omits the complete build after the last successful
-or first failing formatter batch:
+still runs, but the validator omits the complete build after every requested formatter
+batch succeeds:
 
 ```sh
 scripts/validate-external-projects.sh \
@@ -504,9 +504,10 @@ LEANFMT_VALIDATION_LINE_WIDTH=100 scripts/validate-external-projects.sh \
   cslib=$HOME/work/lean-libs/cslib
 ```
 
-The script stops formatting at the first failing validation batch, runs the one
-post-format build unless `--skip-final-build` was passed, and exits with a nonzero
-status if any executed phase failed. Each phase and the final summary include elapsed
-wall-clock time. Build-cache retrieval is an optional optimization:
+The script stops formatting at the first failing validation batch without building.
+After every requested batch succeeds, it runs one post-format build unless
+`--skip-final-build` was passed. It exits with a nonzero status if any executed phase
+failed. Each phase and the final summary include elapsed wall-clock time. Build-cache
+retrieval is an optional optimization:
 repositories without a `cache` executable are reported as skipped rather than
 failed.

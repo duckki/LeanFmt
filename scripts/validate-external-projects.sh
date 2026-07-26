@@ -25,7 +25,8 @@ Usage:
 Each project argument must name an explicit git clone source. The validator
 creates a fresh clone under .scratch/external-validation/ before formatting
 unless --reuse-clone is passed.
-Pass --skip-final-build to omit the complete build after formatter batches.
+Pass --skip-final-build to omit the complete build after every requested
+formatter batch succeeds. A formatter failure never triggers a build.
 The complete build before formatting still runs.
 Pass --start-batch N to validate batch N and every later batch. Pass
 --reuse-clone to keep an existing scratch clone, and --skip-initial-build to
@@ -330,7 +331,6 @@ run_project_validation_batches() {
   local state_file="$log_dir/state"
   local batch first_index count last_index list_file log_file
   local formatter_status build_status status
-  local formatted_through_batch=0
 
   mkdir -p "$log_dir"
   printf 'Formatter batch logs: %s\n' "$log_dir"
@@ -388,7 +388,6 @@ run_project_validation_batches() {
         "$batch" "$formatter_status" "$log_file" > "$state_file"
     fi
 
-    formatted_through_batch="$batch"
     rm -f "$list_file"
     if ((formatter_status == 130 || formatter_status == 143)); then
       printf 'Stopping at validation batch %d/%d after formatter interruption.\n' \
@@ -397,31 +396,29 @@ run_project_validation_batches() {
     fi
 
     if ((formatter_status != 0)); then
-      break
+      printf 'Stopping at validation batch %d/%d without a final build.\n' \
+        "$batch" "$total_batches" >&2
+      return "$formatter_status"
     fi
   done
 
   if ((skip_final_build == 1)); then
-    section "Skip final build of $project_name after formatting through batch $formatted_through_batch/$total_batches ($file_selector)"
+    section "Skip final build of $project_name after all requested formatter batches passed ($file_selector)"
     printf 'SKIPPED: final build disabled by --skip-final-build.\n'
-    build_status=0
-  else
-    build_status=0
-    if run_phase_result \
-        "Build all of $project_name after formatting through batch $formatted_through_batch/$total_batches ($file_selector)" \
-        build_project "$project_dir"; then
-      :
-    else
-      build_status=$?
-    fi
+    return 0
   fi
 
-  if ((formatter_status != 0 || build_status != 0)); then
-    printf 'Stopping after formatting through batch %d/%d.\n' \
-      "$formatted_through_batch" "$total_batches" >&2
-    if ((formatter_status != 0)); then
-      return "$formatter_status"
-    fi
+  build_status=0
+  if run_phase_result \
+      "Build all of $project_name after all requested formatter batches passed ($file_selector)" \
+      build_project "$project_dir"; then
+    :
+  else
+    build_status=$?
+  fi
+
+  if ((build_status != 0)); then
+    printf 'Stopping after the final project build failed.\n' >&2
     return "$build_status"
   fi
 
