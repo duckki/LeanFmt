@@ -262,9 +262,11 @@ def shouldUseWorker (options : Options) (cwd? : Option FilePath) (fileCount : Na
   && ((cwd?.isSome && fileCount > 1)
       || options.workerBatchSize?.any (fun size => fileCount > size))
 
+def defaultImportedEnvironmentWorkerBatchSize : Nat := 16
+
 def defaultWorkerBatchSize (_cwd? : Option FilePath) (files : List FilePath)
     : IO Nat := do
-  pure files.length
+  pure <| min defaultImportedEnvironmentWorkerBatchSize files.length
 
 def initialWorkerBatchSize (options : Options) (cwd? : Option FilePath)
     (files : List FilePath)

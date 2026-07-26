@@ -36,12 +36,15 @@ def usesDefaultEnvironmentImports (imports : Array Lean.Import) : Bool :=
     ]
   || imports.isEmpty
 
+def shouldReuseImportPrefixes (options : Options) : Bool :=
+  options.worker && options.environmentCacheSize != 0
+
 def loadFormatterEnvironment (options : Options) : IO EnvironmentCache := do
   Lean.initSearchPath (← Lean.findSysroot)
   let default ← Formatter.defaultEnvironment
   let entries ← IO.mkRef []
   let importSession? ←
-    if options.worker then
+    if shouldReuseImportPrefixes options then
       some <$> LeanEnvironment.Session.create options.environmentCacheSize
     else
       pure none

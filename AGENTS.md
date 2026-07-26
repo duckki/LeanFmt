@@ -20,7 +20,8 @@ linked below remains the source of truth when this summary and the code diverge.
 - `LeanFmt/Cli.lean` implements the public `fmt` executable.
 - `LeanFmt/LeanEnvironment.lean` is the narrow adapter to Lean's exact
   header/import-environment APIs; worker batching and caches stay in
-  `LeanFmt/Driver/`.
+  `LeanFmt/Driver/`. Keep direct and incrementally reused import paths equivalent;
+  the direct path is the compatibility fallback for Lean upgrades.
 - `LeanFmt/Tests/Suite.lean` contains the unit-style suites executed through
   `#eval`; `LeanFmt/Tests/Cli.lean` implements the fixture/test CLI and
   `LeanFmt/Tests/Main.lean` is its executable entry point.

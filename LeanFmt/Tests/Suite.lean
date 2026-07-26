@@ -6121,6 +6121,14 @@ def assertWorkersUseInputLakeRoot : IO Unit := do
           (!LeanFmt.Driver.shouldUseWorker { files := [file] } explicitCwd? 1)
         assertTrue "worker subprocess does not spawn nested workers"
           (!LeanFmt.Driver.shouldUseWorker { worker := true } explicitCwd? 2)
+        assertTrue "worker cache enables exact import-prefix reuse"
+          (LeanFmt.Driver.shouldReuseImportPrefixes
+            { worker := true, environmentCacheSize := 1 })
+        assertTrue "zero worker cache uses Lean's direct importer"
+          (!LeanFmt.Driver.shouldReuseImportPrefixes
+              { worker := true, environmentCacheSize := 0 })
+        assertTrue "parent process does not retain import-prefix states"
+          (!LeanFmt.Driver.shouldReuseImportPrefixes { environmentCacheSize := 1 })
         let otherProject := root / "other-project"
         IO.FS.createDirAll otherProject
         IO.FS.writeFile (otherProject / "lakefile.toml") "name = \"other_project\"\n"
@@ -6140,6 +6148,13 @@ def assertWorkersUseInputLakeRoot : IO Unit := do
                 { recursive := true, files := [project / "QuantumComputing"] }
                 cwd? [file, otherFile])
             == 2)
+        let manyFiles :=
+          List.range 20 |>.map fun index => project / s!"Imported{index}.lean"
+        assertTrue "automatic worker lifetime is bounded"
+          ((← LeanFmt.Driver.initialWorkerBatchSize
+                { recursive := true, files := [project / "QuantumComputing"] }
+                cwd? manyFiles)
+            == LeanFmt.Driver.defaultImportedEnvironmentWorkerBatchSize)
         let workerPaths ← LeanFmt.Driver.pathsForWorkerCwd cwd? [file, otherFile]
         assertEq "recursive external worker paths are relative to worker cwd"
           (toString
@@ -6159,7 +6174,7 @@ def assertWorkersUseInputLakeRoot : IO Unit := do
             == 4)
         IO.FS.writeFile (project / "lake-manifest.json")
           "{\"packages\":[{\"name\":\"other\"}],\"name\":\"external_project\"}\n"
-        assertTrue "external package without Mathlib starts with all remaining files"
+        assertTrue "automatic worker limit does not depend on package dependencies"
           ((← LeanFmt.Driver.initialWorkerBatchSize
                 { recursive := true, files := [project / "QuantumComputing"] }
                 cwd? [file, otherFile])

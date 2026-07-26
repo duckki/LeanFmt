@@ -88,8 +88,13 @@ Formatting a file follows this pipeline:
    scripts use private data, matching Lean's frontend. Lean therefore remains
    responsible for its import fixed point, public/private data selection, IR phases,
    user initializers, and persistent extensions. `LeanEnvironment.lean` is the narrow
-   maintenance boundary for these APIs. An explicit worker batch size limits the
-   lifetime and peak memory of each short-lived worker.
+   maintenance boundary for these APIs. Driver policy is deliberately separate:
+   imported files run serially in short-lived workers of at most 16 files by default.
+   Restarting the process bounds Lean runtime state that is not owned by the explicit
+   environment caches. `--worker-batch-size` overrides that limit. Setting
+   `--env-cache-size` to zero also bypasses prefix-state reuse and calls Lean's direct
+   importer, providing a compatibility and diagnostic path when Lean's incremental
+   importer changes.
 3. Convert Lean `Syntax` to a `SyntaxTree.Tree` of tokens and raw parser nodes.
 4. Regroup selected raw nodes into logical `SyntaxTree.NodeKind` nodes.
 5. Render the resulting tree using line-break rules and space rules.

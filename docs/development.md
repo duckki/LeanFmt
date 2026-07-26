@@ -471,9 +471,12 @@ direct import and lets Lean extend and finalize that state for the remaining imp
 Both caches are bounded by `--env-cache-size`. Files with a `module` header use
 exported `.olean` data; scripts use private data, matching Lean's frontend. Lean itself
 computes every transitive import, IR phase, initializer, and persistent extension;
-LeanFmt does not derive environments from a superset. Supplying a worker batch size
-limits the number of files processed by each worker, trading process and environment
-setup time for lower peak memory. Set
+LeanFmt does not derive environments from a superset. Imported files run serially in
+workers of at most 16 files by default. Restarting the worker also bounds Lean runtime
+state outside the explicit caches. Supplying a worker batch size overrides that
+lifetime, trading process and environment setup time for peak memory. Setting
+`--env-cache-size 0` disables both caches and uses Lean's direct importer, which is
+useful when checking compatibility with a new Lean release. Set
 `LEANFMT_VALIDATION_LINE_WIDTH=N` to pass a project-specific line width to every
 formatter invocation.
 
