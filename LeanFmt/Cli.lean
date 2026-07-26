@@ -35,8 +35,8 @@ def usage : String :=
       "  --profile",
       "            Print formatter CLI phase timings to stderr.",
       "  --env-cache-size N",
-      "            Keep up to N exact environments and import-prefix states per process;",
-      "            zero uses Lean's direct importer without either cache.",
+      "            Keep up to N first-import prefix states per worker;",
+      "            zero uses Lean's direct importer for new exact environments.",
       "  --import-env-first",
       "            Import the source header environment before trying default parsing.",
       "  --check-exception",
@@ -65,7 +65,7 @@ def parseArgs (args : List String) : ParseResult :=
         loop { options with importEnvFirst := true } files rest
     | "--env-cache-size" :: value :: rest =>
         match value.toNat? with
-        | some size => loop { options with environmentCacheSize := size } files rest
+        | some size => loop { options with importPrefixCacheSize := size } files rest
         | none => .error s!"invalid --env-cache-size value: {value}"
     | "--env-cache-size" :: [] =>
         .error "--env-cache-size requires a value"

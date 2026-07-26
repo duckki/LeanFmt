@@ -465,17 +465,20 @@ LeanFmt to override its automatic worker batch choice. Multi-file package format
 invocations first format files that parse in LeanFmt's default Lean environment, then
 process files that need imported syntax in a short-lived worker running under the
 target package's `lake env`. The worker orders files by exact normalized import header
-and keeps Lean-created environments in a bounded cache, so adjacent identical headers
-reuse one environment. It also reuses Lean's opaque state after an identical first
-direct import and lets Lean extend and finalize that state for the remaining imports.
-Both caches are bounded by `--env-cache-size`. Files with a `module` header use
+and retains only its most recent Lean-created environment, so adjacent identical
+headers reuse one environment without a general LRU. It also reuses Lean's opaque
+state after an identical first direct import and lets Lean extend and finalize that
+state for the remaining imports.
+The import-prefix cache is bounded by `--env-cache-size`. Files with a `module` header use
 exported `.olean` data; scripts use private data, matching Lean's frontend. Lean itself
 computes every transitive import, IR phase, initializer, and persistent extension;
 LeanFmt does not derive environments from a superset. Imported files run serially in
 workers of at most 16 files by default. Restarting the worker also bounds Lean runtime
 state outside the explicit caches. Supplying a worker batch size overrides that
 lifetime, trading process and environment setup time for peak memory. Setting
-`--env-cache-size 0` disables both caches and uses Lean's direct importer, which is
+`--env-cache-size 0` disables prefix reuse and uses Lean's direct importer when a new
+exact environment is required. The immediately preceding exact environment remains
+available for files with an identical header. This direct path is
 useful when checking compatibility with a new Lean release. Set
 `LEANFMT_VALIDATION_LINE_WIDTH=N` to pass a project-specific line width to every
 formatter invocation.

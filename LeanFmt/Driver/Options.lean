@@ -15,7 +15,7 @@ structure Options where
   worker : Bool := false
   formatterOptions : Formatter.Options := {}
   workerBatchSize? : Option Nat := none
-  environmentCacheSize : Nat := 1
+  importPrefixCacheSize : Nat := 1
   files : List FilePath := []
 deriving Repr
 

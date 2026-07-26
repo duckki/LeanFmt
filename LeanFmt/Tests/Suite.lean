@@ -5800,7 +5800,7 @@ def assertBangApplicationDiagnostics (env : Lean.Environment) : IO Unit := do
 def assertCliParsing : IO Unit := do
   assertTextContains "CLI help documents exception checks" LeanFmt.Cli.usage
     "--check-exception"
-  assertTextContains "CLI help documents environment cache control"
+  assertTextContains "CLI help documents import-prefix cache control"
     LeanFmt.Cli.usage "--env-cache-size"
   assertTextContains "CLI help documents import-first environment control"
     LeanFmt.Cli.usage "--import-env-first"
@@ -5875,7 +5875,7 @@ def assertLineWidthOptionAffectsFormatting (env : Lean.Environment) : IO Unit :=
   let _ ← SyntaxTree.parseModuleStringWithEnv env narrow "line-width-option.lean"
   match LeanFmt.Cli.parseArgs ["--env-cache-size", "0", "GraphQL.lean"] with
   | .run options =>
-      assertTrue "CLI environment cache size flag" (options.environmentCacheSize == 0)
+      assertTrue "CLI import-prefix cache size flag" (options.importPrefixCacheSize == 0)
   | result =>
       throw
       <| IO.userError
@@ -5952,25 +5952,17 @@ def assertLineWidthOptionAffectsFormatting (env : Lean.Environment) : IO Unit :=
   | result =>
       throw <| IO.userError s!"CLI parser should require files: {repr result}"
 
-def assertEnvironmentCacheBound (env : Lean.Environment) : IO Unit := do
-  let keys (entries : List (String × Lean.Environment)) : String :=
-    String.intercalate "," (entries.map Prod.fst)
-  let entries ← IO.mkRef []
-  let cache : LeanFmt.Driver.EnvironmentCache :=
-    { default := env, maxEntries := 2, entries }
-  cache.rememberEnvironment "first" env
-  cache.rememberEnvironment "second" env
-  cache.rememberEnvironment "third" env
-  assertEq "environment cache evicts least-recently remembered entry"
-    "third,second" (keys (← entries.get))
-  cache.rememberEnvironment "second" env
-  assertEq "environment cache refreshes remembered entry"
-    "second,third" (keys (← entries.get))
-  let disabledEntries ← IO.mkRef []
-  let disabledCache : LeanFmt.Driver.EnvironmentCache :=
-    { default := env, maxEntries := 0, entries := disabledEntries }
-  disabledCache.rememberEnvironment "ignored" env
-  assertTrue "disabled environment cache remains empty" (← disabledEntries.get).isEmpty
+def assertEnvironmentLoaderKeepsOnlyLastExact (env : Lean.Environment) : IO Unit := do
+  let lastExact ← IO.mkRef none
+  let loader : LeanFmt.Driver.EnvironmentLoader := { default := env, lastExact }
+  loader.rememberExactEnvironment "first" env
+  assertTrue "environment loader reuses the last exact environment"
+    (← loader.lastExactEnvironment? "first").isSome
+  loader.rememberExactEnvironment "second" env
+  assertTrue "environment loader drops the previous exact environment"
+    (← loader.lastExactEnvironment? "first").isNone
+  assertTrue "environment loader retains the replacement exact environment"
+    (← loader.lastExactEnvironment? "second").isSome
 
 def assertSourceImportsUseLeanHeaderLevel : IO Unit := do
   let moduleImports ←
@@ -5993,7 +5985,7 @@ def assertLeanEnvironmentKeyIncludesImportSemantics : IO Unit := do
       { imports := #[{ base with isMeta := true }], level := .private }
     ]
   let keys := (specs.map (·.key)).toList.eraseDups
-  assertTrue "environment cache keys include level and every import modifier"
+  assertTrue "exact environment keys include level and every import modifier"
     (keys.length == specs.size)
 
 def assertImportPrefixCacheMatchesLeanEnvironment : IO Unit := do
@@ -6055,16 +6047,16 @@ def assertDefaultEnvironmentPartition (env : Lean.Environment) : IO Unit := do
   IO.FS.withTempDir
     fun root =>
       do
-        let entries ← IO.mkRef []
-        let cache : LeanFmt.Driver.EnvironmentCache :=
-          { default := env, maxEntries := 1, entries }
+        let lastExact ← IO.mkRef none
+        let loader : LeanFmt.Driver.EnvironmentLoader := { default := env, lastExact }
         let ordinary := root / "Ordinary.lean"
         let importedSyntax := root / "ImportedSyntax.lean"
         IO.FS.writeFile ordinary "import Missing.Module\n\ndef ordinary : Nat := 0\n"
         IO.FS.writeFile importedSyntax
           "import Missing.Module\n\ntheorem product : lhs ⬝ rhs := by trivial\n"
         let (defaultFiles, importFiles) ←
-          LeanFmt.Driver.partitionDefaultEnvironmentFiles cache [ordinary, importedSyntax]
+          LeanFmt.Driver.partitionDefaultEnvironmentFiles loader
+            [ordinary, importedSyntax]
         assertEq "ordinary imported files use the default environment"
           (toString [ordinary]) (toString defaultFiles)
         assertEq "unknown imported syntax requires the import environment"
@@ -6123,12 +6115,12 @@ def assertWorkersUseInputLakeRoot : IO Unit := do
           (!LeanFmt.Driver.shouldUseWorker { worker := true } explicitCwd? 2)
         assertTrue "worker cache enables exact import-prefix reuse"
           (LeanFmt.Driver.shouldReuseImportPrefixes
-            { worker := true, environmentCacheSize := 1 })
+            { worker := true, importPrefixCacheSize := 1 })
         assertTrue "zero worker cache uses Lean's direct importer"
           (!LeanFmt.Driver.shouldReuseImportPrefixes
-              { worker := true, environmentCacheSize := 0 })
+              { worker := true, importPrefixCacheSize := 0 })
         assertTrue "parent process does not retain import-prefix states"
-          (!LeanFmt.Driver.shouldReuseImportPrefixes { environmentCacheSize := 1 })
+          (!LeanFmt.Driver.shouldReuseImportPrefixes { importPrefixCacheSize := 1 })
         let otherProject := root / "other-project"
         IO.FS.createDirAll otherProject
         IO.FS.writeFile (otherProject / "lakefile.toml") "name = \"other_project\"\n"
@@ -6387,7 +6379,7 @@ def assertFormattingExceptionChecks (env : Lean.Environment) : IO Unit := do
     counts.summary
 
 def assertCliChecksStillFormatUnlessCheck
-    (env : Lean.Environment) (cache : LeanFmt.Driver.EnvironmentCache)
+    (env : Lean.Environment) (loader : LeanFmt.Driver.EnvironmentLoader)
     : IO Unit := do
   let root : FilePath := ".lake/leanfmt-cli-test/checks"
   IO.FS.createDirAll root
@@ -6395,7 +6387,7 @@ def assertCliChecksStillFormatUnlessCheck
   let preservingSource := "def  preserving  : Nat := 0\n"
   IO.FS.writeFile preservingFile preservingSource
   let preservingExitCode ←
-    LeanFmt.Driver.runOptionsWithCache cache
+    LeanFmt.Driver.runOptionsWithLoader loader
       { checkException := true, includeHidden := true, files := [preservingFile] }
   assertTrue "CLI exception check still formats" (preservingExitCode == 0)
   let preservingFormatted ←
@@ -6411,7 +6403,7 @@ def assertCliChecksStillFormatUnlessCheck
   let afterExceptionSource := "def  afterException  : Nat := 0\n"
   IO.FS.writeFile afterExceptionFile afterExceptionSource
   let overflowExitCode ←
-    LeanFmt.Driver.runOptionsWithCache cache
+    LeanFmt.Driver.runOptionsWithLoader loader
       {
         checkException := true
         includeHidden := true
@@ -6428,7 +6420,7 @@ def assertCliChecksStillFormatUnlessCheck
     afterExceptionFormatted (← IO.FS.readFile afterExceptionFile)
   IO.FS.writeFile overflowFile overflowSource
   let checkedOverflowExitCode ←
-    LeanFmt.Driver.runOptionsWithCache cache
+    LeanFmt.Driver.runOptionsWithLoader loader
       {
         check := true
         checkException := true
@@ -6443,7 +6435,7 @@ def assertCliChecksStillFormatUnlessCheck
   let idempotentSource := "def  idempotent  : Nat := 0\n"
   IO.FS.writeFile idempotentFile idempotentSource
   let idempotentExitCode ←
-    LeanFmt.Driver.runOptionsWithCache cache
+    LeanFmt.Driver.runOptionsWithLoader loader
       { checkIdempotent := true, includeHidden := true, files := [idempotentFile] }
   assertTrue "CLI idempotence check still formats" (idempotentExitCode == 0)
   let idempotentFormatted ←
@@ -6455,7 +6447,7 @@ def assertCliChecksStillFormatUnlessCheck
   let checkedSource := "def  checked  : Nat := 0\n"
   IO.FS.writeFile checkedFile checkedSource
   let checkedExitCode ←
-    LeanFmt.Driver.runOptionsWithCache cache
+    LeanFmt.Driver.runOptionsWithLoader loader
       {
         check := true
         checkException := true
@@ -6468,13 +6460,13 @@ def assertCliChecksStillFormatUnlessCheck
     checkedSource (← IO.FS.readFile checkedFile)
 
   let ordinaryCheckExitCode ←
-    LeanFmt.Driver.runOptionsWithCache cache
+    LeanFmt.Driver.runOptionsWithLoader loader
       { check := true, includeHidden := true, files := [checkedFile] }
   assertTrue "CLI ordinary --check still fails on formatting changes"
     (ordinaryCheckExitCode == 1)
 
 def assertCliFormatsDirectory
-    (env : Lean.Environment) (cache : LeanFmt.Driver.EnvironmentCache)
+    (env : Lean.Environment) (loader : LeanFmt.Driver.EnvironmentLoader)
     : IO Unit := do
   let root : FilePath := ".lake/leanfmt-cli-test/nonrecursive"
   let nested : FilePath := root / "nested"
@@ -6486,7 +6478,7 @@ def assertCliFormatsDirectory
   IO.FS.writeFile topFile topSource
   IO.FS.writeFile nestedFile nestedSource
   let exitCode ←
-    LeanFmt.Driver.runOptionsWithCache cache { includeHidden := true, files := [root] }
+    LeanFmt.Driver.runOptionsWithLoader loader { includeHidden := true, files := [root] }
   assertTrue "CLI directory format succeeds" (exitCode == 0)
   let topFormatted ← Formatter.formatSourceWithEnv env topSource topFile.toString
   assertEq "CLI formats direct Lean files in directory" topFormatted
@@ -6495,7 +6487,7 @@ def assertCliFormatsDirectory
     nestedSource (← IO.FS.readFile nestedFile)
 
 def assertCliFormatsDirectoryRecursively
-    (env : Lean.Environment) (cache : LeanFmt.Driver.EnvironmentCache)
+    (env : Lean.Environment) (loader : LeanFmt.Driver.EnvironmentLoader)
     : IO Unit := do
   let root : FilePath := ".lake/leanfmt-cli-test/recursive"
   let nested : FilePath := root / "nested"
@@ -6509,7 +6501,7 @@ def assertCliFormatsDirectoryRecursively
   match LeanFmt.Cli.parseArgs
           ["-r", "--include-hidden", "--worker-batch-size", "1", root.toString] with
   | .run options =>
-      let exitCode ← LeanFmt.Driver.runOptionsWithCache cache options
+      let exitCode ← LeanFmt.Driver.runOptionsWithLoader loader options
       assertTrue "CLI recursive directory format succeeds" (exitCode == 0)
       let topFormatted ← Formatter.formatSourceWithEnv env topSource topFile.toString
       let nestedFormatted ←
@@ -6575,14 +6567,15 @@ def assertCliSkipsHiddenPathsByDefault : IO Unit :=
           assertTrue s!"CLI --include-hidden discovers {file}"
             (includedFiles.contains file)
 
-def assertCliLoadsImportedSyntax (cache : LeanFmt.Driver.EnvironmentCache) : IO Unit := do
+def assertCliLoadsImportedSyntax (loader : LeanFmt.Driver.EnvironmentLoader)
+    : IO Unit := do
   let root : FilePath := ".lake/leanfmt-cli-test/project-env"
   IO.FS.createDirAll root
   let file := root / "ImportedSyntax.lean"
   let source := "import LeanFmt.Tests.ProjectSyntax\n\n#check project_syntax\n"
   IO.FS.writeFile file source
   let exitCode ←
-    LeanFmt.Driver.runOptionsWithCache cache { includeHidden := true, files := [file] }
+    LeanFmt.Driver.runOptionsWithLoader loader { includeHidden := true, files := [file] }
   assertTrue "CLI loads syntax from imported modules" (exitCode == 0)
   assertEq "CLI preserves imported syntax source" source (← IO.FS.readFile file)
 
@@ -7282,7 +7275,7 @@ def assertMathlibLowRiskSyntaxKindsHaveRules : IO Unit := do
     (Formatter.Diagnostics.missingRuleOccurrences "" none jsonTree).isEmpty
 
 def assertMissingRuleCheckUsesDispatch
-    (env : Lean.Environment) (cache : LeanFmt.Driver.EnvironmentCache)
+    (env : Lean.Environment) (loader : LeanFmt.Driver.EnvironmentLoader)
     : IO Unit := do
   let unknownTree :=
     SyntaxTree.Tree.node
@@ -7349,7 +7342,7 @@ def assertMissingRuleCheckUsesDispatch
   let projectImports ←
     LeanFmt.LeanEnvironment.importsForSource
       "import LeanFmt.Tests.ProjectSyntax\n" "project-syntax-import.lean"
-  let projectEnv ← cache.environmentForImports projectImports
+  let projectEnv ← loader.environmentForImports projectImports
   assertTrue "parser description fallback is identified"
     (Formatter.Diagnostics.leanFormatterAvailability projectEnv (some `projectSyntax)
       == .parserDescription)
@@ -7883,11 +7876,10 @@ def runCollectionAndDeclarationTests (env : Lean.Environment) : IO Unit := do
 
 def runCliAndArchitectureTests (env : Lean.Environment) : IO Unit := do
   Lean.initSearchPath (← Lean.findSysroot)
-  let entries ← IO.mkRef []
-  let cache : LeanFmt.Driver.EnvironmentCache :=
-    { default := env, maxEntries := 1, entries }
+  let lastExact ← IO.mkRef none
+  let loader : LeanFmt.Driver.EnvironmentLoader := { default := env, lastExact }
   assertCliParsing
-  assertEnvironmentCacheBound env
+  assertEnvironmentLoaderKeepsOnlyLastExact env
   assertSourceImportsUseLeanHeaderLevel
   assertLeanEnvironmentKeyIncludesImportSemantics
   assertImportPrefixCacheMatchesLeanEnvironment
@@ -7898,11 +7890,11 @@ def runCliAndArchitectureTests (env : Lean.Environment) : IO Unit := do
   assertImportFilesGroupByHeader
   assertRecursiveWorkerChecksTargetToolchain
   assertFormattingExceptionChecks env
-  assertCliChecksStillFormatUnlessCheck env cache
-  assertCliFormatsDirectory env cache
-  assertCliFormatsDirectoryRecursively env cache
+  assertCliChecksStillFormatUnlessCheck env loader
+  assertCliFormatsDirectory env loader
+  assertCliFormatsDirectoryRecursively env loader
   assertCliSkipsHiddenPathsByDefault
-  assertCliLoadsImportedSyntax cache
+  assertCliLoadsImportedSyntax loader
   assertFmtExecutableConfigured
   assertRendererTraceIncludesPathAndState env
   assertCliFixtureUpdate env
@@ -7910,7 +7902,7 @@ def runCliAndArchitectureTests (env : Lean.Environment) : IO Unit := do
   assertDeclarationRuleTransparent
   assertLakeDslFormatting
   assertMathlibLowRiskSyntaxKindsHaveRules
-  assertMissingRuleCheckUsesDispatch env cache
+  assertMissingRuleCheckUsesDispatch env loader
   assertCheckCommandHasRule env
   assertGuardMsgsCommandUsesCommandInLayout env
   assertBinderTacticProofBodyHasNoMissingRules env

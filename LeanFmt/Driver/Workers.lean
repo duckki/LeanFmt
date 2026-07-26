@@ -184,7 +184,7 @@ def formatFileWithEnv (env : Lean.Environment) (options : Options) (path : FileP
     s!"{path}: read={readMs}ms environment=0ms format={formatMs}ms total={readMs + formatMs}ms"
   pure outcome
 
-def formatFile (cache : EnvironmentCache) (options : Options) (path : FilePath)
+def formatFile (loader : EnvironmentLoader) (options : Options) (path : FilePath)
     : IO FileOutcome := do
   try
     let totalStart ← IO.monoMsNow
@@ -192,9 +192,9 @@ def formatFile (cache : EnvironmentCache) (options : Options) (path : FilePath)
     let (env, environmentMs) ←
       timeIO
       <|  if options.profile then
-            cache.environmentForSourceProfiled options source path.toString
+            loader.environmentForSourceProfiled options source path.toString
           else
-            cache.environmentForSource options source path.toString
+            loader.environmentForSource options source path.toString
     let (outcome, formatMs) ← timeIO <| formatSourceWithEnvForFile env options path source
     let totalStop ← IO.monoMsNow
     profileLine options
@@ -221,7 +221,7 @@ def Options.workerArgs (options : Options) (files : List FilePath) : Array Strin
       if options.includeHidden then
         args := args.push "--include-hidden"
       args := args.push "--env-cache-size"
-      args := args.push s!"{options.environmentCacheSize}"
+      args := args.push s!"{options.importPrefixCacheSize}"
       args := args.push "--line-width"
       args := args.push s!"{options.formatterOptions.lineWidth}"
       for file in files do
@@ -321,23 +321,23 @@ def summarizeOutcomes (options : Options) (outcomes : List FileOutcome) : IO UIn
   pure <| if failed || formattingDifferenceFailed then 1 else 0
 
 def formatDefaultEnvironmentFiles
-    (cache : EnvironmentCache) (options : Options) (files : List FilePath)
+    (loader : EnvironmentLoader) (options : Options) (files : List FilePath)
     : IO UInt32 := do
   let (outcomes, elapsedMs) ←
-    timeIO <| files.mapM (formatFileWithEnv cache.default options)
+    timeIO <| files.mapM (formatFileWithEnv loader.default options)
   profileLine options
     s!"default-environment-files: files={files.length} elapsed={elapsedMs}ms"
   summarizeOutcomes options outcomes
 
 def runMixedWorkerBatches
-    (cache : EnvironmentCache) (options : Options) (cwd? : Option FilePath)
+    (loader : EnvironmentLoader) (options : Options) (cwd? : Option FilePath)
     (files : List FilePath)
     : IO UInt32 := do
   let ((defaultFiles, importFiles), partitionMs) ←
-    timeIO <| partitionDefaultEnvironmentFiles cache files
+    timeIO <| partitionDefaultEnvironmentFiles loader files
   profileLine options
     s!"partition: files={files.length} default={defaultFiles.length} import={importFiles.length} elapsed={partitionMs}ms"
-  let defaultExitCode ← formatDefaultEnvironmentFiles cache options defaultFiles
+  let defaultExitCode ← formatDefaultEnvironmentFiles loader options defaultFiles
   let importExitCode ←
     if importFiles.isEmpty then
       pure 0

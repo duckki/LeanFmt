@@ -5,23 +5,23 @@ open System
 namespace LeanFmt.Driver
 
 def sourceParsesWithDefaultEnvironment
-    (cache : EnvironmentCache) (source fileName : String)
+    (loader : EnvironmentLoader) (source fileName : String)
     : IO Bool := do
   try
     discard
-    <| SyntaxTree.parseModuleSyntaxWithoutParserStateUpdates cache.default
+    <| SyntaxTree.parseModuleSyntaxWithoutParserStateUpdates loader.default
         (Formatter.Internal.normalizeSource source) fileName
     pure true
   catch _ =>
     pure false
 
-def partitionDefaultEnvironmentFiles (cache : EnvironmentCache) (files : List FilePath)
+def partitionDefaultEnvironmentFiles (loader : EnvironmentLoader) (files : List FilePath)
     : IO (List FilePath × List FilePath) := do
   let mut defaultFiles := []
   let mut importFiles := []
   for file in files do
     let source ← IO.FS.readFile file
-    if (← sourceParsesWithDefaultEnvironment cache source file.toString) then
+    if (← sourceParsesWithDefaultEnvironment loader source file.toString) then
       defaultFiles := file :: defaultFiles
     else
       importFiles := file :: importFiles

@@ -11,11 +11,19 @@ structure ImportPrefixCache where
   maxEntries : Nat
   entries : IO.Ref (List (String × LeanEnvironment.ImportPrefixState))
 
-structure EnvironmentCache where
+structure EnvironmentLoader where
   default : Lean.Environment
-  maxEntries : Nat
-  entries : IO.Ref (List (String × Lean.Environment))
+  lastExact : IO.Ref (Option (String × Lean.Environment))
   importPrefixes? : Option ImportPrefixCache := none
+
+inductive EnvironmentOrigin where
+  | default
+  | reusedExact
+  | importedExact
+
+structure EnvironmentResult where
+  environment : Lean.Environment
+  origin : EnvironmentOrigin
 
 structure ImportHeaderGroup where
   key : String
@@ -41,7 +49,7 @@ def usesDefaultEnvironmentImports (imports : Array Lean.Import) : Bool :=
   || imports.isEmpty
 
 def shouldReuseImportPrefixes (options : Options) : Bool :=
-  options.worker && options.environmentCacheSize != 0
+  options.worker && options.importPrefixCacheSize != 0
 
 def ImportPrefixCache.create (maxEntries : Nat) : IO ImportPrefixCache := do
   pure { maxEntries, entries := ← IO.mkRef [] }
@@ -77,137 +85,101 @@ def ImportPrefixCache.importEnvironment
     | _, _ => pure ()
   pure environment
 
-def loadFormatterEnvironment (options : Options) : IO EnvironmentCache := do
+def loadEnvironmentLoader (options : Options) : IO EnvironmentLoader := do
   Lean.initSearchPath (← Lean.findSysroot)
   let default ← Formatter.defaultEnvironment
-  let entries ← IO.mkRef []
+  let lastExact ← IO.mkRef none
   let importPrefixes? ←
     if shouldReuseImportPrefixes options then
-      some <$> ImportPrefixCache.create options.environmentCacheSize
+      some <$> ImportPrefixCache.create options.importPrefixCacheSize
     else
       pure none
-  pure { default, maxEntries := options.environmentCacheSize, entries, importPrefixes? }
+  pure { default, lastExact, importPrefixes? }
 
-def EnvironmentCache.rememberEnvironment
-    (cache : EnvironmentCache) (key : String) (env : Lean.Environment)
+def EnvironmentLoader.lastExactEnvironment? (loader : EnvironmentLoader) (key : String)
+    : IO (Option Lean.Environment) := do
+  match ← loader.lastExact.get with
+  | some (cachedKey, environment) =>
+      pure <| if cachedKey == key then some environment else none
+  | none => pure none
+
+def EnvironmentLoader.rememberExactEnvironment
+    (loader : EnvironmentLoader) (key : String) (environment : Lean.Environment)
     : IO Unit := do
-  if cache.maxEntries == 0 then
-    pure ()
-  else
-    cache.entries.modify
-      fun entries =>
-        ((key, env) :: entries.filter (fun entry => entry.1 != key)).take cache.maxEntries
+  loader.lastExact.set (some (key, environment))
 
-def EnvironmentCache.environmentForImports
-    (cache : EnvironmentCache) (imports : Array Lean.Import)
-    (level : Lean.OLeanLevel := .private)
-    : IO Lean.Environment := do
-  if level == .private && usesDefaultEnvironmentImports imports then
-    pure cache.default
+def EnvironmentLoader.environmentForSpec
+    (loader : EnvironmentLoader) (spec : LeanEnvironment.Spec)
+    : IO EnvironmentResult := do
+  if spec.level == .private && usesDefaultEnvironmentImports spec.imports then
+    pure { environment := loader.default, origin := .default }
   else
-    let spec : LeanEnvironment.Spec := { imports, level }
     let key := spec.key
-    let entries ← cache.entries.get
-    match entries.find? (fun entry => entry.1 == key) with
-    | some (_, env) => cache.rememberEnvironment key env *> pure env
+    match ← loader.lastExactEnvironment? key with
+    | some environment => pure { environment, origin := .reusedExact }
     | none =>
-        let env ←
-          match cache.importPrefixes? with
+        let environment ←
+          match loader.importPrefixes? with
           | some prefixes => prefixes.importEnvironment spec
           | none => LeanEnvironment.importEnvironment spec
-        cache.rememberEnvironment key env
-        pure env
+        loader.rememberExactEnvironment key environment
+        pure { environment, origin := .importedExact }
 
-def EnvironmentCache.environmentForSource
-    (cache : EnvironmentCache) (options : Options) (source fileName : String)
+def EnvironmentLoader.environmentForImports
+    (loader : EnvironmentLoader) (imports : Array Lean.Import)
+    (level : Lean.OLeanLevel := .private)
+    : IO Lean.Environment := do
+  pure (← loader.environmentForSpec { imports, level }).environment
+
+def EnvironmentLoader.environmentForSource
+    (loader : EnvironmentLoader) (options : Options) (source fileName : String)
     : IO Lean.Environment := do
   let normalized := Formatter.Internal.normalizeSource source
   if options.importEnvFirst then
     let importSpec ← LeanEnvironment.specForSource normalized fileName
-    cache.environmentForImports importSpec.imports importSpec.level
+    pure (← loader.environmentForSpec importSpec).environment
   else
     try
       discard
-      <| SyntaxTree.parseModuleSyntaxWithoutParserStateUpdates cache.default
+      <| SyntaxTree.parseModuleSyntaxWithoutParserStateUpdates loader.default
           normalized fileName
-      pure cache.default
+      pure loader.default
     catch _ =>
       let importSpec ← LeanEnvironment.specForSource normalized fileName
-      cache.environmentForImports importSpec.imports importSpec.level
+      pure (← loader.environmentForSpec importSpec).environment
 
-def EnvironmentCache.environmentForSourceProfiled
-    (cache : EnvironmentCache) (options : Options) (source fileName : String)
+def EnvironmentOrigin.description : EnvironmentOrigin → String
+  | .default => "default-imports"
+  | .reusedExact => "reused-exact"
+  | .importedExact => "imported-exact"
+
+def EnvironmentLoader.environmentForSourceProfiled
+    (loader : EnvironmentLoader) (options : Options) (source fileName : String)
     : IO Lean.Environment := do
   let (normalized, normalizeMs) ←
     timeIO <| pure <| Formatter.Internal.normalizeSource source
+  let loadFromHeader (defaultParse : String)
+      : IO Lean.Environment := do
+        let (spec, headerMs) ← timeIO <| LeanEnvironment.specForSource normalized fileName
+        let (result, environmentMs) ← timeIO <| loader.environmentForSpec spec
+        profileLine options
+          s!"{fileName}: environment.normalize={normalizeMs}ms default-parse={defaultParse} import-header={headerMs}ms import-env={environmentMs}ms origin={result.origin.description}"
+        pure result.environment
   if options.importEnvFirst then
-    let (importSpec, headerMs) ←
-      timeIO <| LeanEnvironment.specForSource normalized fileName
-    let imports := importSpec.imports
-    let level := importSpec.level
-    if level == .private && usesDefaultEnvironmentImports imports then
-      profileLine options
-        s!"{fileName}: environment.normalize={normalizeMs}ms default-parse=skipped import-header={headerMs}ms import-env=0ms cache=default-imports"
-      pure cache.default
-    else
-      let key := importSpec.key
-      let entries ← cache.entries.get
-      match entries.find? (fun entry => entry.1 == key) with
-      | some (_, env) =>
-          let (_, rememberMs) ← timeIO <| cache.rememberEnvironment key env
-          profileLine options
-            s!"{fileName}: environment.normalize={normalizeMs}ms default-parse=skipped import-header={headerMs}ms import-env=0ms cache=hit remember={rememberMs}ms"
-          pure env
-      | none =>
-          let (env, importMs) ←
-            timeIO
-            <| match cache.importPrefixes? with
-                | some prefixes => prefixes.importEnvironment importSpec
-                | none => LeanEnvironment.importEnvironment importSpec
-          let (_, rememberMs) ← timeIO <| cache.rememberEnvironment key env
-          profileLine options
-            s!"{fileName}: environment.normalize={normalizeMs}ms default-parse=skipped import-header={headerMs}ms import-env={importMs}ms cache=miss remember={rememberMs}ms"
-          pure env
+    loadFromHeader "skipped"
   else
     let defaultParseStart ← IO.monoMsNow
     try
       discard
-      <| SyntaxTree.parseModuleSyntaxWithoutParserStateUpdates cache.default
+      <| SyntaxTree.parseModuleSyntaxWithoutParserStateUpdates loader.default
           normalized fileName
       let defaultParseStop ← IO.monoMsNow
       profileLine options
         s!"{fileName}: environment.normalize={normalizeMs}ms default-parse={defaultParseStop - defaultParseStart}ms import-header=0ms import-env=0ms cache=default"
-      pure cache.default
+      pure loader.default
     catch _ =>
       let defaultParseStop ← IO.monoMsNow
-      let defaultParseMs := defaultParseStop - defaultParseStart
-      let (importSpec, headerMs) ←
-        timeIO <| LeanEnvironment.specForSource normalized fileName
-      let imports := importSpec.imports
-      let level := importSpec.level
-      if level == .private && usesDefaultEnvironmentImports imports then
-        profileLine options
-          s!"{fileName}: environment.normalize={normalizeMs}ms default-parse={defaultParseMs}ms failed import-header={headerMs}ms import-env=0ms cache=default-imports"
-        pure cache.default
-      else
-        let key := importSpec.key
-        let entries ← cache.entries.get
-        match entries.find? (fun entry => entry.1 == key) with
-        | some (_, env) =>
-            let (_, rememberMs) ← timeIO <| cache.rememberEnvironment key env
-            profileLine options
-              s!"{fileName}: environment.normalize={normalizeMs}ms default-parse={defaultParseMs}ms failed import-header={headerMs}ms import-env=0ms cache=hit remember={rememberMs}ms"
-            pure env
-        | none =>
-            let (env, importMs) ←
-              timeIO
-              <| match cache.importPrefixes? with
-                  | some prefixes => prefixes.importEnvironment importSpec
-                  | none => LeanEnvironment.importEnvironment importSpec
-            let (_, rememberMs) ← timeIO <| cache.rememberEnvironment key env
-            profileLine options
-              s!"{fileName}: environment.normalize={normalizeMs}ms default-parse={defaultParseMs}ms failed import-header={headerMs}ms import-env={importMs}ms cache=miss remember={rememberMs}ms"
-            pure env
+      loadFromHeader s!"{defaultParseStop - defaultParseStart}ms failed"
 
 def relativePathFromComponents (base path : List String) : Option FilePath :=
   let rec dropCommon : List String → List String → List String × List String

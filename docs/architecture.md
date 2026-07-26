@@ -79,8 +79,10 @@ Formatting a file follows this pipeline:
    handles files that parse in the default environment. A short-lived worker then
    runs in the target package's Lake environment. Files are ordered by their exact
    normalized import header so identical environments are adjacent. The worker asks
-   Lean to construct each exact environment and retains a bounded LRU cache keyed by
-   the ordered imports and import level. A second bounded cache retains Lean's opaque
+   Lean to construct each exact environment and retains only the most recent one,
+   keyed by the ordered imports and import level. Because files are ordered by exact
+   header, this lets adjacent files with the same header share one environment without
+   retaining a general environment LRU. A separate bounded cache retains Lean's opaque
    `ImportState` after the first direct import; adjacent headers with the same prefix
    ask `importModulesCore` to extend that state in original order before
    `finalizeImport` constructs the exact environment. LeanFmt never inspects or
@@ -91,7 +93,7 @@ Formatting a file follows this pipeline:
    maintenance boundary for these APIs. Driver policy is deliberately separate:
    imported files run serially in short-lived workers of at most 16 files by default.
    Restarting the process bounds Lean runtime state that is not owned by the explicit
-   environment caches. `--worker-batch-size` overrides that limit. Setting
+   loader state. `--worker-batch-size` overrides that limit. Setting
    `--env-cache-size` to zero also bypasses prefix-state reuse and calls Lean's direct
    importer, providing a compatibility and diagnostic path when Lean's incremental
    importer changes.
