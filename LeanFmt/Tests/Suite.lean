@@ -4582,6 +4582,35 @@ def assertMovedProofWidgetsJsxUsesPendingIndent : IO Unit := do
   assertTrue "parent-relative JSX layout avoids introduced overflow"
     (Formatter.linesFit wideRendered.output 100)
 
+def assertMovedInterpolatedStringUsesPendingIndent (env : Lean.Environment)
+    : IO Unit := do
+  let source :=
+    "def movedMessage (value : Nat) :=\n"
+    ++ "  logInfo <| match value with\n"
+    ++ "  | 0 => \"zero\"\n"
+    ++ "  | _ =>\n"
+    ++ "    m!\"the value was {value}, so this message remains attached to its alternative\"\n"
+  let expected :=
+    "def movedMessage (value : Nat) :=\n"
+    ++ "  logInfo\n"
+    ++ "  <| match value with\n"
+    ++ "      | 0 => \"zero\"\n"
+    ++ "      | _ =>\n"
+    ++ "          m!\"the value was {value}, so this message remains attached to its alternative\"\n"
+  let result ←
+    Formatter.formatSourceWithEnvDetailed
+      env source "moved-interpolated-string-pending-indent.lean"
+  assertTrue "moved interpolated string formats without fallback" (!result.fellBack)
+  assertEq "moved interpolated string follows its alternative indentation"
+    expected result.formatted
+  assertTrue "moved interpolated string preserves code"
+    (← codePreservedIgnoringWhitespace env source result.formatted)
+  let second ←
+    Formatter.formatSourceWithEnvDetailed
+      env result.formatted "moved-interpolated-string-pending-indent.lean"
+  assertEq "moved interpolated string formatting is idempotent"
+    result.formatted second.formatted
+
 def assertSegmentBaseUsesRenderedStartColumn : IO Unit := do
   let source := "left\n      right"
   let left := tokenAt "left" (String.Pos.Raw.mk 0) (String.Pos.Raw.mk 4)
@@ -8527,6 +8556,7 @@ def runExpressionAndRendererTests (env : Lean.Environment) : IO Unit := do
   assertColumnIndentationIsConservative
   assertCurrentLineFitChecksCompletedLines
   assertMovedProofWidgetsJsxUsesPendingIndent
+  assertMovedInterpolatedStringUsesPendingIndent env
   assertSegmentBaseUsesRenderedStartColumn
   assertListApplicationColumnIndent env
   assertListApplicationSourceBreakIndent env

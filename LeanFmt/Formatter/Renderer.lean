@@ -2382,20 +2382,48 @@ mutual
           if treeHasUnbreakableFirstLine state.source child childRule then
             match treeFirstSourceLineWidth? state.source child with
             | some firstLineWidth =>
-                let targetColumn :=
-                  if parentRelativeColumn + firstLineWidth <= state.options.lineWidth then
-                    some parentRelativeColumn
-                  else if sourceColumn + firstLineWidth <= state.options.lineWidth then
-                    some sourceColumn
-                  else
-                    none
-                if desiredIndent + firstLineWidth > state.options.lineWidth then
+                if desiredIndent + firstLineWidth <= state.options.lineWidth then
+                  state
+                else
+                  let renderedParentRelativeColumn? :=
+                    match state.lastToken? with
+                    | some leftToken =>
+                        if state.currentLine.endsWith leftToken.lexeme then
+                          let sourceAnchor :=
+                            originalColumnAt state.source leftToken.span.start
+                          let outputAnchor :=
+                            lineWidth state.currentLine - leftToken.lexeme.length
+                          some
+                          <| shiftColumnByAnchor sourceAnchor outputAnchor sourceColumn
+                        else
+                          none
+                    | none => none
+                  let targetColumn :=
+                    match renderedParentRelativeColumn? with
+                    | some renderedParentRelativeColumn =>
+                        if renderedParentRelativeColumn + firstLineWidth
+                            <= state.options.lineWidth then
+                          some renderedParentRelativeColumn
+                        else if LineBreakRules.treeStartsWithOpeningDelimiter child
+                                && sourceColumn + firstLineWidth
+                                    <= state.options.lineWidth then
+                          some sourceColumn
+                        else
+                          none
+                    | none =>
+                        if parentRelativeColumn + firstLineWidth
+                            <= state.options.lineWidth then
+                          some parentRelativeColumn
+                        else if LineBreakRules.treeStartsWithOpeningDelimiter child
+                                && sourceColumn + firstLineWidth
+                                    <= state.options.lineWidth then
+                          some sourceColumn
+                        else
+                          none
                   match targetColumn with
                   | some targetColumn =>
                       { state with pendingIndent? := some targetColumn }
                   | none => state
-                else
-                  state
             | none => state
           else
             state
