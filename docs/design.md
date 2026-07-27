@@ -421,6 +421,22 @@ private inductive Aligned : List α -> Prop where
 
 ## Declaration headers
 
+### Names
+
+A declaration name normally stays with its command keyword and modifiers. If that
+prefix makes the name overflow, the name moves to the ordinary four-space declaration
+continuation. Parameters and the return type then keep using the same declaration base:
+
+```lean
+private theorem
+    theoremNameThatCannotShareThePrivateTheoremHeader
+    (value : InputType)
+    : OutputType := proof
+```
+
+This name flow is shared by definitions, theorems, structures, inductives, and other
+commands that use Lean's declaration identifier syntax.
+
 ### Parameters
 
 Declaration parameters flow at binder boundaries. leanfmt keeps as many
@@ -634,6 +650,16 @@ Structure fields start on separate lines under `where`:
 structure Point where
   x : Nat
   y : Nat
+```
+
+Named structure constructors use the same field base. Constructor documentation and
+modifiers move with the constructor:
+
+```lean
+structure Wrapped where
+  /-- Build a wrapped value. -/
+  private mk ::
+  value : Nat
 ```
 
 The field break does not force a fitting `extends` clause onto a continuation

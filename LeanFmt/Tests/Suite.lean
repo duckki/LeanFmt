@@ -1776,6 +1776,31 @@ def assertStructureBreaksTopLevelFields (env : Lean.Environment) : IO Unit := do
     Formatter.formatSourceWithEnv env source "structure-top-level-fields.lean"
   assertEq "structure breaks top-level fields" expected formatted
 
+def assertStructureConstructorsInheritFieldBase (env : Lean.Environment) : IO Unit := do
+  let source :=
+    "structure DocumentedConstructor where\n"
+    ++ "/-- Build a documented value. -/\n"
+    ++ "mk ::\n"
+    ++ "value : Nat\n"
+    ++ "\n"
+    ++ "private structure PrivateConstructor where private mk :: value : Nat\n"
+  let expected :=
+    "structure DocumentedConstructor where\n"
+    ++ "  /-- Build a documented value. -/\n"
+    ++ "  mk ::\n"
+    ++ "  value : Nat\n"
+    ++ "\n"
+    ++ "private structure PrivateConstructor where\n"
+    ++ "  private mk ::\n"
+    ++ "  value : Nat\n"
+  let formatted ←
+    Formatter.formatSourceWithEnv env source "structure-constructor-base.lean"
+  assertEq "structure constructors inherit the field base" expected formatted
+  let formattedAgain ←
+    Formatter.formatSourceWithEnv env formatted
+      "structure-constructor-base-formatted.lean"
+  assertEq "structure constructor formatting is idempotent" formatted formattedAgain
+
 def assertPrivateStructureFieldsUseCommandBase (env : Lean.Environment) : IO Unit := do
   let source :=
     "private structure BadChar (N : Nat) where\n"
@@ -2547,6 +2572,40 @@ def assertBasicDeclarationBreak (env : Lean.Environment) : IO Unit := do
     ++ "  veryLongIdentifierNameThatPushesTheDefinitionBodyPastTheWidthLimit\n"
   let formatted ← Formatter.formatSourceWithEnv env source "declaration-break.lean"
   assertEq "declaration body break" expected formatted
+
+def assertLongDeclarationNamesBreakConsistently (env : Lean.Environment) : IO Unit := do
+  let source :=
+    "private def ExtremelyLongDefinitionNameThatCannotShareItsLineWithTheDefinitionKeywordAndPrefix (x : Nat) := x\n"
+    ++ "\n"
+    ++ "private theorem ExtremelyLongTheoremNameThatCannotShareItsLineWithPrivateAndTheoremPrefixes (x : Nat) : x = x := by rfl\n"
+    ++ "\n"
+    ++ "structure ExtremelyLongStructureNameThatCannotShareItsLineWithTheStructureKeywordAndPrefixMore where\n"
+    ++ "  value : Nat\n"
+    ++ "\n"
+    ++ "inductive ExtremelyLongInductiveNameThatCannotShareItsLineWithTheInductiveKeywordAndPrefixMore where\n"
+    ++ "  | value\n"
+  let formatted ← Formatter.formatSourceWithEnv env source "long-declaration-names.lean"
+  assertTextContains "modified definition name uses the declaration-name continuation"
+    formatted
+    ("private def\n"
+      ++ "    ExtremelyLongDefinitionNameThatCannotShareItsLineWithTheDefinitionKeywordAndPrefix")
+  assertTextContains "modified theorem name uses the declaration-name continuation"
+    formatted
+    ("private theorem\n"
+      ++ "    ExtremelyLongTheoremNameThatCannotShareItsLineWithPrivateAndTheoremPrefixes")
+  assertTextContains "long structure name uses the declaration-name continuation"
+    formatted
+    ("structure\n"
+      ++ "    ExtremelyLongStructureNameThatCannotShareItsLineWithTheStructureKeywordAndPrefixMore")
+  assertTextContains "long inductive name uses the declaration-name continuation"
+    formatted
+    ("inductive\n"
+      ++ "    ExtremelyLongInductiveNameThatCannotShareItsLineWithTheInductiveKeywordAndPrefixMore")
+  assertTrue "long declaration-name formatting preserves code"
+    (← codePreservedIgnoringWhitespace env source formatted)
+  let formattedAgain ←
+    Formatter.formatSourceWithEnv env formatted "long-declaration-names-formatted.lean"
+  assertEq "long declaration name formatting is idempotent" formatted formattedAgain
 
 def assertTopLevelAnnotationsBreakConsistently (env : Lean.Environment) : IO Unit := do
   let annotation :=
@@ -4046,7 +4105,8 @@ def assertSignatureParameterSourceBreakFallback (env : Lean.Environment) : IO Un
     ++ "    {ObjectIdentity : Type}\n"
     ++ "    {schema : Schema} := body\n"
   let expected :=
-    "def ExecutedGroupedSelectionSetAlignedState.of_collected_groups_recursiveAlignedAppendState\n"
+    "def\n"
+    ++ "    ExecutedGroupedSelectionSetAlignedState.of_collected_groups_recursiveAlignedAppendState\n"
     ++ "    {ObjectIdentity : Type} {schema : Schema} :=\n"
     ++ "  body\n"
   let formatted ←
@@ -7987,6 +8047,7 @@ def runBasicFormattingTests (env : Lean.Environment) : IO Unit := do
   assertLongDerivingInstanceFlowsClasses env
   assertMatchMotiveUsesTransparentRule env
   assertStructureBreaksTopLevelFields env
+  assertStructureConstructorsInheritFieldBase env
   assertPrivateStructureFieldsUseCommandBase env
   assertStructureFieldProofBreaksAfterAssignment env
   assertStructureInstanceMethodBindersFlow env
@@ -8014,6 +8075,7 @@ def runBasicFormattingTests (env : Lean.Environment) : IO Unit := do
   assertDocumentedMutualCommandsKeepBase env
   assertMovedDocumentedDoLetRecRebasesCommentedArms env
   assertBasicDeclarationBreak env
+  assertLongDeclarationNamesBreakConsistently env
   assertTopLevelAnnotationsBreakConsistently env
   assertDeclarationValueInfixBreaksAfterAssign env
   assertLongDeclarationDirectValueBreaksAfterAssign env

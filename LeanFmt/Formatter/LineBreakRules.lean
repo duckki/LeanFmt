@@ -945,9 +945,18 @@ def structFieldsBreaks (_context : RuleContext) (segment : Segment) : List Break
 def structureWhereFieldBreaks (context : RuleContext) (segment : Segment)
     : List BreakPoint :=
   if context.parentIsStructureWhereWrapper then
-    match breakAfterLexeme? segment "where" 0 with
-    | some breakPoint => [breakPoint]
-    | none => []
+    let hasConstructor :=
+      treeContainsRawKind `Lean.Parser.Command.structCtor segment.parent
+    let firstBreak :=
+      [breakAfterLexeme? segment "where" (if hasConstructor then 1 else 0)].filterMap id
+    let fieldsBreak :=
+      if hasConstructor then
+        match firstChildRawKind? segment `Lean.Parser.Command.structFields with
+        | some index => [boundaryBreak? segment index 0].filterMap id
+        | none => []
+      else
+        []
+    firstBreak ++ fieldsBreak
   else
     []
 
@@ -1999,7 +2008,9 @@ def annotatedDeclarationRule : LineBreakRule :=
     name := "annotatedDeclaration"
     useExistingBreaks := fun _ _ => true
     flow := fun context segment => !(annotatedDeclarationBreaks context segment).isEmpty
-    inheritBase := fun _ _ => false
+    inheritBase :=
+      fun _ segment =>
+        treeContainsRawKind `Lean.Parser.Command.structCtor segment.parent
     breakPoints := annotatedDeclarationBreaks
   }
 
@@ -2008,6 +2019,16 @@ def declarationModifierRule : LineBreakRule :=
     name := "declarationModifier"
     useExistingBreaks := fun _ _ => true
     breakPoints := declarationModifierBreaks
+  }
+
+def declarationIdentifierRule : LineBreakRule :=
+  {
+    name := "declarationIdentifier"
+    flow := fun _ _ => true
+    inheritBase := fun _ _ => true
+    breakPoints :=
+      fun _ segment =>
+        segment.indexes.filterMap fun index => leadingBreak? segment index 2
   }
 
 def derivingClauseRule : LineBreakRule :=
@@ -2190,6 +2211,9 @@ def structFieldsRule : LineBreakRule :=
     inheritBase := fun _ _ => true
     breakPoints := structFieldsBreaks
   }
+
+def structCtorRule : LineBreakRule :=
+  { name := "structCtor" }
 
 def inductiveRule : LineBreakRule :=
   {
@@ -3082,7 +3106,7 @@ def ruleFor : SyntaxTree.Tree → Option LineBreakRule
   | .node (.raw `Lean.Parser.Command.set_option) _ => some setOptionRule
   | .node (.raw `Lean.Parser.Command.declModifiers) _ =>
       some declarationModifierRule
-  | .node (.raw `Lean.Parser.Command.declId) _ => some transparentRule
+  | .node (.raw `Lean.Parser.Command.declId) _ => some declarationIdentifierRule
   | .node (.raw `Lean.Parser.Command.declValEqns) _ => some defaultRule
   | .node .derivingClause _ => some derivingClauseRule
   | .node .unifConstraints _ => some unifConstraintsRule
@@ -3140,7 +3164,7 @@ def ruleFor : SyntaxTree.Tree → Option LineBreakRule
   | .node (.raw `Lean.Parser.Command.omit) _ => some defaultRule
   | .node (.raw `Lean.Parser.Command.include) _ => some defaultRule
   | .node (.raw `Lean.Parser.Command.structParent) _ => some defaultRule
-  | .node (.raw `Lean.Parser.Command.structCtor) _ => some defaultRule
+  | .node (.raw `Lean.Parser.Command.structCtor) _ => some structCtorRule
   | .node (.raw `Lean.Parser.Command.structInstBinder) _ => some defaultRule
   | .node (.raw `Lean.Parser.Command.structImplicitBinder) _ =>
       some defaultRule

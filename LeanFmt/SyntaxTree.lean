@@ -371,6 +371,19 @@ def regroupSignatureParameters : Tree → Tree
   | .node (.raw `null) children => .node .signatureParameters children
   | tree => tree
 
+def flattenDeclarationIdentifierChild : Tree → Array Tree
+  | .node (.raw `Lean.Parser.Command.optDeclSig) children
+  | .node (.raw `Lean.Parser.Command.declSig) children =>
+      children.flatMap
+        fun child =>
+          match child with
+          | .node .signatureParameters parameters => parameters
+          | child => #[child]
+  | child => #[child]
+
+def regroupDeclarationIdentifierChildren (children : Array Tree) : Array Tree :=
+  children.flatMap flattenDeclarationIdentifierChild
+
 def regroupUnifHintChildren (children : Array Tree) : Array Tree :=
   let children :=
     match children[4]? with
@@ -714,6 +727,33 @@ def annotatedDeclarationTree (annotations modifiers declaration : Tree) : Tree :
       #[annotations, declaration]
   .node .annotatedDeclaration children
 
+def regroupStructCtor (children : Array Tree) : Tree :=
+  let command := .node (.raw `Lean.Parser.Command.structCtor) (children.set! 0 .missing)
+  match children[0]? with
+  | some modifiers =>
+      match splitLeadingAnnotations? modifiers with
+      | some (annotations, remainingModifiers) =>
+          annotatedDeclarationTree annotations remainingModifiers command
+      | none =>
+          if modifiers.firstToken?.isSome then
+            .node .annotatedDeclaration #[modifiers, command]
+          else
+            command
+  | none => command
+
+def regroupStructureWhereChildren (children : Array Tree) : Array Tree :=
+  match children[4]? with
+  | some (Tree.node (.raw `null) whereChildren) =>
+      match whereChildren[1]? with
+      | some (Tree.node (.raw `null) declarations) =>
+          children.set! 4
+          <| Tree.node (.raw `null)
+          <| childrenRange whereChildren 0 1
+              ++ declarations
+              ++ childrenRange whereChildren 2 whereChildren.size
+      | _ => children
+  | _ => children
+
 def regroupDeclarationValueCommand (kind : SyntaxNodeKind) (children : Array Tree)
     : Tree :=
   let children := regroupEquationTrailingClauseChildren children
@@ -1035,6 +1075,12 @@ def regroupRawNode (kind : SyntaxNodeKind) (children : Array Tree) : Tree :=
         .node (.raw kind) #[regroupSignatureParameters parameters, typeSpec]
     | _, _ =>
         .node (.raw kind) children
+  else if kind == `Lean.Parser.Command.declId then
+    .node (.raw kind) (regroupDeclarationIdentifierChildren children)
+  else if kind == `Lean.Parser.Command.structCtor then
+    regroupStructCtor children
+  else if kind == `Lean.Parser.Command.structure then
+    .node (.raw kind) (regroupStructureWhereChildren children)
   else if kind == `Lean.Parser.Term.basicFun then
     match children[0]? with
     | some parameters =>
