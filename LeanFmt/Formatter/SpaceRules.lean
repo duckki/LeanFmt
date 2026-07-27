@@ -195,6 +195,18 @@ def commentIndentForWidth (text : String) (desiredIndent lineWidth : Nat) : Nat 
     | some capacity => min desiredIndent capacity
     | none => desiredIndent
 
+def standaloneSourceCommentIndent? (text : String) : Option Nat :=
+  match (normalizeLineEndings text).splitOn "\n" with
+  | [] | [_] => none
+  | _ :: rest =>
+      rest.findSome?
+        fun line =>
+          let stripped := stripLeadingHorizontalWhitespace line
+          if stripped.startsWith "--" || stripped.startsWith "/-" then
+            some (line.length - stripped.length)
+          else
+            none
+
 def commentTriviaForBreakWithFollowingIndent (text commentIndent followingIndent : String)
     : String :=
   let adjusted := reindentCommentTrivia text commentIndent

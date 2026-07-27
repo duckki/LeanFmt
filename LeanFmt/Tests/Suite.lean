@@ -370,6 +370,25 @@ def assertMovedStandaloneCommentsKeepSiblingIndent (env : Lean.Environment)
   assertEq "moved standalone comment keeps its sibling indentation" expected formatted
   assertTrue "moved standalone comment preserves code"
     (← codePreservedIgnoringWhitespace env source formatted)
+  let blockCommentSource :=
+    "def movedBlockComment :=\n"
+    ++ "  fun value =>\n"
+    ++ "  /- If all elements of the family are evaluatable and the resulting family is compatible, take\n"
+    ++ "  the glued section without changing internal comment indentation. -/\n"
+    ++ "  value\n"
+  let blockCommentExpected :=
+    "def movedBlockComment :=\n"
+    ++ "  fun value =>\n"
+    ++ "  /- If all elements of the family are evaluatable and the resulting family is compatible, take\n"
+    ++ "  the glued section without changing internal comment indentation. -/\n"
+    ++ "    value\n"
+  let blockCommentFormatted ←
+    Formatter.formatSourceWithEnv env blockCommentSource
+      "moved-block-comment-width.lean" { lineWidth := 95 }
+  assertEq "moved block comment uses its safe fitting indentation"
+    blockCommentExpected blockCommentFormatted
+  assertTrue "moved block comment preserves code"
+    (← codePreservedIgnoringWhitespace env blockCommentSource blockCommentFormatted)
 
 def assertAtomicTokenRetainsFittingSourceColumn (env : Lean.Environment) : IO Unit := do
   let firstLine := "\"" ++ String.ofList (List.replicate 98 'x')
@@ -420,6 +439,24 @@ def assertDoBodyRetainsSourceLayoutToAvoidOverflow (env : Lean.Environment)
     (Formatter.linesFit formatted 60)
   assertTrue "do body source layout fallback preserves code"
     (← codePreservedIgnoringWhitespace env source formatted)
+  let inlineMessage := "\"" ++ String.ofList (List.replicate 40 'x') ++ "\""
+  let inlineSource :=
+    "initialize registerBuiltinAttribute {\n"
+    ++ "  name := `sample\n"
+    ++ "  descr := \"\"\n"
+    ++ "  add := fun src ref kind => MetaM.run' do\n"
+    ++ "    if (kind != AttributeKind.global) then\n"
+    ++ "      throwError "
+    ++ inlineMessage
+    ++ "\n"
+    ++ "}\n"
+  let inlineFormatted ←
+    Formatter.formatSourceWithEnv env inlineSource
+      "do-body-inline-atomic-overflow.lean" { lineWidth := 60 }
+  assertTrue "do body source layout avoids moved inline atomic overflow"
+    (Formatter.linesFit inlineFormatted 60)
+  assertTrue "inline atomic do body fallback preserves code"
+    (← codePreservedIgnoringWhitespace env inlineSource inlineFormatted)
 
 def assertRegisterOptionValueUsesDeclarationLayout (env : Lean.Environment)
     : IO Unit := do
@@ -918,6 +955,114 @@ def assertTrailingLineCommentPreserved (env : Lean.Environment) : IO Unit := do
   let source := "def answer : Nat := 0 -- trailing comment\n"
   let formatted ← Formatter.formatSourceWithEnv env source "trailing-line-comment.lean"
   assertEq "trailing line comment preserved" source formatted
+
+def assertCommentAfterOpeningDelimiterPreserved (env : Lean.Environment) : IO Unit := do
+  let source :=
+    "def obj X :=\n"
+    ++ "  ChainComplex.of (fun n => value n)\n"
+    ++ "    (-- the coercion here picks a representative of the subobject\n"
+    ++ "      objD X) (d_squared X)\n"
+  let result ← Formatter.formatSourceWithEnvDetailed env source "commented-delimiter.lean"
+  assertEq "commented delimiter keeps its source-broken application argument"
+    source result.formatted
+  assertTrue "commented delimiter does not cause a format fallback" !result.fellBack
+  assertTrue "commented delimiter preserves code and the comment"
+    (← codePreservedIgnoringWhitespace env source result.formatted)
+
+def assertProofIslandRetainsFittingSourceIndent (env : Lean.Environment) : IO Unit := do
+  let source :=
+    "def shiftedRewriteRules :=\n"
+    ++ "  outer\n"
+    ++ "    (fun x => by\n"
+    ++ "    rw [map_zero, ← ConcreteCategory.comp_apply, ← NatTrans.naturality, ConcreteCategory.comp_apply]\n"
+    ++ "      at hk)\n"
+  let expected :=
+    "def shiftedRewriteRules :=\n"
+    ++ "  outer\n"
+    ++ "    (fun x => by\n"
+    ++ "    rw [map_zero, ← ConcreteCategory.comp_apply, ← NatTrans.naturality, ConcreteCategory.comp_apply]\n"
+    ++ "      at hk)\n"
+  let formatted ←
+    Formatter.formatSourceWithEnv env source "fitting-proof-island-indent.lean"
+      { lineWidth := 100 }
+  assertEq "proof island keeps its fitting source indent instead of overflowing"
+    expected formatted
+  assertTrue "proof island source-indent fallback fits" (Formatter.linesFit formatted 100)
+
+def assertProofIslandFitIncludesParentSuffix (env : Lean.Environment) : IO Unit := do
+  let source :=
+    "def nestedProof :=\n"
+    ++ "  outer _ _\n"
+    ++ "    (fun x hx b hb => Quiver.Hom.op_inj (Cofork.IsColimit.hom_ext h\n"
+    ++ "      (by exact veryLongQualifiedIdentifierNameThatNearlyFillsTheAvailableSourceLinexxxxxxxxx hb)))\n"
+  let expected :=
+    "def nestedProof :=\n"
+    ++ "  outer _ _\n"
+    ++ "    (fun x hx b hb =>\n"
+    ++ "      Quiver.Hom.op_inj (Cofork.IsColimit.hom_ext h (by\n"
+    ++ "          exact veryLongQualifiedIdentifierNameThatNearlyFillsTheAvailableSourceLinexxxxxxxxx hb)))\n"
+  let formatted ←
+    Formatter.formatSourceWithEnv env source "fitting-proof-island-suffix.lean"
+      { lineWidth := 100 }
+  assertEq "proof island fitting reserves its tight parent suffix" expected formatted
+  assertTrue "proof island plus its parent suffix fits" (Formatter.linesFit formatted 100)
+
+def assertQuotationIslandRetainsFittingSourceIndent (env : Lean.Environment)
+    : IO Unit := do
+  let source :=
+    "local macro \"map_simp\" : tactic =>\n"
+    ++ "  `(tactic| simp only [map_ofNat, map_neg, map_add, map_sub, map_mul, map_pow, map_div₀,\n"
+    ++ "    Polynomial.map_ofNat, map_C, map_X, Polynomial.map_neg, Polynomial.map_add, Polynomial.map_sub,\n"
+    ++ "    Polynomial.map_mul, Polynomial.map_pow])\n"
+  let expected :=
+    "local\n"
+    ++ "macro \"map_simp\"\n"
+    ++ "  : tactic =>\n"
+    ++ "  `(tactic| simp only [map_ofNat, map_neg, map_add, map_sub, map_mul, map_pow, map_div₀,\n"
+    ++ "    Polynomial.map_ofNat, map_C, map_X, Polynomial.map_neg, Polynomial.map_add, Polynomial.map_sub,\n"
+    ++ "    Polynomial.map_mul, Polynomial.map_pow])\n"
+  let formatted ←
+    Formatter.formatSourceWithEnv env source "fitting-quotation-island-indent.lean"
+      { lineWidth := 100 }
+  assertEq "quotation island keeps a uniform fitting source indent" expected formatted
+  assertTrue "quotation island source-indent fallback fits"
+    (Formatter.linesFit formatted 100)
+
+def assertMultitokenChildRetainsFittingSourceColumn (env : Lean.Environment)
+    : IO Unit := do
+  let source :=
+    "instance (i j : J) :\n"
+    ++ "    PresheafedSpace.IsOpenImmersion\n"
+    ++ "      (D.toLocallyRingedSpaceGlueData.toSheafedSpaceGlueData.toPresheafedSpaceGlueData.toGlueData.f\n"
+    ++ "        i j) := by\n"
+    ++ "  exact proof\n"
+  let expected :=
+    "instance (i j : J)\n"
+    ++ "    : PresheafedSpace.IsOpenImmersion\n"
+    ++ "      (D.toLocallyRingedSpaceGlueData.toSheafedSpaceGlueData.toPresheafedSpaceGlueData.toGlueData.f\n"
+    ++ "        i j) := by\n"
+    ++ "  exact proof\n"
+  let formatted ←
+    Formatter.formatSourceWithEnv env source "fitting-multitoken-child-column.lean"
+      { lineWidth := 100 }
+  assertEq "multitoken child keeps its fitting source column" expected formatted
+  assertTrue "multitoken child source-column fallback fits"
+    (Formatter.linesFit formatted 100)
+
+def assertOverflowingTrailingLineCommentBreaks (env : Lean.Environment) : IO Unit := do
+  let source :=
+    "def commentAfterCode : Nat := do\n"
+    ++ "  let value := 0 -- explanatory trailing comment\n"
+    ++ "  pure value\n"
+  let expected :=
+    "def commentAfterCode : Nat := do\n"
+    ++ "  let value := 0\n"
+    ++ "  -- explanatory trailing comment\n"
+    ++ "  pure value\n"
+  let formatted ←
+    Formatter.formatSourceWithEnv env source "overflowing-trailing-line-comment.lean"
+      { lineWidth := 35 }
+  assertEq "overflowing trailing line comment moves to its own line" expected formatted
 
 def assertAnonymousConstructorAfterListKeepsSpace (env : Lean.Environment) : IO Unit := do
   let source :=
@@ -7908,6 +8053,14 @@ def assertSyntaxDeclarationsHaveRules (env : Lean.Environment) : IO Unit := do
     (Formatter.Diagnostics.missingRuleOccurrencesForModule moduleTree).isEmpty
   let formatted ← Formatter.formatSourceWithEnv env source "syntax-declaration-rules.lean"
   assertTextContains "syntax separator stays tight" formatted "term,*"
+  let macroSource :=
+    "macro (name := expandFold) \"expand_fold% \"\n"
+    ++ "  \"(\" x:ident \" => \" term:term \") \" init:term:max : term =>\n"
+    ++ "  term.replaceM fun current =>\n"
+    ++ "    return if current == x then some init else none\n"
+  let macroFormatted ←
+    Formatter.formatSourceWithEnv env macroSource "macro-command-source-layout.lean"
+  assertEq "macro declarations keep their source layout" macroSource macroFormatted
 
 def assertElaborationSyntaxHasRules (env : Lean.Environment) : IO Unit := do
   let source :=
@@ -7924,6 +8077,11 @@ def assertElaborationSyntaxHasRules (env : Lean.Environment) : IO Unit := do
     ++ "\n"
     ++ "run_cmd Lean.Elab.Command.liftTermElabM do\n"
     ++ "  pure ()\n"
+    ++ "  -- Keep this comment with the run_cmd body.\n"
+    ++ "  -- Keep this one there too.\n"
+    ++ "\n"
+    ++ "namespace AfterRunCmd\n"
+    ++ "end AfterRunCmd\n"
   let formatted ← Formatter.formatSourceWithEnv env source "elaboration-syntax-rules.lean"
   assertTrue "elaboration syntax formatting preserves code"
     (← codePreservedIgnoringWhitespace env source formatted)
@@ -7932,6 +8090,14 @@ def assertElaborationSyntaxHasRules (env : Lean.Environment) : IO Unit := do
     ("elab \"identity% \" t:term : term => do\n"
       ++ "  let declarationName := ``Nat.succ\n"
       ++ "  return t\n")
+  assertTextContains "run_cmd bodies keep their source layout"
+    formatted
+    ("run_cmd Lean.Elab.Command.liftTermElabM do\n"
+      ++ "  pure ()\n"
+      ++ "  -- Keep this comment with the run_cmd body.\n"
+      ++ "  -- Keep this one there too.\n"
+      ++ "\n"
+      ++ "namespace AfterRunCmd\n")
   let moduleTree ←
     SyntaxTree.parseModuleStringWithEnv env formatted
       "elaboration-syntax-rules-formatted.lean"
@@ -8233,6 +8399,12 @@ def runBasicFormattingTests (env : Lean.Environment) : IO Unit := do
   assertCommentsDoNotBlockFormatting env
   assertLeadingCommentsPreserved env
   assertTrailingLineCommentPreserved env
+  assertCommentAfterOpeningDelimiterPreserved env
+  assertProofIslandRetainsFittingSourceIndent env
+  assertProofIslandFitIncludesParentSuffix env
+  assertQuotationIslandRetainsFittingSourceIndent env
+  assertMultitokenChildRetainsFittingSourceColumn env
+  assertOverflowingTrailingLineCommentBreaks env
   assertAnonymousConstructorAfterListKeepsSpace env
   assertAttributeDeclarationPreservesSourceBreak env
   assertAttributesFlowBeforeDeclarations env

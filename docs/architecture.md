@@ -562,8 +562,13 @@ Rules and regroupings should preserve these cross-syntax relationships:
   sequence fits; width pressure can still activate the ordinary sequence layout.
 - Interpolated strings are atomic nodes: parents may break before the complete atom, but
   neither `s!` nor interpolation children break independently.
-- Comments remain trivia attached to their surrounding tokens. Grouping and balancing
-  must preserve comment text and allow the containing rule to recompute indentation.
+- Comments remain source text between the surrounding lexical tokens. Lean normally
+  exposes them as token trivia, but it may leave a comment only in the physical source
+  gap after an opening delimiter. Grouping and balancing must preserve that source-gap
+  text and allow the containing rule to recompute indentation. A source-broken
+  application argument that starts with a delimiter followed by a line comment retains
+  its argument break so the delimiter and comment do not migrate onto the preceding
+  application line.
 
 This separation lets rules say "this boundary may follow source layout" without letting
 source indentation leak into renderer state.
@@ -748,15 +753,26 @@ is reconstructed token by token so whitespace inside string and other atomic tok
 lexemes is never changed.
 An original-source island whose own source slice is single-line still participates in
 ordinary flat-fit checks, so inline extension syntax does not force its parent to break.
-Syntax-authoring commands (`syntax`, `macro_rules`, `elab`, and `elab_rules`), Batteries
+Syntax-authoring commands (`syntax`, source-broken `macro` signatures, `macro_rules`,
+`elab`, `elab_rules`, and `run_cmd`), Batteries
 alias and library-note commands, and other explicitly cataloged extension-owned commands
-are layout islands for the same reason.
+are layout islands for the same reason. When such a command owns standalone trailing
+comments, the original island carries a one-boundary comment-indentation marker so those
+comments retain their source indentation without affecting the following formatted
+command.
 
-If a single-token value already starts on a source line and moving it to the
-preferred indentation would create an otherwise avoidable overflow, the renderer keeps
-the source column translated by the parent layout's movement. Multiline atomic tokens and
-unwrappable comment trivia use the analogous source-fitting column check. Structural
-indentation of the following code remains unchanged.
+If an unbreakable value already starts on a source line and moving it to the preferred
+indentation would create an otherwise avoidable overflow, the renderer first keeps its
+source column translated by the parent layout's movement. When a source-broken
+application begins with an unbreakable qualified head and that parent-relative column
+still overflows, the renderer may use the original absolute source column as a final
+fitting candidate. Single tokens, atomic rules, and projection-chain heads use the same
+mechanism. Multiline atomic tokens, quotation islands, and unwrappable comment trivia use
+the analogous source-fitting column check. Structural indentation of the following code
+remains unchanged. If reformatted code makes an attached line comment overflow, the
+renderer moves the unchanged comment text to its own line. It prefers the surrounding
+structural indentation, then the comment's original fitting column, without changing the
+following code's indentation.
 
 ## Diagnostics and formatter exceptions
 
