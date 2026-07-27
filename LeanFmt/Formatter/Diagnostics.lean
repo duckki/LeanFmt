@@ -546,6 +546,44 @@ def isolatedTokenSourceLineOverflowed
       | some sourceToken =>
           lineWidthAtToken? sourceModule sourceToken |>.any (lineWidth < ·)
 
+def lineStartPosition (source : String) (lineNumber : Nat) : String.Pos.Raw :=
+  (source.splitOn "\n").take (lineNumber - 1)
+  |>.foldl (fun position line => positionAfter position (line ++ "\n")) 0
+
+def atomicSyntaxSourceLineOverflowed
+    (sourceModule formattedModule : SyntaxTree.Module)
+    (sourceTokens formattedTokens : List SyntaxTree.Token)
+    (formattedAtomicSpans : List SyntaxTree.Span)
+    (occurrence : OverflowOccurrence) (lineWidth : Nat)
+    : Bool :=
+  let lineStart := lineStartPosition formattedModule.source occurrence.line
+  let overflowStart := positionAfter lineStart (occurrence.text.take lineWidth).toString
+  let contentStop := positionAfter lineStart occurrence.text.trimAsciiEnd.toString
+  let span? :=
+    formattedAtomicSpans.find?
+      (spanWithLineEndersCovers formattedTokens overflowStart contentStop)
+  match span? with
+  | none => false
+  | some span =>
+      let indexes :=
+        formattedTokens.zipIdx.filterMap
+          fun (token, index) =>
+            if span.start <= token.span.start
+                && token.span.stop <= span.stop
+                && tokenIntersects lineStart contentStop token then
+              some index
+            else
+              none
+      match indexes.head?, indexes.getLast? with
+      | some firstIndex, some lastIndex =>
+          match sourceTokens[firstIndex]?, sourceTokens[lastIndex]? with
+          | some firstToken, some lastToken =>
+              lineNumberAt sourceModule.source firstToken.span.start
+                == lineNumberAt sourceModule.source lastToken.span.start
+              && (lineWidthAtToken? sourceModule firstToken).any (lineWidth < ·)
+          | _, _ => false
+      | _, _ => false
+
 def formattingExceptions (sourceModule formattedModule : SyntaxTree.Module)
     (options : Options := {})
     : List FormattingException :=
@@ -561,6 +599,7 @@ def formattingExceptions (sourceModule formattedModule : SyntaxTree.Module)
     else
       let sourceTokens := realTokens sourceModule
       let formattedTokens := realTokens formattedModule
+      let formattedAtomicSpans := indivisibleOverflowSpans formattedModule.tree
       let sourceOverflowTexts :=
         (overflowOccurrencesWith sourceModule options false).map
           fun occurrence =>
@@ -570,6 +609,10 @@ def formattingExceptions (sourceModule formattedModule : SyntaxTree.Module)
           if sourceOverflowTexts.contains occurrence.text.trimAscii
               || isolatedTokenSourceLineOverflowed sourceModule formattedModule
                   sourceTokens formattedTokens occurrence options.lineWidth then
+            none
+          else if atomicSyntaxSourceLineOverflowed sourceModule formattedModule
+                    sourceTokens formattedTokens formattedAtomicSpans occurrence
+                    options.lineWidth then
             none
           else
             some <| FormattingException.lineOverflow occurrence

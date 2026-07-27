@@ -6931,6 +6931,44 @@ def assertFormattingExceptionChecks (env : Lean.Environment) : IO Unit := do
           match exception with
           | .lineOverflow _ => true
           | _ => false)
+  let inheritedAtomicPayload :=
+    String.ofList (List.replicate (Formatter.maxLineWidth - 10) 'x')
+  let inheritedAtomicSource :=
+    "def message := m!\"" ++ inheritedAtomicPayload ++ "{value}\"\n"
+  let inheritedAtomicFormatted :=
+    "def message :=\n  m!\"" ++ inheritedAtomicPayload ++ "{value}\"\n"
+  let inheritedAtomicSourceModule ←
+    SyntaxTree.parseModuleStringWithEnv env inheritedAtomicSource
+      "source-overflowing-atomic-syntax.lean"
+  let inheritedAtomicFormattedModule ←
+    SyntaxTree.parseModuleStringWithEnv env inheritedAtomicFormatted
+      "formatted-overflowing-atomic-syntax.lean"
+  assertTrue "atomic syntax inherits its source-line overflow"
+    (!(Formatter.Diagnostics.formattingExceptions
+        inheritedAtomicSourceModule inheritedAtomicFormattedModule).any
+        fun exception =>
+          match exception with
+          | .lineOverflow _ => true
+          | _ => false)
+  let movedAtomicPayload :=
+    String.ofList (List.replicate (Formatter.maxLineWidth - 14) 'x')
+  let fittingAtomicSource :=
+    "def message :=\n  m!\"" ++ movedAtomicPayload ++ "{value}\"\n"
+  let movedAtomicFormatted :=
+    "def message :=\n      m!\"" ++ movedAtomicPayload ++ "{value}\"\n"
+  let fittingAtomicSourceModule ←
+    SyntaxTree.parseModuleStringWithEnv env fittingAtomicSource
+      "fitting-atomic-syntax.lean"
+  let movedAtomicFormattedModule ←
+    SyntaxTree.parseModuleStringWithEnv env movedAtomicFormatted
+      "moved-atomic-syntax-overflow.lean"
+  assertTrue "newly indented atomic syntax overflow is attributed to formatting"
+    ((Formatter.Diagnostics.formattingExceptions
+        fittingAtomicSourceModule movedAtomicFormattedModule).any
+      fun exception =>
+        match exception with
+        | .lineOverflow _ => true
+        | _ => false)
   let proofCloseIdentifier :=
     String.ofList (List.replicate (Formatter.maxLineWidth - 16) 'x')
   let proofCloseOverflow :=
