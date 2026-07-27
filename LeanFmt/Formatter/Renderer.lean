@@ -162,6 +162,39 @@ def rebaseOriginalTreeText
   | [] => ""
   | first :: rest => String.join <| (loop first [first.lexeme] rest).reverse
 
+def fittingOriginalTreeTargetColumn
+    (source : String) (tree : SyntaxTree.Tree) (sourceText : String)
+    (sourceColumn targetColumn lineWidthLimit suffixWidth : Nat)
+    : Nat :=
+  if targetColumn <= sourceColumn then
+    targetColumn
+  else
+    let rebasedText := rebaseOriginalTreeText source tree sourceColumn targetColumn
+    let sourceLines := (SpaceRules.normalizeLineEndings sourceText).splitOn "\n"
+    let rebasedLines := (SpaceRules.normalizeLineEndings rebasedText).splitOn "\n"
+    let rec maximumOverflow (lineIndex maximum : Nat) : List String → List String → Nat
+      | sourceLine :: sourceRest, rebasedLine :: rebasedRest =>
+          let sourceWidth :=
+            sourceLine.length
+            + (if lineIndex == 0 then sourceColumn else 0)
+            + (if sourceRest.isEmpty then suffixWidth else 0)
+          let rebasedWidth :=
+            rebasedLine.length
+            + (if lineIndex == 0 then targetColumn else 0)
+            + (if rebasedRest.isEmpty then suffixWidth else 0)
+          let allowedWidth := max lineWidthLimit sourceWidth
+          let overflow :=
+            if allowedWidth < rebasedWidth then
+              rebasedWidth - allowedWidth
+            else
+              0
+          maximumOverflow (lineIndex + 1) (max maximum overflow) sourceRest rebasedRest
+      | _, _ => maximum
+    let overflow := maximumOverflow 0 0 sourceLines rebasedLines
+    let roundedReduction :=
+      ((overflow + indentationSpaces - 1) / indentationSpaces) * indentationSpaces
+    targetColumn - min (targetColumn - sourceColumn) roundedReduction
+
 def originalContinuationIndent? (text : String) : Option Nat :=
   (SpaceRules.normalizeLineEndings text).splitOn "\n" |>.drop 1
   |>.foldl
@@ -174,6 +207,58 @@ def originalContinuationIndent? (text : String) : Option Nat :=
           | some minimum => some (min minimum indentation)
           | none => some indentation)
       none
+
+def treeFirstSourceLineWidth? (source : String) (tree : SyntaxTree.Tree)
+    : Option Nat := do
+  let first ← tree.firstToken?
+  let last ← tree.lastToken?
+  some
+  <| (firstLineAppendWidth
+        (SyntaxTree.sourceText source first.span.start last.span.stop)).1
+
+partial def treeStartsWithProjectionChain : SyntaxTree.Tree → Bool
+  | .node (.infixChain `Lean.Parser.Term.proj) _ => true
+  | .node .application children =>
+      children[0]?.any treeStartsWithProjectionChain
+  | .node (.raw kind) children =>
+      (kind == `Lean.Parser.Term.paren
+        || kind == `Lean.Parser.Term.hygienicLParen
+        || kind == `null)
+      && children.any treeStartsWithProjectionChain
+  | _ => false
+
+def treeIsUnbreakableHead (tree : SyntaxTree.Tree) : Bool :=
+  tree.singleToken?.isSome
+  || treeStartsWithProjectionChain tree
+  || (LineBreakRules.ruleFor tree).any (·.atomic)
+
+partial def treeStartsWithSourceBrokenUnbreakableHead (source : String)
+    : SyntaxTree.Tree → Bool
+  | .node .application children =>
+      match children[0]?, children[1]? with
+      | some head, some firstArgument =>
+          treeIsUnbreakableHead head
+          && match head.lastToken?, firstArgument.firstToken? with
+              | some left, some right =>
+                  SpaceRules.hasLineStructure
+                    (SyntaxTree.sourceText source left.span.stop right.span.start)
+              | _, _ => false
+      | _, _ => false
+  | .node (.raw kind) children =>
+      (kind == `Lean.Parser.Term.paren
+        || kind == `Lean.Parser.Term.hygienicLParen
+        || kind == `null)
+      && children.any (treeStartsWithSourceBrokenUnbreakableHead source)
+  | _ => false
+
+def treeHasUnbreakableFirstLine
+    (source : String) (tree : SyntaxTree.Tree)
+    (rule : LineBreakRules.LineBreakRule)
+    : Bool :=
+  tree.singleToken?.isSome
+  || rule.atomic
+  || treeStartsWithProjectionChain tree
+  || treeStartsWithSourceBrokenUnbreakableHead source tree
 
 structure SourceBreak where
   index : Nat
@@ -509,11 +594,12 @@ def RenderState.emitToken (state : RenderState) (token : SyntaxTree.Token)
               | some leftToken =>
                   SyntaxTree.sourceText state.source leftToken.span.stop token.span.start
               | none => token.leading.text
-            if SpaceRules.hasLineStructure sourceLeading then
-              let sourceColumn := lineWidth <| charsAfterLastNewline sourceLeading
-              sourceColumn + tokenWidth <= state.options.lineWidth
-            else
-              false
+            let sourceColumn :=
+              if SpaceRules.hasLineStructure sourceLeading then
+                lineWidth <| charsAfterLastNewline sourceLeading
+              else
+                originalColumnAt state.source token.span.start
+            sourceColumn + tokenWidth <= state.options.lineWidth
           else
             false
     {
@@ -783,6 +869,12 @@ def isQuotationLayoutIsland (tree : SyntaxTree.Tree) : Bool :=
 
 def isProofLayoutIsland (tree : SyntaxTree.Tree) : Bool :=
   match tree with
+  | .node .application children =>
+      match children[1]? with
+      | some argument =>
+          LineBreakRules.treeFirstLexeme? argument == some "fun"
+          && containsProofTree argument
+      | none => false
   | .node (.raw `Lean.Parser.Command.declValEqns) _ =>
       containsProofTree tree
   | .node (.raw `Lean.Parser.Term.structInst) _ =>
@@ -919,6 +1011,20 @@ def RenderState.emitOriginalTree
                 if sourceAnchor < sourceIndent then movedIndent else sourceIndent
               some (sourceIndent, max movedIndent structuralIndent)
           | _, _ => none
+      let inlineContinuationColumns? :=
+        match inlineContinuationColumns? with
+        | some (sourceIndent, targetIndent) =>
+            if isQuotationTree tree then
+              some
+                (
+                  sourceIndent,
+                  fittingOriginalTreeTargetColumn state.source tree sourceText
+                    sourceIndent targetIndent state.options.lineWidth
+                    state.lineFitSuffixWidth
+                )
+            else
+              some (sourceIndent, targetIndent)
+        | none => none
       let sourceColumnRebasedFromLayoutBase :=
         shiftColumnByAnchor state.sourceLayoutBaseColumn
           state.outputLayoutBaseColumn sourceColumn
@@ -938,6 +1044,14 @@ def RenderState.emitOriginalTree
           targetColumn?.map
             fun targetColumn =>
               max state.outputLayoutBaseColumn targetColumn
+        else
+          targetColumn?
+      let targetColumn? :=
+        if (isProofTree tree || isQuotationTree tree) && !inlineMultilineLayoutIsland then
+          targetColumn?.map
+            fun targetColumn =>
+              fittingOriginalTreeTargetColumn state.source tree sourceText sourceColumn
+                targetColumn state.options.lineWidth state.lineFitSuffixWidth
         else
           targetColumn?
       let leading :=
@@ -1134,6 +1248,7 @@ def WidthState.afterFlatTreeForSuffix (state : WidthState) (tree : SyntaxTree.Tr
 structure SuffixState where
   widthState : WidthState
   suffixWidth : Nat
+  delimiterDepth : Nat := 0
 
 def SuffixState.appendText (state : SuffixState) (text : String) : SuffixState × Bool :=
   let (addedWidth, stopped) := firstLineAppendWidth text
@@ -1152,6 +1267,13 @@ def SuffixState.emitToken (state : SuffixState) (token : SyntaxTree.Token)
   else
     let text := state.widthState.defaultWhitespace token preserveLines ++ token.lexeme
     let (state, stopped) := state.appendText text
+    let delimiterDepth :=
+      if LineBreakRules.suffixOpeningDelimiterLexeme token.lexeme then
+        state.delimiterDepth + 1
+      else if LineBreakRules.suffixClosingDelimiterLexeme token.lexeme then
+        state.delimiterDepth - 1
+      else
+        state.delimiterDepth
     (
       {
         state with
@@ -1161,6 +1283,7 @@ def SuffixState.emitToken (state : SuffixState) (token : SyntaxTree.Token)
                 lastToken? := some token
                 pendingIndent? := none
             }
+          delimiterDepth
       },
       stopped
     )
@@ -1217,10 +1340,13 @@ partial def measureSuffixOfTree
   match tree with
   | .missing => (state, false)
   | .leaf token =>
-      match LineBreakRules.suffixTokenAction context token with
-      | .skip => (state, false)
-      | .emit => state.emitToken token false
-      | .stop => (state.appendCommentTriviaBeforeToken token, true)
+      if 0 < state.delimiterDepth then
+        state.emitToken token false
+      else
+        match LineBreakRules.suffixTokenAction context token with
+        | .skip => (state, false)
+        | .emit => state.emitToken token false
+        | .stop => (state.appendCommentTriviaBeforeToken token, true)
   | .node _ _ =>
       if shouldEmitOriginalTree tree then
         state.emitOriginalFirstLine tree
@@ -2145,16 +2271,28 @@ mutual
         none
     let parentRelativeOriginalColumn? := sourceLayoutStart?.map (·.2)
     let state :=
-      match state.pendingIndent?, parentRelativeOriginalColumn? with
-      | some desiredIndent, some targetColumn =>
-          match child.singleToken? with
-          | some token =>
-              if desiredIndent + token.lexeme.length > state.options.lineWidth
-                  && targetColumn + token.lexeme.length <= state.options.lineWidth then
-                { state with pendingIndent? := some targetColumn }
-              else
-                state
-          | none => state
+      match state.pendingIndent?, sourceLayoutStart? with
+      | some desiredIndent, some (sourceColumn, parentRelativeColumn) =>
+          if treeHasUnbreakableFirstLine state.source child childRule then
+            match treeFirstSourceLineWidth? state.source child with
+            | some firstLineWidth =>
+                let targetColumn :=
+                  if parentRelativeColumn + firstLineWidth <= state.options.lineWidth then
+                    some parentRelativeColumn
+                  else if sourceColumn + firstLineWidth <= state.options.lineWidth then
+                    some sourceColumn
+                  else
+                    none
+                if desiredIndent + firstLineWidth > state.options.lineWidth then
+                  match targetColumn with
+                  | some targetColumn =>
+                      { state with pendingIndent? := some targetColumn }
+                  | none => state
+                else
+                  state
+            | none => state
+          else
+            state
       | _, _ => state
     let scope := ChildRenderScope.capture state
     let childBase :=

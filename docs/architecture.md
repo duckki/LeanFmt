@@ -703,18 +703,29 @@ subtree that begins on a new source line inherits the source-to-output layout-ba
 translation established by its enclosing formatted segment. The output-side anchor is
 the column where that segment actually starts, including when a child that began a source
 line now follows a formatted prefix such as `:`. Every protected line moves by the same
-delta, but a proof island cannot move left of its structural proof indentation. This
-keeps a block proof one level beneath its owning `have` rather than beneath a wrapped type
-continuation or outside its declaration. When a multiline proof or quotation begins
-inline, its later source lines use the introducer's source-to-output movement, clamped to
-the island's structural indentation, rather than treating the far-right first token as
-an indentation anchor. Module and declaration documentation comments are also emitted
-from their original source slices so their internal whitespace cannot be changed. This
+delta. A proof island normally cannot move left of its structural proof indentation,
+which keeps a block proof beneath its owning `have` rather than beneath a wrapped type
+continuation or outside its declaration. If that uniform shift alone would make a
+source-fitting proof line overflow, the renderer reduces the shift for the complete
+proof island by whole indentation levels, never past its original source column. The
+fit calculation reserves any closing delimiters and other tight parent suffix that must
+remain on the proof's last line; excluding that suffix would undercount the actual
+completed-line width. The proof's internal relative layout therefore remains unchanged.
+When a multiline proof or
+quotation begins inline, its later source lines use the introducer's source-to-output
+movement, clamped to the island's structural indentation, rather than treating the
+far-right first token as an indentation anchor. Module and declaration documentation
+comments are also emitted from their original source slices so their internal whitespace
+cannot be changed. This
 protects tactic scripts, term proof layout, quotation bodies, and comment text while
 declarations around them can still be formatted. When an original-source child followed
 its previous token on the same source line, it honors a pending boundary selected by its
 parent rule; an existing source-line boundary and the child's internal layout remain
 unchanged.
+An application whose argument is a proof-bearing `fun` is protected as one layout
+island. The syntax tree owns the lambda shell but not the proof body's internal
+layout, so moving the application and the proof independently can detach the proof
+from the lambda selected by Lean's layout parser.
 
 The escape hatch is intentionally narrow. If a non-proof syntax form is unsafe, prefer a
 specific transparent/default rule or a grouping change before adding another original
@@ -729,7 +740,7 @@ absolute column can change which tokens Lean's layout parser assigns to the elem
 When the formatter-selected rebase would newly overflow an atomic JSX line, the renderer
 also measures the source layout translated only by its parent layout's movement and uses
 that candidate when it has fewer overflows. For `do` bodies, token emission records only
-new atomic overflow caused by moving a source-line token away from a column where it fit.
+new atomic overflow caused by moving a source token away from a column where it fit.
 The outermost eligible `do` sequence considers a source-layout candidate only when that
 signal is present. This avoids both repeated nested recovery and reconstructing large
 `do` bodies for pre-existing overflow that recovery cannot improve. Rebased original text

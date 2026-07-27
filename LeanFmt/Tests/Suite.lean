@@ -1969,6 +1969,21 @@ def assertProofBodyUntouched (env : Lean.Environment) : IO Unit := do
   let formatted ← Formatter.formatSourceWithEnv env source "proof-body-untouched.lean"
   assertEq "proof body untouched" source formatted
 
+def assertAttachedProofLambdaKeepsFittingLayout (env : Lean.Environment) : IO Unit := do
+  let source :=
+    "def attachedProofLambdaKeepsFittingLayout :=\n"
+    ++ "  Nat.strongRec fun n ↦\n"
+    ++ "    match n with\n"
+    ++ "    | 0 => fun _ => zero\n"
+    ++ "    | 1 => fun _ => one\n"
+    ++ "    | k + 2 => fun hk => by\n"
+    ++ "      convert! prime_pow_mul ((k + 2) / p ^ t) p t hp _ htp (hk _ (Nat.div_lt_of_lt_mul _)) using 1\n"
+  let result ←
+    Formatter.formatSourceWithEnvDetailed env source
+      "attached-proof-lambda-fit.lean" { lineWidth := 100 }
+  assertTrue "fitting attached proof lambda does not fall back" (!result.fellBack)
+  assertEq "fitting attached proof lambda retains its layout" source result.formatted
+
 def assertMovedProofBodiesKeepRelativeIndentation (env : Lean.Environment) : IO Unit := do
   let outdentedSource :=
     "theorem originalProofIslandOutdentsFromNestedValue : True :=\n"
@@ -4258,6 +4273,20 @@ def assertChildFitCountsParentSuffix (env : Lean.Environment) : IO Unit := do
     ++ "  exact proof\n"
   let formatted ← Formatter.formatSourceWithEnv env source "child-fit-parent-suffix.lean"
   assertEq "child fit counts parent suffix" expected formatted
+
+def assertChildFitCountsDelimitedPostfixSuffix (env : Lean.Environment) : IO Unit := do
+  let source :=
+    "def postfixSuffixFit : IO Unit := do\n"
+    ++ "  pure (((← liftCoreM <| PrettyPrinter.ppTactic ⟨stx⟩).pretty.splitOn \"\\n\")[0]!.trimAscii)\n"
+  let expected :=
+    "def postfixSuffixFit : IO Unit := do\n"
+    ++ "  pure\n"
+    ++ "    (((← liftCoreM <| PrettyPrinter.ppTactic ⟨stx⟩).pretty.splitOn\n"
+    ++ "        \"\\n\")[0]!.trimAscii)\n"
+  let formatted ←
+    Formatter.formatSourceWithEnv env source "child-fit-delimited-postfix-suffix.lean"
+      { lineWidth := 80 }
+  assertEq "child fit counts balanced postfix suffix" expected formatted
 
 def assertNestedChildFitCountsInfixSuffix (env : Lean.Environment) : IO Unit := do
   let source :=
@@ -8242,6 +8271,7 @@ def runBasicFormattingTests (env : Lean.Environment) : IO Unit := do
   assertStructureValueWhereFormattingKeepsSuffix env
   assertWhereFinallyKeepsHeaderAndProofBody env
   assertProofBodyUntouched env
+  assertAttachedProofLambdaKeepsFittingLayout env
   assertMovedProofBodiesKeepRelativeIndentation env
   assertMovedChildrenUseLogicalLayoutBases env
   assertMovedInlineProofBodiesRemainParseable env
@@ -8318,6 +8348,7 @@ def runExpressionAndRendererTests (env : Lean.Environment) : IO Unit := do
   assertReturnTypeArrowFlows env
   assertLogicalArrowBreaksBalanced env
   assertChildFitCountsParentSuffix env
+  assertChildFitCountsDelimitedPostfixSuffix env
   assertNestedChildFitCountsInfixSuffix env
   assertNestedChildFitCountsProjectionMemberSuffix env
   assertLineFitCountsTrailingComment env

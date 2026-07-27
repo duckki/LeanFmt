@@ -415,8 +415,19 @@ def segmentContentCount (segment : Segment) : Nat :=
 def suffixKeywordLexeme (lexeme : String) : Bool :=
   lexemeIn lexeme ["by", "do", "from", "where", "with", "deriving", "then", "else"]
 
+def suffixOpeningDelimiterLexeme (lexeme : String) : Bool :=
+  lexemeIn lexeme ["(", "[", "{", "⟨", "⟪"]
+
+def treeStartsWithOpeningDelimiter (tree : SyntaxTree.Tree) : Bool :=
+  tree.firstToken?.any fun token => suffixOpeningDelimiterLexeme token.lexeme
+
+def suffixClosingDelimiterLexeme (lexeme : String) : Bool :=
+  lexemeIn lexeme [")", "]", "}", "⟩", "⟫"]
+
 def suffixDelimiterLexeme (lexeme : String) : Bool :=
-  lexemeIn lexeme [")", "]", "}", "⟩", "⟫", ",", ";"]
+  suffixOpeningDelimiterLexeme lexeme
+  || suffixClosingDelimiterLexeme lexeme
+  || lexemeIn lexeme [",", ";"]
 
 def suffixOperatorLexeme (lexeme : String) : Bool :=
   lexemeIn lexeme
@@ -427,6 +438,7 @@ def suffixOperatorLexeme (lexeme : String) : Bool :=
       "|",
       "=",
       "==",
+      "!",
       "!=",
       "≠",
       "<",
@@ -2899,9 +2911,7 @@ def subtypeRule : LineBreakRule :=
 def matchAltRule : LineBreakRule :=
   {
     name := "matchAlt"
-    mandatory :=
-      fun _ segment =>
-        childHasNestedProofBody segment 3 || matchAltBodyStartsAfterCommentBreak segment
+    mandatory := fun _ segment => matchAltBodyStartsAfterCommentBreak segment
     useExistingBreaks := fun _ _ => true
     flow := fun _ _ => true
     breakPoints := matchAltBreaks
