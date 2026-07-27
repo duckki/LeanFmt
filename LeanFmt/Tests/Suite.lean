@@ -7029,6 +7029,33 @@ def assertFormatterArchitecture : IO Unit := do
   assertTrue "top-level custom commands break after doc comments"
     (customCommandRule.breakPoints context customCommandSegment
       |>.any fun breakPoint => breakPoint.index == 1)
+  let allowUnusedIdentifiers :=
+    SyntaxTree.Tree.node (.raw `null)
+      #[
+        .leaf (syntheticAtomToken "Lean.Parser.Term.byTactic"),
+        .leaf (syntheticAtomToken "Lean.Parser.Tactic.tacticSeq")
+      ]
+  let allowUnusedCommand :=
+    SyntaxTree.Tree.node
+      (.raw `Mathlib.Linter.UnusedTactic.«command#allow_unused_tactic!___»)
+      #[
+        .leaf (syntheticAtomToken "#allow_unused_tactic"),
+        .leaf (syntheticAtomToken "!"),
+        .missing,
+        .missing,
+        allowUnusedIdentifiers
+      ]
+  let allowUnusedContext :=
+    context.push (Formatter.LineBreakRules.Segment.ofTree allowUnusedCommand) 4
+  let allowUnusedSegment := Formatter.LineBreakRules.Segment.ofTree allowUnusedIdentifiers
+  let allowUnusedRule := Formatter.LineBreakRules.formattingRuleFor allowUnusedIdentifiers
+  assertTrue "allow-unused-tactic identifiers inherit the command base"
+    (allowUnusedRule.inheritBase allowUnusedContext allowUnusedSegment)
+  assertTrue "allow-unused-tactic identifiers flow"
+    (allowUnusedRule.flow allowUnusedContext allowUnusedSegment)
+  assertTrue "allow-unused-tactic identifiers break before and between names"
+    (allowUnusedRule.breakPoints allowUnusedContext allowUnusedSegment
+      == [{ index := 0, indentLevels := 0 }, { index := 1, indentLevels := 0 }])
 
 def assertDeclarationRuleTransparent : IO Unit := do
   let tree :=

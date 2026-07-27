@@ -691,6 +691,14 @@ def commandAttributeIdentifierList (context : RuleContext) : Bool :=
       parent.rawKind? == some `Lean.Parser.Command.attribute && parent.childIndex == 4
   | _ => false
 
+def allowUnusedTacticIdentifierList (context : RuleContext) : Bool :=
+  match context.ancestors with
+  | parent :: _ =>
+      parent.rawKind?
+        == some `Mathlib.Linter.UnusedTactic.«command#allow_unused_tactic!___»
+      && parent.childIndex == 4
+  | _ => false
+
 def assertNotExistsIdentifierList (context : RuleContext) : Bool :=
   match context.ancestors with
   | parent :: _ =>
@@ -722,6 +730,7 @@ def nullInheritBase (context : RuleContext) (segment : Segment) : Bool :=
   || parentIsRawKind context `Batteries.ExtendedBinder.extBinder
   || parentIsRawKind context `Batteries.ExtendedBinder.extBinderCollection
   || commandAttributeIdentifierList context
+  || allowUnusedTacticIdentifierList context
   || assertNotExistsIdentifierList context
   || wrappedByDoLetFallbackSequence context
 
@@ -1232,6 +1241,17 @@ def commandAttributeIdentifierBreaks (context : RuleContext) (segment : Segment)
     | first :: rest =>
         [leadingBreak? segment first 1].filterMap id
         ++ rest.filterMap fun index => boundaryBreak? segment index 1
+  else
+    []
+
+def allowUnusedTacticIdentifierBreaks (context : RuleContext) (segment : Segment)
+    : List BreakPoint :=
+  if allowUnusedTacticIdentifierList context then
+    match nonemptyChildIndexes segment with
+    | [] => []
+    | first :: rest =>
+        [leadingBreak? segment first 0].filterMap id
+        ++ rest.filterMap fun index => boundaryBreak? segment index 0
   else
     []
 
@@ -2545,6 +2565,7 @@ def nullBreaks (context : RuleContext) (segment : Segment) : List BreakPoint :=
   ++ commandBinderBreaks context segment
   ++ openIdentifierBreaks context segment
   ++ commandAttributeIdentifierBreaks context segment
+  ++ allowUnusedTacticIdentifierBreaks context segment
   ++ assertNotExistsIdentifierBreaks context segment
   ++ exportItemBreaks context segment
   ++ doSeqItemBreaks context segment
@@ -2594,6 +2615,7 @@ def nullRule : LineBreakRule :=
         || !(commandBinderBreaks context segment).isEmpty
         || !(openIdentifierBreaks context segment).isEmpty
         || !(commandAttributeIdentifierBreaks context segment).isEmpty
+        || !(allowUnusedTacticIdentifierBreaks context segment).isEmpty
         || !(assertNotExistsIdentifierBreaks context segment).isEmpty
         || !(exportItemBreaks context segment).isEmpty
         || !(infixAlternativeBreaks context segment).isEmpty
@@ -3145,6 +3167,8 @@ def ruleFor : SyntaxTree.Tree → Option LineBreakRule
   | .node (.raw `Lean.Parser.Command.macroTail) _ => some defaultRule
   | .node (.raw `Lean.Parser.Command.macroRhs) _ => some defaultRule
   | .node (.raw `Lean.Parser.Command.attribute) _ => some commandAttributeRule
+  | .node (.raw `Mathlib.Linter.UnusedTactic.«command#allow_unused_tactic!___») _ =>
+      some defaultRule
   | .node (.raw `Lean.Parser.Command.deprecated_module) _ => some defaultRule
   | .node (.raw `Lean.Parser.Command.assertNotImported) _ => some defaultRule
   | .node (.raw `Lean.Parser.Command.assertNotExists) _ => some assertNotExistsRule
@@ -3499,8 +3523,6 @@ def ruleFor : SyntaxTree.Tree → Option LineBreakRule
   | .node (.raw `Batteries.Tactic.Alias.aliasLR) _ => some defaultRule
   | .node (.raw `Batteries.Tactic.Lint.nolint) _ => some defaultRule
   | .node (.raw `Batteries.Util.LibraryNote.commandLibrary_note___) _ =>
-      some defaultRule
-  | .node (.raw `Mathlib.Linter.UnusedTactic.«command#allow_unused_tactic!___») _ =>
       some defaultRule
   | .node (.raw `Finsupp.Internal.stxSingle₀) _ => some defaultRule
   | .node (.raw `Finsupp.Internal.stxUpdate₀) _ => some defaultRule
