@@ -730,6 +730,34 @@ def assertGroupedInfixChain (env : Lean.Environment) : IO Unit := do
       <| IO.userError
           s!"expected infix chain to contain three operands and two operators, got {repr other}"
 
+def assertDelimitedCollectionsFlattenOnlySeparatedItems : IO Unit := do
+  let first := SyntaxTree.Tree.leaf (syntheticAtomToken "first")
+  let second := SyntaxTree.Tree.leaf (syntheticAtomToken "second")
+  let comma := SyntaxTree.Tree.leaf (syntheticAtomToken ",")
+  let openBracket := SyntaxTree.Tree.leaf (syntheticAtomToken "[")
+  let closeBracket := SyntaxTree.Tree.leaf (syntheticAtomToken "]")
+  let unseparated := #[openBracket, .node (.raw `null) #[first, second], closeBracket]
+  let unseparatedFlattened := SyntaxTree.flattenDelimitedCollectionChildren unseparated
+  assertTrue "unseparated syntax fragments remain one collection item"
+    (unseparatedFlattened.size == 3
+      && unseparatedFlattened[1]?.any
+          fun child =>
+            SyntaxTree.rawKind? child == some `null)
+  let separated :=
+    #[openBracket, .node (.raw `null) #[first, comma, second], closeBracket]
+  let separatedFlattened := SyntaxTree.flattenDelimitedCollectionChildren separated
+  assertTrue "comma-separated collection items are flattened"
+    (separatedFlattened.size == 5
+      && separatedFlattened[1]?.any
+          fun child =>
+            child.firstToken?.any (·.lexeme == "first")
+            && separatedFlattened[2]?.any
+                fun child =>
+                  child.firstToken?.any (·.lexeme == ",")
+                  && separatedFlattened[3]?.any
+                      fun child =>
+                        child.firstToken?.any (·.lexeme == "second"))
+
 def assertHardWhitespaceFormatting (env : Lean.Environment) : IO Unit := do
   let source :=
     "def  f  (x  : Nat)  :=\r\n"
@@ -7896,6 +7924,7 @@ def runSyntaxTreeTests (env : Lean.Environment) : IO Unit := do
   assertOverlappingEmptySyntaxTokensRemoved env
   assertGroupedApplication env
   assertGroupedInfixChain env
+  assertDelimitedCollectionsFlattenOnlySeparatedItems
 
 def runBasicFormattingTests (env : Lean.Environment) : IO Unit := do
   assertSafeArrayIndexKeepsPostfixQuestion env

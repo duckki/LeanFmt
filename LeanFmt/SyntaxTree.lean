@@ -951,14 +951,13 @@ partial def flattenDelimitedCollectionChildren (children : Array Tree) : Array T
   | some index =>
       match children[index]? with
       | some (.node (.raw `null) items) =>
-          let itemCount :=
-            items.foldl
-              (fun count item =>
-                match item.firstToken? with
-                | some token => if token.lexeme == "," then count else count + 1
-                | none => count)
-              0
-          if 1 < itemCount then
+          let hasSeparator :=
+            items.any
+              fun item =>
+                item.firstToken?.any
+                  fun token =>
+                    token.lexeme == "," || token.lexeme == ";"
+          if hasSeparator then
             flattenDelimitedCollectionChildren
             <| childrenRange children 0 index
                 ++ items
