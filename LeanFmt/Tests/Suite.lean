@@ -7476,6 +7476,39 @@ def assertMathlibLowRiskSyntaxKindsHaveRules : IO Unit := do
     let tree := SyntaxTree.Tree.node (.raw kind) #[]
     assertTrue s!"mathlib low-risk syntax has rule: {kind}"
       (Formatter.LineBreakRules.ruleFor tree).isSome
+  for (kind, prefixLexeme)
+      in [
+        (`Lean.Parser.Command.simpsRule.add, "+"),
+        (`Lean.Parser.Command.simpsRule.erase, "-")
+      ] do
+    let tree :=
+      SyntaxTree.Tree.node (.raw kind)
+        #[
+          .leaf (syntheticAtomToken prefixLexeme),
+          .leaf (syntheticAtomToken "projection")
+        ]
+    let segment := Formatter.LineBreakRules.Segment.ofTree tree
+    let rule := Formatter.LineBreakRules.formattingRuleFor tree
+    assertTrue s!"simps projection prefix stays attached: {prefixLexeme}"
+      (rule.breakPoints {} segment).isEmpty
+  let simpsRuleList :=
+    SyntaxTree.Tree.node (.raw `null)
+      #[
+        .node (.raw `Lean.Parser.Command.simpsRule) #[.leaf (syntheticAtomToken "first")],
+        .leaf (syntheticAtomToken ","),
+        .node (.raw `Lean.Parser.Command.simpsRule) #[.leaf (syntheticAtomToken "second")]
+      ]
+  let simpsProjection :=
+    SyntaxTree.Tree.node (.raw `Lean.Parser.Command.simpsProj)
+      #[.leaf (syntheticAtomToken "Example"), simpsRuleList]
+  let simpsContext : Formatter.LineBreakRules.RuleContext :=
+    ({} : Formatter.LineBreakRules.RuleContext).push
+      (Formatter.LineBreakRules.Segment.ofTree simpsProjection) 1
+  let simpsListSegment := Formatter.LineBreakRules.Segment.ofTree simpsRuleList
+  let simpsListRule := Formatter.LineBreakRules.formattingRuleFor simpsRuleList
+  assertTrue "simps projection lists can break after commas"
+    (simpsListRule.breakPoints simpsContext simpsListSegment
+      |>.any fun breakPoint => breakPoint.index == 2 && breakPoint.indentLevels == 1)
   assertTrue "indexed union notation is classified as a binder operator"
     (Formatter.LineBreakRules.binderOperatorLexeme "⋃")
   assertTrue "indexed intersection notation is classified as a binder operator"

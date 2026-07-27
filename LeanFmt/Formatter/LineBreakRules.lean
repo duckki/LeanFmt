@@ -204,6 +204,9 @@ def grandparentIsRawKind (context : RuleContext) (kind : Lean.SyntaxNodeKind) : 
   | _ :: grandparent :: _ => grandparent.rawKind? == some kind
   | _ => false
 
+def hasRawKindAncestor (context : RuleContext) (kind : Lean.SyntaxNodeKind) : Bool :=
+  context.ancestors.any fun frame => frame.rawKind? == some kind
+
 structure LineBreakRule where
   name : String
   atomic : Bool := false
@@ -2553,6 +2556,21 @@ def bigOperatorBreaks (_context : RuleContext) (segment : Segment) : List BreakP
 def binderTacticBreaks (_context : RuleContext) (segment : Segment) : List BreakPoint :=
   [breakBeforeLexeme? segment "by" 2].filterMap id
 
+def simpsProjectionRuleBreaks (context : RuleContext) (segment : Segment)
+    : List BreakPoint :=
+  if hasRawKindAncestor context `Lean.Parser.Command.simpsProj then
+    (nonemptyChildIndexes segment).filterMap
+      fun index =>
+        match previousContentIndex? segment index with
+        | some previousIndex =>
+            if childStartsWithLexeme segment previousIndex "," then
+              boundaryBreak? segment index 1
+            else
+              none
+        | none => none
+  else
+    []
+
 def nullBreaks (context : RuleContext) (segment : Segment) : List BreakPoint :=
   structureFieldBreaks context segment
   ++ structureWhereFieldBreaks context segment
@@ -2579,6 +2597,7 @@ def nullBreaks (context : RuleContext) (segment : Segment) : List BreakPoint :=
   ++ mutualCommandBreaks context segment
   ++ letRecDeclarationSequenceBreaks context segment
   ++ configEntrySequenceBreaks context segment
+  ++ simpsProjectionRuleBreaks context segment
 
 def nullBreaksMandatory (context : RuleContext) (segment : Segment) : Bool :=
   !(structureFieldBreaks context segment).isEmpty
@@ -3198,9 +3217,9 @@ def ruleFor : SyntaxTree.Tree → Option LineBreakRule
   | .node (.raw `Lean.Parser.Command.initialize_simps_projections) _ => some defaultRule
   | .node (.raw `Lean.Parser.Command.simpsProj) _ => some defaultRule
   | .node (.raw `Lean.Parser.Command.simpsRule) _ => some defaultRule
-  | .node (.raw `Lean.Parser.Command.simpsRule.add) _ => some defaultRule
+  | .node (.raw `Lean.Parser.Command.simpsRule.add) _ => some unaryPrefixRule
   | .node (.raw `Lean.Parser.Command.simpsRule.prefix) _ => some defaultRule
-  | .node (.raw `Lean.Parser.Command.simpsRule.erase) _ => some defaultRule
+  | .node (.raw `Lean.Parser.Command.simpsRule.erase) _ => some unaryPrefixRule
   | .node (.raw `Lean.Parser.Command.eraseAttr) _ => some defaultRule
   | .node (.raw `Lean.Parser.Command.classInductive) _ => some defaultRule
   | .node (.raw `Lean.Parser.commandUnseal__) _ => some defaultRule
