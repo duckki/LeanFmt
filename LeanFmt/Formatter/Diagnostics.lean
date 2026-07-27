@@ -75,8 +75,13 @@ inductive FormattingException where
   | missingRule (occurrence : MissingRuleOccurrence)
 deriving BEq, Repr
 
+def sourceLexicalTokens (moduleTree : SyntaxTree.Module) : Array SyntaxTree.Token :=
+  (moduleTree.tokens.filter
+    fun token => SyntaxTree.tokenComesFromSource moduleTree.source token)
+  |>.qsort fun left right => left.span.start < right.span.start
+
 def realTokens (moduleTree : SyntaxTree.Module) : List SyntaxTree.Token :=
-  moduleTree.sourceOrderedTokens.toList.filter fun token => !token.lexeme.isEmpty
+  (sourceLexicalTokens moduleTree).toList.filter fun token => !token.lexeme.isEmpty
 
 def isApplicationArgumentStart (token : SyntaxTree.Token) : Bool :=
   token.role == .ident || SpaceRules.stringIn token.lexeme ["(", "[", "{", "⟨", "⟪", "."]
@@ -300,19 +305,49 @@ def tokenPreservationFragments
       leading ++ comment ++ trailing
 
 def preservationFragments (moduleTree : SyntaxTree.Module) : List PreservationFragment :=
-  let tokens :=
-    moduleTree.sourceOrderedTokens.toList.filter
-      fun token => SyntaxTree.tokenComesFromSource moduleTree.source token
+  let tokens := (sourceLexicalTokens moduleTree).toList
   let syntaxCommentSpans := syntaxCommentSpans moduleTree.tree
-  let fragments :=
-    tokens.flatMap (tokenPreservationFragments moduleTree.source syntaxCommentSpans)
+  let (fragments, consumedUntil) :=
+    tokens.foldl
+      (fun (fragments, consumedUntil) token =>
+        if token.span.stop <= consumedUntil then
+          (fragments, consumedUntil)
+        else
+          match commentSpanForToken? syntaxCommentSpans token with
+          | some span =>
+              let leading :=
+                if consumedUntil < span.start then
+                  commentFragments
+                  <| SyntaxTree.sourceText moduleTree.source consumedUntil span.start
+                else
+                  []
+              let fragments :=
+                (leading.foldl (fun fragments fragment => fragments.push fragment)
+                    fragments)
+                  |>.push
+                <| .comment (SyntaxTree.sourceText moduleTree.source span.start span.stop)
+              (fragments, span.stop)
+          | none =>
+              let leading :=
+                if consumedUntil < token.span.start then
+                  commentFragments
+                  <| SyntaxTree.sourceText moduleTree.source consumedUntil
+                      token.span.start
+                else
+                  []
+              let fragments :=
+                leading.foldl (fun fragments fragment => fragments.push fragment)
+                  fragments
+              let fragments :=
+                if token.lexeme.isEmpty then
+                  fragments
+                else
+                  fragments.push (.code token.lexeme)
+              (fragments, token.span.stop))
+      (#[], 0)
   let trailingSource :=
-    match tokens.getLast? with
-    | none => moduleTree.source
-    | some token =>
-        SyntaxTree.sourceText moduleTree.source token.fullSpan.stop
-          moduleTree.source.endPos.offset
-  (fragments ++ commentFragments trailingSource).intersperse .space
+    SyntaxTree.sourceText moduleTree.source consumedUntil moduleTree.source.endPos.offset
+  (fragments.toList ++ commentFragments trailingSource).intersperse .space
 
 /-- Checks whether two modules have the same parsed syntax after discarding source metadata. -/
 def preservesSyntaxIgnoringSourceInfo (before after : SyntaxTree.Module) : Bool :=
@@ -341,15 +376,13 @@ partial def preservedOriginalSpans : SyntaxTree.Tree → List SyntaxTree.Span
 def tokenIntersects (start stop : String.Pos.Raw) (token : SyntaxTree.Token) : Bool :=
   token.span.start < stop && start < token.span.stop
 
-def isInterpolatedStringTree : SyntaxTree.Tree → Bool
-  | .node (.raw `termS!_) _ => true
-  | .node (.raw `Lean.termM!_) _ => true
-  | .node (.raw `interpolatedStrKind) _ => true
-  | .node (.raw `interpolatedStrLitKind) _ => true
-  | _ => false
+def isAtomicTree (tree : SyntaxTree.Tree) : Bool :=
+  match LineBreakRules.ruleFor tree with
+  | some rule => rule.atomic
+  | none => false
 
 def atomicTreeSpan? (tree : SyntaxTree.Tree) : Option SyntaxTree.Span :=
-  if isInterpolatedStringTree tree then
+  if isAtomicTree tree then
     treeSpan? tree
   else
     match tree.tokens.toList.filter fun token => !token.lexeme.isEmpty with
@@ -375,7 +408,7 @@ partial def indivisibleOverflowSpans : SyntaxTree.Tree → List SyntaxTree.Span
   | .missing | .leaf _ => []
   | tree@(.node _ children) =>
       let current :=
-        if isInterpolatedStringTree tree then
+        if isAtomicTree tree then
           treeSpan? tree |>.toList
         else
           []
@@ -418,25 +451,45 @@ def spanWithLineEndersCovers
 def overflowIsExempt
     (tokens : List SyntaxTree.Token)
     (indivisibleSpans : List SyntaxTree.Span)
+    (allowMovableLayoutExemptions : Bool)
+    (lineWidth contentWidth : Nat)
     (overflowStart contentStop : String.Pos.Raw)
     : Bool :=
   let suffixTokens := tokens.filter (tokenIntersects overflowStart contentStop)
   let indivisibleSpans :=
     indivisibleSpans.filter
       fun span =>
-        span.start <= overflowStart && overflowStart < span.stop
-  let atomicSpans := indivisibleSpans ++ suffixTokens.map (·.span)
-  if atomicSpans.any
-      (spanWithLineEndersCovers suffixTokens overflowStart contentStop) then
+        span.start <= overflowStart
+  let unbreakableTokenSpans :=
+    suffixTokens.filter (fun token => lineWidth < token.lexeme.length) |>.map (·.span)
+  let isolatedTokenSpans :=
+    match suffixTokens with
+    | first :: _ =>
+        let suffixWidth :=
+          suffixTokens.foldl (fun width token => width + token.lexeme.length) 0
+        if suffixWidth == contentWidth then [first.span] else []
+    | [] => []
+  let movableSpans :=
+    if allowMovableLayoutExemptions then
+      indivisibleSpans ++ isolatedTokenSpans
+    else
+      []
+  let atomicSpans := movableSpans ++ unbreakableTokenSpans
+  if atomicSpans.any (spanWithLineEndersCovers tokens overflowStart contentStop) then
     true
   else
-    suffixTokens.isEmpty
+    suffixTokens.isEmpty && lineWidth < contentWidth
 
-def overflowOccurrences (moduleTree : SyntaxTree.Module) (options : Options := {})
+private def overflowOccurrencesWith
+    (moduleTree : SyntaxTree.Module) (options : Options)
+    (allowMovableLayoutExemptions : Bool)
     : List OverflowOccurrence :=
   let tokens := realTokens moduleTree
   let indivisibleSpans :=
-    preservedOriginalSpans moduleTree.tree ++ indivisibleOverflowSpans moduleTree.tree
+    if allowMovableLayoutExemptions then
+      preservedOriginalSpans moduleTree.tree ++ indivisibleOverflowSpans moduleTree.tree
+    else
+      []
   let rec loop (lineNumber : Nat) (lineStart : String.Pos.Raw)
       : List String → List OverflowOccurrence
     | [] => []
@@ -446,12 +499,52 @@ def overflowOccurrences (moduleTree : SyntaxTree.Module) (options : Options := {
         let overflowStart :=
           positionAfter lineStart (line.take options.lineWidth).toString
         let contentStop := positionAfter lineStart line.trimAsciiEnd.toString
+        let contentWidth :=
+          line.toList.dropWhile (fun char => char == ' ' || char == '\t') |>.length
         if options.lineWidth < line.length
-            && !overflowIsExempt tokens indivisibleSpans overflowStart contentStop then
+            && !overflowIsExempt tokens indivisibleSpans
+                  allowMovableLayoutExemptions options.lineWidth contentWidth
+                  overflowStart contentStop then
           { line := lineNumber, width := line.length, text := line } :: remaining
         else
           remaining
   loop 1 0 (moduleTree.source.splitOn "\n")
+
+def overflowOccurrences (moduleTree : SyntaxTree.Module) (options : Options := {})
+    : List OverflowOccurrence :=
+  overflowOccurrencesWith moduleTree options true
+
+def lineWidthAtToken? (moduleTree : SyntaxTree.Module) (token : SyntaxTree.Token)
+    : Option Nat :=
+  let lineIndex := lineNumberAt moduleTree.source token.span.start - 1
+  (moduleTree.source.splitOn "\n")[lineIndex]? |>.map (·.length)
+
+def isolatedOverflowTokenIndex?
+    (moduleTree : SyntaxTree.Module) (tokens : List SyntaxTree.Token)
+    (occurrence : OverflowOccurrence)
+    : Option Nat :=
+  let text := occurrence.text.trimAscii
+  let matching :=
+    tokens.zipIdx.filter
+      fun (token, _) =>
+        token.lexeme == text
+        && lineNumberAt moduleTree.source token.span.start == occurrence.line
+  match matching with
+  | [(_, index)] => some index
+  | _ => none
+
+def isolatedTokenSourceLineOverflowed
+    (sourceModule formattedModule : SyntaxTree.Module)
+    (sourceTokens formattedTokens : List SyntaxTree.Token)
+    (occurrence : OverflowOccurrence) (lineWidth : Nat)
+    : Bool :=
+  match isolatedOverflowTokenIndex? formattedModule formattedTokens occurrence with
+  | none => false
+  | some index =>
+      match sourceTokens[index]? with
+      | none => false
+      | some sourceToken =>
+          lineWidthAtToken? sourceModule sourceToken |>.any (lineWidth < ·)
 
 def formattingExceptions (sourceModule formattedModule : SyntaxTree.Module)
     (options : Options := {})
@@ -462,7 +555,24 @@ def formattingExceptions (sourceModule formattedModule : SyntaxTree.Module)
     else
       [.codeChanged]
   let overflowExceptions :=
-    (overflowOccurrences formattedModule options).map FormattingException.lineOverflow
+    let formattedOccurrences := overflowOccurrencesWith formattedModule options false
+    if formattedOccurrences.isEmpty then
+      []
+    else
+      let sourceTokens := realTokens sourceModule
+      let formattedTokens := realTokens formattedModule
+      let sourceOverflowTexts :=
+        (overflowOccurrencesWith sourceModule options false).map
+          fun occurrence =>
+            occurrence.text.trimAscii
+      formattedOccurrences.filterMap
+        fun occurrence =>
+          if sourceOverflowTexts.contains occurrence.text.trimAscii
+              || isolatedTokenSourceLineOverflowed sourceModule formattedModule
+                  sourceTokens formattedTokens occurrence options.lineWidth then
+            none
+          else
+            some <| FormattingException.lineOverflow occurrence
   let missingRuleExceptions :=
     (missingRuleOccurrencesForModule sourceModule).map FormattingException.missingRule
   codeExceptions ++ overflowExceptions ++ missingRuleExceptions

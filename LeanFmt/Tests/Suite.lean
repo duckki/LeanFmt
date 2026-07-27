@@ -6587,6 +6587,12 @@ def assertFormattingExceptionChecks (env : Lean.Environment) : IO Unit := do
       assertTrue "overflow occurrence width" (Formatter.maxLineWidth < occurrence.width)
   | occurrences =>
       throw <| IO.userError s!"expected one overflow occurrence, got {repr occurrences}"
+  assertTrue "unchanged source overflow is not attributed to formatting"
+    (!(Formatter.Diagnostics.formattingExceptions overflowModule overflowModule).any
+        fun exception =>
+          match exception with
+          | .lineOverflow _ => true
+          | _ => false)
   assertTrue "overflow diagnostics respect custom line width"
     (Formatter.Diagnostics.overflowOccurrences overflowModule
       { lineWidth := 120 }).isEmpty
@@ -6596,6 +6602,26 @@ def assertFormattingExceptionChecks (env : Lean.Environment) : IO Unit := do
       "single-token-overflow.lean"
   assertTrue "single-token overflow is exempt"
     (Formatter.Diagnostics.overflowOccurrences singleTokenModule).isEmpty
+  let movableIdentifier := String.ofList (List.replicate (Formatter.maxLineWidth - 5) 'x')
+  let movableIdentifierOverflow := s!"def {movableIdentifier} := 0\n"
+  let movableIdentifierModule ←
+    SyntaxTree.parseModuleStringWithEnv env movableIdentifierOverflow
+      "movable-identifier-overflow.lean"
+  assertTrue "a fitting final token does not exempt a movable overflow"
+    (!(Formatter.Diagnostics.overflowOccurrences movableIdentifierModule).isEmpty)
+  let isolatedIdentifierSource := "      " ++ movableIdentifier ++ "\n"
+  let isolatedIdentifierTree :=
+    SyntaxTree.Tree.leaf
+      (syntheticAtomTokenAt movableIdentifier 6 (6 + movableIdentifier.length))
+  let isolatedIdentifierModule : SyntaxTree.Module :=
+    {
+      source := isolatedIdentifierSource
+      rawSyntax := .missing
+      tree := isolatedIdentifierTree
+      tokens := isolatedIdentifierTree.tokens
+    }
+  assertTrue "an isolated token at its structural indentation is exempt"
+    (Formatter.Diagnostics.overflowOccurrences isolatedIdentifierModule).isEmpty
   let atomicCloseOverflow := s!"def overflow := ({longIdentifier})\n"
   let atomicCloseModule ←
     SyntaxTree.parseModuleStringWithEnv env atomicCloseOverflow
@@ -6624,6 +6650,27 @@ def assertFormattingExceptionChecks (env : Lean.Environment) : IO Unit := do
       "block-comment-overflow.lean"
   assertTrue "block-comment overflow is exempt"
     (Formatter.Diagnostics.overflowOccurrences blockCommentModule).isEmpty
+  let indentedCommentOverflow :=
+    "          -- "
+    ++ String.ofList (List.replicate (Formatter.maxLineWidth - 12) 'x')
+    ++ "\n"
+  let indentedCommentModule ←
+    SyntaxTree.parseModuleStringWithEnv env indentedCommentOverflow
+      "indented-comment-overflow.lean"
+  assertTrue "movable comment indentation does not exempt overflow"
+    (!(Formatter.Diagnostics.overflowOccurrences indentedCommentModule).isEmpty)
+  let unindentedCommentSource :=
+    "-- " ++ String.ofList (List.replicate (Formatter.maxLineWidth - 12) 'x') ++ "\n"
+  let unindentedCommentModule ←
+    SyntaxTree.parseModuleStringWithEnv env unindentedCommentSource
+      "unindented-comment-overflow-source.lean"
+  assertTrue "newly indented comment overflow is attributed to formatting"
+    ((Formatter.Diagnostics.formattingExceptions
+        unindentedCommentModule indentedCommentModule).any
+      fun exception =>
+        match exception with
+        | .lineOverflow _ => true
+        | _ => false)
   let proofOverflow :=
     "theorem preservedProofOverflow : True := by\n"
     ++ "  have veryLongProofName := "
@@ -6634,6 +6681,65 @@ def assertFormattingExceptionChecks (env : Lean.Environment) : IO Unit := do
     SyntaxTree.parseModuleStringWithEnv env proofOverflow "proof-overflow.lean"
   assertTrue "preserved proof overflow is exempt"
     (Formatter.Diagnostics.overflowOccurrences proofOverflowModule).isEmpty
+  let fittingProofLine :=
+    "theorem movedProofOverflow : True := by\n"
+    ++ "  exact "
+    ++ String.ofList (List.replicate (Formatter.maxLineWidth - 9) 'x')
+    ++ "\n"
+  let movedProofLine :=
+    "theorem movedProofOverflow : True := by\n"
+    ++ "      exact "
+    ++ String.ofList (List.replicate (Formatter.maxLineWidth - 9) 'x')
+    ++ "\n"
+  let fittingProofModule ←
+    SyntaxTree.parseModuleStringWithEnv env fittingProofLine
+      "fitting-proof-overflow-source.lean"
+  let movedProofModule ←
+    SyntaxTree.parseModuleStringWithEnv env movedProofLine "moved-proof-overflow.lean"
+  assertTrue "moved proof overflow remains hidden from the standalone audit"
+    (Formatter.Diagnostics.overflowOccurrences movedProofModule).isEmpty
+  assertTrue "newly indented proof overflow is attributed to formatting"
+    ((Formatter.Diagnostics.formattingExceptions fittingProofModule movedProofModule).any
+      fun exception =>
+        match exception with
+        | .lineOverflow _ => true
+        | _ => false)
+  let longDeclarationName :=
+    "declaration" ++ String.ofList (List.replicate (Formatter.maxLineWidth - 14) 'x')
+  let longDeclarationSource :=
+    "theorem " ++ longDeclarationName ++ " : True := by\n" ++ "  exact True.intro\n"
+  let longDeclarationFormatted :=
+    "theorem\n"
+    ++ "    "
+    ++ longDeclarationName
+    ++ "\n"
+    ++ "    : True := by\n"
+    ++ "  exact True.intro\n"
+  let longDeclarationSourceModule ←
+    SyntaxTree.parseModuleStringWithEnv env longDeclarationSource
+      "long-declaration-overflow-source.lean"
+  let longDeclarationFormattedModule ←
+    SyntaxTree.parseModuleStringWithEnv env longDeclarationFormatted
+      "long-declaration-overflow-formatted.lean"
+  assertTrue "isolated declaration name inherits its source-line overflow"
+    (!(Formatter.Diagnostics.formattingExceptions
+        longDeclarationSourceModule longDeclarationFormattedModule).any
+        fun exception =>
+          match exception with
+          | .lineOverflow _ => true
+          | _ => false)
+  let proofCloseIdentifier :=
+    String.ofList (List.replicate (Formatter.maxLineWidth - 16) 'x')
+  let proofCloseOverflow :=
+    "def preservedProofCloseOverflow :=\n"
+    ++ "  outer\n"
+    ++ "    ((inner\n"
+    ++ "      (by\n"
+    ++ s!"        exact {proofCloseIdentifier})))\n"
+  let proofCloseOverflowModule ←
+    SyntaxTree.parseModuleStringWithEnv env proofCloseOverflow "proof-close-overflow.lean"
+  assertTrue "preserved proof and attached closing delimiters overflow is exempt"
+    (Formatter.Diagnostics.overflowOccurrences proofCloseOverflowModule).isEmpty
   let interpolatedStringOverflow :=
     "def message := s!\""
     ++ String.ofList (List.replicate Formatter.maxLineWidth 'x')
@@ -6652,6 +6758,16 @@ def assertFormattingExceptionChecks (env : Lean.Environment) : IO Unit := do
       "bare-interpolated-string-overflow.lean"
   assertTrue "bare interpolated-string tree overflow is exempt"
     (Formatter.Diagnostics.overflowOccurrences bareInterpolatedStringModule).isEmpty
+  let projectionChainOverflow :=
+    "def value :=\n"
+    ++ "        D.toLocallyRingedSpaceGlueData.toSheafedSpaceGlueData"
+    ++ ".toPresheafedSpaceGlueData.toGlueData.f\n"
+  let projectionChainModule ←
+    SyntaxTree.parseModuleStringWithEnv env projectionChainOverflow
+      "projection-chain-overflow.lean"
+  assertTrue "atomic projection suffix overflow is exempt"
+    (Formatter.Diagnostics.overflowOccurrences projectionChainModule
+      { lineWidth := 100 }).isEmpty
   let stringCommaOverflow :=
     "def messages := [\n  \""
     ++ String.ofList (List.replicate Formatter.maxLineWidth 'x')
@@ -6712,7 +6828,14 @@ def assertCliChecksStillFormatUnlessCheck
 
   let overflowFile := root / "Overflow.lean"
   let overflowSource :=
-    "def " ++ String.ofList (List.replicate (Formatter.maxLineWidth + 1) 'x') ++ " := 0\n"
+    "def overflow :=\n"
+    ++ "-- "
+    ++ String.ofList (List.replicate (Formatter.maxLineWidth - 3) 'x')
+    ++ "\n"
+    ++ "-- "
+    ++ String.ofList (List.replicate Formatter.maxLineWidth 'y')
+    ++ "\n"
+    ++ "0\n"
   IO.FS.writeFile overflowFile overflowSource
   let afterExceptionFile := root / "AfterException.lean"
   let afterExceptionSource := "def  afterException  : Nat := 0\n"

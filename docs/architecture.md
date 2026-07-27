@@ -753,9 +753,12 @@ Diagnostics are separate from formatting. The compact-bang diagnostic examines t
 and reports ambiguous spellings such as `!f a b`, but it does not rewrite them. The
 diagnostic API lives under `Formatter.Diagnostics`.
 
-Formatter-exception checking is also separate from rendering. It verifies that the
-code-token sequence and exact comment text are preserved, reports remaining line overflow,
-and reports missing rules with their source location and tree slice. Each missing raw
+Formatter-exception checking is also separate from rendering. It orders source-backed
+tokens by their lexeme spans, scans every physical source gap between them for comments,
+then compares the code-token sequence and exact comment text. It does not rely solely on
+Lean's token-trivia attachment, because comments after delimiters may exist only in those
+source gaps. The check also reports remaining line overflow and missing rules with their
+source location and tree slice. Each missing raw
 syntax kind is also classified by whether Lean provides a registered formatter, only a
 parser-description fallback, or no formatter metadata. This is a read-only coverage audit:
 the renderer continues to use leanfmt's `defaultRule`, and non-ignorable missing leanfmt
@@ -864,16 +867,32 @@ the fallback contains multiple direct `do` statements: the fallback breaks after
 continuation returns to the declaration base. A single fallback expression may
 remain on the pipe line.
 
-Overflow analysis uses the formatted module's lossless token spans. It ignores comment
-overflow, which occupies trivia rather than syntax tokens, and unavoidable overflow where
-the entire suffix beyond the width limit is covered by one indivisible unit. Most units are
-single tokens. Interpolated strings require explicit tree-span recognition because Lean
-parses them as multiple tokens. A comma is also joined to any preceding atomic tree without
-requiring a particular array or structure context. An indivisible unit may be followed
-immediately by any sequence of tokens in the diagnostic's excluded line-ender set. The set
-contains closing delimiters, commas, and semicolons; it is explicit rather than inferred
-from parser context. Other overflowing lines still indicate that the formatter left a
-possible structural break unresolved.
+Overflow analysis uses the formatted module's lossless token spans. A terminal token
+exempts overflow only when the token itself is wider than the configured limit; a token
+that fits by itself remains actionable because another rule may move it, unless the
+formatted line already consists only of that token and tight excluded line enders at its
+structural indentation. Comment-only overflow is similarly exempt only when the comment
+content without indentation is already wider than the limit. Avoidable overflow introduced
+by comment indentation is reported.
+Preserved original-source islands and syntax marked atomic by its line-break rule remain
+exempt when they cover the entire suffix beyond the width limit. This keeps rendering and
+diagnostics consistent for multi-token atomic syntax such as projection suffixes and
+interpolated strings. A comma is also joined to any preceding atomic tree without requiring
+a particular array or structure context.
+An indivisible unit may be followed immediately by any sequence of tokens in the
+diagnostic's excluded line-ender set. The set contains closing delimiters, commas, and
+semicolons; it is explicit rather than inferred from parser context. Other overflowing
+lines still indicate that the formatter left a possible structural break unresolved.
+Formatting exception checks compare normalized overflowing line text with the source and
+report only newly introduced shapes; unchanged pre-existing overflow remains available
+through direct `overflowOccurrences` analysis without being attributed to the formatter.
+The standalone analysis keeps layout-island and isolated-token exemptions, while the
+source-versus-formatted comparison temporarily removes those movable exemptions. This
+reports a proof, quotation, or isolated token that fit in source but was shifted past the
+limit, without reporting the same pre-existing source overflow. For an isolated token,
+the comparison maps its token index back to the source and retains the exemption only
+when that token's original physical line already overflowed; this covers an unbreakable
+declaration name split away from an already-long command prefix.
 
 The CLI reports each exception at its file, continues processing later files, and
 aggregates per-kind counts for a final summary. Non-idempotence participates in that CLI
