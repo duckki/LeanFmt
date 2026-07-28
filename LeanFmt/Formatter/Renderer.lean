@@ -1971,26 +1971,27 @@ mutual
     let startsOnNewSourceLine :=
       state.lastToken?.isNone || SpaceRules.hasLineStructure sourceLeading
     let sourceLayoutStart? :=
-      if startsOnNewSourceLine then
-        firstToken?.map
-          fun _ =>
+      firstToken?.bind
+        fun _ =>
+          if startsOnNewSourceLine then
             let sourceColumn := lineWidth <| charsAfterLastNewline sourceLeading
             let parentRelativeColumn :=
               shiftColumnByAnchor state.sourceLayoutBaseColumn
                 state.outputLayoutBaseColumn sourceColumn
-            (sourceColumn, parentRelativeColumn)
-      else
-        none
+            some (sourceColumn, parentRelativeColumn)
+          else
+            none
     let parentRelativeOriginalColumn? := sourceLayoutStart?.map (·.2)
     let state :=
-      match state.pendingIndent?, sourceLayoutStart? with
-      | some desiredIndent, some (sourceColumn, parentRelativeColumn) =>
+      match state.pendingIndent?, firstToken? with
+      | some desiredIndent, some firstToken =>
           if treeHasUnbreakableFirstLine state.source child childRule then
             match treeFirstSourceLineWidth? state.source child with
             | some firstLineWidth =>
                 if desiredIndent + firstLineWidth <= state.options.lineWidth then
                   state
                 else
+                  let sourceColumn := originalColumnAt state.source firstToken.span.start
                   let renderedParentRelativeColumn? :=
                     match state.lastToken? with
                     | some leftToken =>
@@ -2005,24 +2006,42 @@ mutual
                           none
                     | none => none
                   let targetColumn :=
+                    let mayOutdentPastCurrentLine :=
+                      emitOriginal
+                      || childRule.atomic
+                      || match child with
+                          | .leaf _ => true
+                          | _ => false
+                    let canUseSourceColumn :=
+                      childRule.atomic
+                      || LineBreakRules.treeStartsWithOpeningDelimiter child
+                    let parentRelativeColumn :=
+                      sourceLayoutStart?.map (·.2)
+                      |>.getD
+                          (shiftColumnByAnchor state.sourceLayoutBaseColumn
+                            state.outputLayoutBaseColumn sourceColumn)
+                    let minimumRecoveryColumn :=
+                      max (max 1 state.outputLayoutBaseColumn)
+                        (desiredIndent - indentationSpaces)
+                    let fitsAt column :=
+                      (emitOriginal
+                        || (childRule.atomic && minimumRecoveryColumn <= column)
+                        || (!childRule.atomic
+                            && (mayOutdentPastCurrentLine
+                                || max 1 state.outputLayoutBaseColumn <= column)))
+                      && column + firstLineWidth <= state.options.lineWidth
                     match renderedParentRelativeColumn? with
                     | some renderedParentRelativeColumn =>
-                        if renderedParentRelativeColumn + firstLineWidth
-                            <= state.options.lineWidth then
+                        if fitsAt renderedParentRelativeColumn then
                           some renderedParentRelativeColumn
-                        else if LineBreakRules.treeStartsWithOpeningDelimiter child
-                                && sourceColumn + firstLineWidth
-                                    <= state.options.lineWidth then
+                        else if canUseSourceColumn && fitsAt sourceColumn then
                           some sourceColumn
                         else
                           none
                     | none =>
-                        if parentRelativeColumn + firstLineWidth
-                            <= state.options.lineWidth then
+                        if fitsAt parentRelativeColumn then
                           some parentRelativeColumn
-                        else if LineBreakRules.treeStartsWithOpeningDelimiter child
-                                && sourceColumn + firstLineWidth
-                                    <= state.options.lineWidth then
+                        else if canUseSourceColumn && fitsAt sourceColumn then
                           some sourceColumn
                         else
                           none

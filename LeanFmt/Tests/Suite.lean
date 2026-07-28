@@ -1069,6 +1069,38 @@ def assertMultitokenChildRetainsFittingSourceColumn (env : Lean.Environment)
   assertTrue "multitoken child source-column fallback fits"
     (Formatter.linesFit formatted 100)
 
+def assertOverflowRecoveryKeepsNestedCommandIndent (env : Lean.Environment)
+    : IO Unit := do
+  let source :=
+    "variable (C : Type) in\n"
+    ++ "/-- The left localizer morphism in the Guitart exact square `iso`. -/\n"
+    ++ "private abbrev L : LocalizerMorphism\n"
+    ++ "    ((CochainComplex.Plus.quasiIso C).inverseImage (InjectiveObject.ι C).mapCochainComplexPlus)\n"
+    ++ "      (isomorphisms (Plus (InjectiveObject C))) where\n"
+    ++ "  functor := HomotopyCategory.Plus.quotient (InjectiveObject C)\n"
+    ++ "  map _ _ f hf := (isIso_quotient_map_iff f).2 hf\n"
+  let expected :=
+    "variable (C : Type) in\n"
+    ++ "/-- The left localizer morphism in the Guitart exact square `iso`. -/\n"
+    ++ "private abbrev L\n"
+    ++ "      : LocalizerMorphism\n"
+    ++ "          ((CochainComplex.Plus.quasiIso C).inverseImage\n"
+    ++ "            (InjectiveObject.ι C).mapCochainComplexPlus)\n"
+    ++ "          (isomorphisms (Plus (InjectiveObject C)))\n"
+    ++ "  where\n"
+    ++ "    functor := HomotopyCategory.Plus.quotient (InjectiveObject C)\n"
+    ++ "    map _ _ f hf := (isIso_quotient_map_iff f).2 hf\n"
+  let result ←
+    Formatter.formatSourceWithEnvDetailed env source
+      "overflow-recovery-nested-command-indent.lean" { lineWidth := 100 }
+  assertTrue "overflow recovery does not leave a nested command" (!result.fellBack)
+  assertEq "overflow recovery keeps nested command indentation" expected result.formatted
+  let formattedAgain ←
+    Formatter.formatSourceWithEnv env result.formatted
+      "overflow-recovery-nested-command-indent-formatted.lean" { lineWidth := 100 }
+  assertEq "nested command overflow recovery is idempotent"
+    result.formatted formattedAgain
+
 def assertFittingTrailingLineCommentStaysAttached (env : Lean.Environment) : IO Unit := do
   let source :=
     "def commentAfterCode : Nat := do\n"
@@ -8551,6 +8583,7 @@ def runBasicFormattingTests (env : Lean.Environment) : IO Unit := do
   assertProofIslandFitIncludesParentSuffix env
   assertQuotationIslandRetainsFittingSourceIndent env
   assertMultitokenChildRetainsFittingSourceColumn env
+  assertOverflowRecoveryKeepsNestedCommandIndent env
   assertFittingTrailingLineCommentStaysAttached env
   assertAnonymousConstructorAfterListKeepsSpace env
   assertAttributeDeclarationPreservesSourceBreak env
