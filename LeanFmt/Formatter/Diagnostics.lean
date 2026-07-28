@@ -121,7 +121,7 @@ def lineNumberAt (source : String) (position : String.Pos.Raw) : Nat :=
 
 def missingRuleReportSkipsTree : SyntaxTree.Tree → Bool
   | .node (.raw `Lean.Parser.Term.byTactic') _ => true
-  | tree => shouldEmitOriginalTree tree
+  | tree => OriginalTree.shouldEmit tree
 
 def missingRuleReportIgnoresTermNotationKindName (kindName : String) : Bool :=
   kindName.startsWith "term"
@@ -248,19 +248,56 @@ partial def takeBlockCommentAux (depth : Nat) (reversed : List Char)
         takeBlockCommentAux (depth - 1) reversed rest
   | char :: rest => takeBlockCommentAux depth (char :: reversed) rest
 
-partial def commentFragmentsAux (reversed : List PreservationFragment)
+def normalizeBlockCommentIndent (openingColumn : Nat) (comment : String) : String :=
+  match (SpaceRules.normalizeLineEndings comment).splitOn "\n" with
+  | [] | [_] => comment
+  | first :: rest =>
+      let normalizedRest :=
+        rest.map
+          fun line =>
+            if line.isEmpty then
+              ""
+            else
+              let stripped := SpaceRules.stripLeadingHorizontalWhitespace line
+              let indentation := line.length - stripped.length
+              let relativeIndent := Int.ofNat indentation - Int.ofNat openingColumn
+              s!"{relativeIndent}:{stripped}"
+      String.intercalate "\n" (first :: normalizedRest)
+
+def preservationComment (openingColumn : Nat) (comment : String) : PreservationFragment :=
+  if comment.startsWith "/-" then
+    .comment (normalizeBlockCommentIndent openingColumn comment)
+  else
+    .comment comment
+
+def columnAfterText (column : Nat) (text : String) : Nat :=
+  text.toList.foldl
+    (fun column char =>
+      if char == '\n' || char == '\r' then 0 else column + 1)
+    column
+
+partial def commentFragmentsAux (column : Nat) (reversed : List PreservationFragment)
     : List Char → List PreservationFragment
   | [] => reversed.reverse
   | '-' :: '-' :: rest =>
       let (comment, rest) := takeLineCommentAux ['-', '-'] rest
-      commentFragmentsAux (.comment (String.ofList comment) :: reversed) rest
+      let comment := String.ofList comment
+      commentFragmentsAux
+        (columnAfterText column comment)
+        (preservationComment column comment :: reversed) rest
   | '/' :: '-' :: rest =>
       let (comment, rest) := takeBlockCommentAux 1 ['-', '/'] rest
-      commentFragmentsAux (.comment (String.ofList comment) :: reversed) rest
-  | _ :: rest => commentFragmentsAux reversed rest
+      let comment := String.ofList comment
+      commentFragmentsAux
+        (columnAfterText column comment)
+        (preservationComment column comment :: reversed) rest
+  | char :: rest =>
+      let column := if char == '\n' || char == '\r' then 0 else column + 1
+      commentFragmentsAux column reversed rest
 
-def commentFragments (trivia : String) : List PreservationFragment :=
-  commentFragmentsAux [] trivia.toList
+def commentFragments (trivia : String) (startColumn : Nat := 0)
+    : List PreservationFragment :=
+  commentFragmentsAux startColumn [] trivia.toList
 
 def isSyntaxCommentKind (kind : SyntaxNodeKind) : Bool :=
   kind == `Lean.Parser.Command.moduleDoc || kind == `Lean.Parser.Command.docComment
@@ -285,21 +322,29 @@ def tokenPreservationFragments
   match commentSpanForToken? syntaxCommentSpans token with
   | none =>
       let code := if token.lexeme.isEmpty then [] else [.code token.lexeme]
-      commentFragments token.leading.text ++ code ++ commentFragments token.trailing.text
+      commentFragments token.leading.text
+        (originalColumnAt source token.leading.span.start)
+      ++ code
+      ++ commentFragments token.trailing.text
+          (originalColumnAt source token.trailing.span.start)
   | some span =>
       let leading :=
         if token.span.start == span.start then
           commentFragments token.leading.text
+            (originalColumnAt source token.leading.span.start)
         else
           []
       let comment :=
         if token.span.start == span.start then
-          [.comment (SyntaxTree.sourceText source span.start span.stop)]
+          [preservationComment
+            (originalColumnAt source span.start)
+            (SyntaxTree.sourceText source span.start span.stop)]
         else
           []
       let trailing :=
         if token.span.stop == span.stop then
           commentFragments token.trailing.text
+            (originalColumnAt source token.trailing.span.start)
         else
           []
       leading ++ comment ++ trailing
@@ -307,34 +352,36 @@ def tokenPreservationFragments
 def preservationFragments (moduleTree : SyntaxTree.Module) : List PreservationFragment :=
   let tokens := (sourceLexicalTokens moduleTree).toList
   let syntaxCommentSpans := syntaxCommentSpans moduleTree.tree
-  let (fragments, consumedUntil) :=
+  let (fragments, consumedUntil, consumedColumn) :=
     tokens.foldl
-      (fun (fragments, consumedUntil) token =>
+      (fun (fragments, consumedUntil, consumedColumn) token =>
         if token.span.stop <= consumedUntil then
-          (fragments, consumedUntil)
+          (fragments, consumedUntil, consumedColumn)
         else
           match commentSpanForToken? syntaxCommentSpans token with
           | some span =>
-              let leading :=
+              let leadingText :=
                 if consumedUntil < span.start then
-                  commentFragments
-                  <| SyntaxTree.sourceText moduleTree.source consumedUntil span.start
+                  SyntaxTree.sourceText moduleTree.source consumedUntil span.start
                 else
-                  []
+                  ""
+              let leading := commentFragments leadingText consumedColumn
+              let commentColumn := columnAfterText consumedColumn leadingText
+              let commentText :=
+                SyntaxTree.sourceText moduleTree.source span.start span.stop
               let fragments :=
                 (leading.foldl (fun fragments fragment => fragments.push fragment)
                     fragments)
                   |>.push
-                <| .comment (SyntaxTree.sourceText moduleTree.source span.start span.stop)
-              (fragments, span.stop)
+                <| preservationComment commentColumn commentText
+              (fragments, span.stop, columnAfterText commentColumn commentText)
           | none =>
-              let leading :=
+              let leadingText :=
                 if consumedUntil < token.span.start then
-                  commentFragments
-                  <| SyntaxTree.sourceText moduleTree.source consumedUntil
-                      token.span.start
+                  SyntaxTree.sourceText moduleTree.source consumedUntil token.span.start
                 else
-                  []
+                  ""
+              let leading := commentFragments leadingText consumedColumn
               let fragments :=
                 leading.foldl (fun fragments fragment => fragments.push fragment)
                   fragments
@@ -343,11 +390,12 @@ def preservationFragments (moduleTree : SyntaxTree.Module) : List PreservationFr
                   fragments
                 else
                   fragments.push (.code token.lexeme)
-              (fragments, token.span.stop))
-      (#[], 0)
+              let tokenColumn := columnAfterText consumedColumn leadingText
+              (fragments, token.span.stop, columnAfterText tokenColumn token.lexeme))
+      (#[], 0, 0)
   let trailingSource :=
     SyntaxTree.sourceText moduleTree.source consumedUntil moduleTree.source.endPos.offset
-  (fragments.toList ++ commentFragments trailingSource).intersperse .space
+  (fragments.toList ++ commentFragments trailingSource consumedColumn).intersperse .space
 
 /-- Checks whether two modules have the same parsed syntax after discarding source metadata. -/
 def preservesSyntaxIgnoringSourceInfo (before after : SyntaxTree.Module) : Bool :=
@@ -363,12 +411,12 @@ def positionAfter (position : String.Pos.Raw) (text : String) : String.Pos.Raw :
 partial def preservedOriginalSpans : SyntaxTree.Tree → List SyntaxTree.Span
   | .missing | .leaf _ => []
   | tree@(.node _ children) =>
-      if shouldEmitOriginalTree tree then
+      if OriginalTree.shouldEmit tree then
         treeSpan? tree |>.toList
       else
-        children.toList.zipIdx.flatMap
-          fun (child, index) =>
-            if shouldEmitOriginalChild tree index child then
+        children.toList.flatMap
+          fun child =>
+            if OriginalTree.shouldEmit child then
               treeSpan? child |>.toList
             else
               preservedOriginalSpans child

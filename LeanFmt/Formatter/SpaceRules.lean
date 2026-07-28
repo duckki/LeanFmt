@@ -128,26 +128,50 @@ def reindentCommentLine (blockCommentDepth : Nat) (line indent : String) : Strin
     let stripped := stripLeadingHorizontalWhitespace line
     if stripped.isEmpty then "" else indent ++ stripped
 
-def reindentCommentLines (indent : String) : Nat → List String → List String
-  | _, [] => []
-  | blockCommentDepth, line :: rest =>
+def shiftCommentLineIndent (sourceIndent targetIndent : Nat) (line : String) : String :=
+  if line.isEmpty || sourceIndent == targetIndent then
+    line
+  else if sourceIndent < targetIndent then
+    String.ofList (List.replicate (targetIndent - sourceIndent) ' ') ++ line
+  else
+    let leadingLength := line.length - (stripLeadingHorizontalWhitespace line).length
+    (line.drop (min (sourceIndent - targetIndent) leadingLength)).toString
+
+def reindentCommentLines (indent : String) : Nat → Nat → List String → List String
+  | _, _, [] => []
+  | blockCommentDepth, blockSourceIndent, line :: rest =>
+      let stripped := stripLeadingHorizontalWhitespace line
+      let blockSourceIndent :=
+        if blockCommentDepth == 0 && stripped.startsWith "/-" then
+          line.length - stripped.length
+        else
+          blockSourceIndent
       let adjusted :=
-        if rest.isEmpty
-            && blockCommentDepth == 0
-            && (stripLeadingHorizontalWhitespace line).isEmpty then
+        if rest.isEmpty && blockCommentDepth == 0 && stripped.isEmpty then
           indent
+        else if 0 < blockCommentDepth then
+          shiftCommentLineIndent blockSourceIndent indent.length line
         else
           reindentCommentLine blockCommentDepth line indent
       let blockCommentDepth := blockCommentDepthAfterLine blockCommentDepth line
-      adjusted :: reindentCommentLines indent blockCommentDepth rest
+      let blockSourceIndent := if blockCommentDepth == 0 then 0 else blockSourceIndent
+      adjusted :: reindentCommentLines indent blockCommentDepth blockSourceIndent rest
 
 def reindentCommentTrivia (text indent : String) : String :=
   match (cleanTrivia text).splitOn "\n" with
   | [] => ""
   | firstLine :: rest =>
+      let strippedFirst := stripLeadingHorizontalWhitespace firstLine
+      let firstBlockSourceIndent :=
+        if strippedFirst.startsWith "/-" then
+          firstLine.length - strippedFirst.length
+        else
+          0
       String.intercalate "\n"
       <| firstLine
-          :: reindentCommentLines indent (blockCommentDepthAfterLine 0 firstLine) rest
+          :: reindentCommentLines indent
+              (blockCommentDepthAfterLine 0 firstLine)
+              firstBlockSourceIndent rest
 
 def reindentableCommentWidth (text : String) : Nat :=
   let rec loop (blockCommentDepth maximum : Nat) : List String → Nat

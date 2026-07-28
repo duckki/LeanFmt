@@ -1,4 +1,5 @@
 import LeanFmt.Formatter.LineBreakRules
+import LeanFmt.Formatter.OriginalTree
 import LeanFmt.Formatter.SpaceRules
 import LeanFmt.Formatter.Trace
 
@@ -15,7 +16,7 @@ structure Options where
 deriving BEq, Repr
 
 def indentationSpaces : Nat :=
-  2
+  OriginalTree.indentationSpaces
 
 def lineWidth (text : String) : Nat :=
   text.length
@@ -112,101 +113,6 @@ def shiftColumnByAnchor (sourceAnchorColumn outputAnchorColumn sourceColumn : Na
     sourceColumn + (outputAnchorColumn - sourceAnchorColumn)
   else
     sourceColumn - min sourceColumn (sourceAnchorColumn - outputAnchorColumn)
-
-def shiftLineIndent (sourceColumn targetColumn : Nat) (line : String) : String :=
-  if line.isEmpty then
-    line
-  else if sourceColumn <= targetColumn then
-    spaces (targetColumn - sourceColumn) ++ line
-  else
-    let removeCount := min (sourceColumn - targetColumn) (leadingWhitespace line).length
-    (line.drop removeCount).toString
-
-def rebaseOriginalLines (sourceColumn targetColumn : Nat)
-    : Nat → List String → List String
-  | _, [] => []
-  | blockCommentDepth, line :: rest =>
-      let adjusted :=
-        if 0 < blockCommentDepth then
-          line
-        else
-          shiftLineIndent sourceColumn targetColumn line
-      let blockCommentDepth :=
-        SpaceRules.blockCommentDepthAfterLine blockCommentDepth line
-      adjusted :: rebaseOriginalLines sourceColumn targetColumn blockCommentDepth rest
-
-def rebaseOriginalTextIndent (sourceColumn targetColumn : Nat) (text : String) : String :=
-  if sourceColumn == targetColumn then
-    text
-  else
-    match (SpaceRules.normalizeLineEndings text).splitOn "\n" with
-    | [] => text
-    | first :: rest =>
-        String.intercalate "\n"
-        <| first
-            :: rebaseOriginalLines sourceColumn targetColumn
-                (SpaceRules.blockCommentDepthAfterLine 0 first) rest
-
-def rebaseOriginalTreeText
-    (source : String) (tree : SyntaxTree.Tree)
-    (sourceColumn targetColumn : Nat)
-    : String :=
-  let rec loop (previous : SyntaxTree.Token) (parts : List String)
-      : List SyntaxTree.Token → List String
-    | [] => parts
-    | token :: rest =>
-        let trivia := SyntaxTree.sourceText source previous.span.stop token.span.start
-        let trivia := rebaseOriginalTextIndent sourceColumn targetColumn trivia
-        loop token (token.lexeme :: trivia :: parts) rest
-  match tree.tokens.toList with
-  | [] => ""
-  | first :: rest => String.join <| (loop first [first.lexeme] rest).reverse
-
-def fittingOriginalTreeTargetColumn
-    (source : String) (tree : SyntaxTree.Tree) (sourceText : String)
-    (sourceColumn targetColumn lineWidthLimit suffixWidth : Nat)
-    : Nat :=
-  if targetColumn <= sourceColumn then
-    targetColumn
-  else
-    let rebasedText := rebaseOriginalTreeText source tree sourceColumn targetColumn
-    let sourceLines := (SpaceRules.normalizeLineEndings sourceText).splitOn "\n"
-    let rebasedLines := (SpaceRules.normalizeLineEndings rebasedText).splitOn "\n"
-    let rec maximumOverflow (lineIndex maximum : Nat) : List String → List String → Nat
-      | sourceLine :: sourceRest, rebasedLine :: rebasedRest =>
-          let sourceWidth :=
-            sourceLine.length
-            + (if lineIndex == 0 then sourceColumn else 0)
-            + (if sourceRest.isEmpty then suffixWidth else 0)
-          let rebasedWidth :=
-            rebasedLine.length
-            + (if lineIndex == 0 then targetColumn else 0)
-            + (if rebasedRest.isEmpty then suffixWidth else 0)
-          let allowedWidth := max lineWidthLimit sourceWidth
-          let overflow :=
-            if allowedWidth < rebasedWidth then
-              rebasedWidth - allowedWidth
-            else
-              0
-          maximumOverflow (lineIndex + 1) (max maximum overflow) sourceRest rebasedRest
-      | _, _ => maximum
-    let overflow := maximumOverflow 0 0 sourceLines rebasedLines
-    let roundedReduction :=
-      ((overflow + indentationSpaces - 1) / indentationSpaces) * indentationSpaces
-    targetColumn - min (targetColumn - sourceColumn) roundedReduction
-
-def originalContinuationIndent? (text : String) : Option Nat :=
-  (SpaceRules.normalizeLineEndings text).splitOn "\n" |>.drop 1
-  |>.foldl
-      (fun minimum? line =>
-        let indentation := (leadingWhitespace line).length
-        if indentation == line.length then
-          minimum?
-        else
-          match minimum? with
-          | some minimum => some (min minimum indentation)
-          | none => some indentation)
-      none
 
 def treeFirstSourceLineWidth? (source : String) (tree : SyntaxTree.Tree)
     : Option Nat := do
@@ -453,18 +359,16 @@ def commentTriviaForBoundary
     adjusted
 
 def whitespaceForPendingBoundary
-    (trivia indentation : String) (lineWidth : Nat)
+    (trivia indentation : String)
     (commandBoundary? : Option CommandBoundarySpacing)
     : String :=
   if SpaceRules.hasCommentStart trivia then
-    let commentIndentation :=
-      spaces <| SpaceRules.commentIndentForWidth trivia indentation.length lineWidth
     let result :=
       match commandBoundary? with
       | some spacing =>
-          commentTriviaForBoundary trivia commentIndentation indentation spacing
+          commentTriviaForBoundary trivia indentation indentation spacing
       | none =>
-          SpaceRules.commentTriviaForBreakWithFollowingIndent trivia commentIndentation
+          SpaceRules.commentTriviaForBreakWithFollowingIndent trivia indentation
             indentation
     result
   else
@@ -554,19 +458,17 @@ def RenderState.defaultWhitespace (state : RenderState) (token : SyntaxTree.Toke
                     SpaceRules.commentTriviaForBreakWithFollowingIndent trivia
                       commentIndentation indentation
             | none =>
-                whitespaceForPendingBoundary trivia indentation state.options.lineWidth
+                whitespaceForPendingBoundary trivia indentation
                   state.pendingCommandBoundary?
           else
-            whitespaceForPendingBoundary trivia indentation state.options.lineWidth
-              state.pendingCommandBoundary?
+            whitespaceForPendingBoundary trivia indentation state.pendingCommandBoundary?
         else
-          whitespaceForPendingBoundary trivia indentation state.options.lineWidth
-            state.pendingCommandBoundary?
+          whitespaceForPendingBoundary trivia indentation state.pendingCommandBoundary?
     | none, some indent =>
         let indent := state.indentForMultilineToken token indent
         let indentation := spaces indent
         whitespaceForPendingBoundary token.leading.text indentation
-          state.options.lineWidth state.pendingCommandBoundary?
+          state.pendingCommandBoundary?
     | none, none =>
         if SpaceRules.hasCommentStart token.leading.text then
           SpaceRules.reindentCommentTrivia token.leading.text ""
@@ -790,384 +692,44 @@ def RenderState.hasBlankBoundaryBefore (state : RenderState) (tree : SyntaxTree.
       hasBlankLineStructure trivia
   | _, _ => false
 
-def isProofTree (tree : SyntaxTree.Tree) : Bool :=
-  match tree with
-  | .node .proofBody _ => true
-  | _ => false
-
-def isQuotationTree : SyntaxTree.Tree → Bool
-  | .node (.raw `Lean.Parser.Term.quot) _ => true
-  | .node (.raw `Lean.Parser.Term.precheckedQuot) _ => true
-  | .node (.raw `Lean.Parser.Command.quot) _ => true
-  | .node (.raw `Lean.Parser.Tactic.quot) _ => true
-  | .node (.raw `Lean.Parser.Tactic.quotSeq) _ => true
-  | .node (.raw `token_antiquot) _ => true
-  | .node (.raw `Qq.«termQ(__)») _ => true
-  | .node kind _ =>
-      let kindName := SyntaxTree.nodeKindName kind
-      kindName == "antiquotName" || SpaceRules.containsSubstring kindName ".antiquot"
-  | _ => false
-
-partial def containsQuotationTree : SyntaxTree.Tree → Bool
-  | .missing => false
-  | .leaf _ => false
-  | tree@(.node _ children) =>
-      isQuotationTree tree || children.any containsQuotationTree
-
-partial def containsQuotationOutsideProofTree : SyntaxTree.Tree → Bool
-  | .missing => false
-  | .leaf _ => false
-  | tree@(.node _ children) =>
-      if isProofTree tree then
-        false
-      else
-        isQuotationTree tree || children.any containsQuotationOutsideProofTree
-
-def isQqSyntaxTree : SyntaxTree.Tree → Bool
-  | .node (.raw `Qq.«termQ(__)») _ => true
-  | .node (.infixChain `Qq.«term_=Q_») _ => true
-  | _ => false
-
-def isProofWidgetsJsxSyntaxTree : SyntaxTree.Tree → Bool
-  | .node kind _ =>
-      (SyntaxTree.nodeKindName kind).startsWith "ProofWidgets.Jsx."
-  | _ => false
-
-def isLeanJsonSyntaxTree : SyntaxTree.Tree → Bool
-  | .node kind _ =>
-      (SyntaxTree.nodeKindName kind).startsWith "Lean.Json."
-  | _ => false
-
-def isBatteriesLibraryNoteSyntaxTree : SyntaxTree.Tree → Bool
-  | .node kind _ =>
-      (SyntaxTree.nodeKindName kind).startsWith "Batteries.Util.LibraryNote."
-  | _ => false
-
-def sourceBreakBeforeLexeme (tree : SyntaxTree.Tree) (lexeme : String) : Bool :=
-  let rec loop (started sawBreak : Bool) : List SyntaxTree.Token → Bool
-    | [] => false
-    | token :: rest =>
-        if token.lexeme == lexeme then
-          sawBreak
-        else
-          loop true
-            (sawBreak || (started && SpaceRules.hasLineStructure token.leading.text))
-            rest
-  loop false false tree.tokens.toList
-
-def isLayoutSensitiveCommand : SyntaxTree.Tree → Bool
-  | .node (.raw `Lean.Parser.Command.syntax) _ => true
-  | .node (.raw `Lean.Parser.Command.syntaxAbbrev) _ => true
-  | tree@(.node (.raw `Lean.Parser.Command.macro) _) =>
-      sourceBreakBeforeLexeme tree "=>"
-  | .node (.raw `Lean.Parser.Command.macro_rules) _ => true
-  | .node (.raw `Lean.Parser.Command.elab) _ => true
-  | .node (.raw `Lean.Parser.Command.elab_rules) _ => true
-  | .node (.raw `Lean.Parser.«command_Simproc_decl_(_):=_») _ => true
-  | .node (.raw `Lean.Parser.«command__Simproc__[_]_(_):=_») _ => true
-  | .node (.raw `Lean.runCmd) _ => true
-  | .node (.raw `Batteries.Tactic.Alias.alias) _ => true
-  | .node (.raw `Batteries.Tactic.Alias.aliasLR) _ => true
-  | _ => false
-
-def isMathlibTacticSyntaxTree : SyntaxTree.Tree → Bool
-  | .node kind _ => (SyntaxTree.nodeKindName kind).startsWith "Mathlib.Tactic."
-  | _ => false
-
-def isCalcTree : SyntaxTree.Tree → Bool
-  | .node (.raw `Lean.calc) _ => true
-  | _ => false
-
-def tokenHasCommentTrivia (token : SyntaxTree.Token) : Bool :=
-  SpaceRules.hasCommentStart token.leading.text
-  || SpaceRules.hasCommentStart token.trailing.text
-
-partial def treeHasCommentTrivia : SyntaxTree.Tree → Bool
-  | .missing => false
-  | .leaf token => tokenHasCommentTrivia token
-  | .node _ children => children.any treeHasCommentTrivia
-
-def tokenHasLineBreakTrivia (token : SyntaxTree.Token) : Bool :=
-  SpaceRules.hasLineStructure token.leading.text
-  || SpaceRules.hasLineStructure token.trailing.text
-
-partial def treeHasLineBreakTrivia : SyntaxTree.Tree → Bool
-  | .missing => false
-  | .leaf token => tokenHasLineBreakTrivia token
-  | .node _ children => children.any treeHasLineBreakTrivia
-
-def isCustomBracedTermSyntaxKindName (kindName : String) : Bool :=
-  kindName != "«term{_}»"
-  && (kindName.startsWith "«term" || SpaceRules.containsSubstring kindName ".«term")
-  && SpaceRules.containsSubstring kindName "{_}"
-
-def isCustomBracedTermSyntaxTree : SyntaxTree.Tree → Bool
-  | tree@(.node kind _) =>
-      isCustomBracedTermSyntaxKindName (SyntaxTree.nodeKindName kind)
-      && treeHasLineBreakTrivia tree
-  | _ => false
-
-def isCustomSubalgebraAdjoinSyntaxTree : SyntaxTree.Tree → Bool
-  | .node
-      (.raw `Algebra.Subalgebra.AlgHom.Subalgebra.Subalgebra.Algebra.subalgebra_adjoin)
-      _ =>
-      true
-  | _ => false
-
-def isCommentSensitiveMatchExpr : SyntaxTree.Tree → Bool
-  | tree@(.node (.raw `Lean.Parser.Term.matchExpr) _) =>
-      treeHasCommentTrivia tree
-  | _ => false
-
-def isSyntaxCommentTree : SyntaxTree.Tree → Bool
-  | .node (.raw `Lean.Parser.Command.moduleDoc) _ => true
-  | .node (.raw `Lean.Parser.Command.docComment) _ => true
-  | _ => false
-
-partial def containsProofTree : SyntaxTree.Tree → Bool
-  | .missing => false
-  | .leaf _ => false
-  | tree@(.node _ children) =>
-      isProofTree tree || children.any containsProofTree
-
-def isDefinitionContainingQuotation (tree : SyntaxTree.Tree) : Bool :=
-  match tree with
-  | .node .definition _ => containsQuotationOutsideProofTree tree
-  | .node (.raw `Lean.Parser.Command.definition) _ =>
-      containsQuotationOutsideProofTree tree
-  | .node (.raw `Lean.Parser.Command.abbrev) _ =>
-      containsQuotationOutsideProofTree tree
-  | .node (.raw `Lean.Parser.Command.declaration) _ =>
-      containsQuotationOutsideProofTree tree
-  | _ => false
-
-def isQuotationLayoutIsland (tree : SyntaxTree.Tree) : Bool :=
-  match tree with
-  | .node (.raw `Lean.Parser.Term.set_option) _ => containsQuotationTree tree
-  | _ => false
-
-def isProofLayoutIsland (tree : SyntaxTree.Tree) : Bool :=
-  match tree with
-  | .node .application children =>
-      match children[1]? with
-      | some argument =>
-          LineBreakRules.treeFirstLexeme? argument == some "fun"
-          && containsProofTree argument
-      | none => false
-  | .node (.raw `Lean.Parser.Command.declValEqns) _ =>
-      containsProofTree tree
-  | .node (.raw `Lean.Parser.Term.structInst) _ =>
-      containsProofTree tree
-  | .node (.raw `Lean.Parser.Term.anonymousCtor) _ =>
-      containsProofTree tree
-  | .node (.raw `«term{_}») _ =>
-      containsProofTree tree
-  | .node (.raw `Lean.Parser.Command.whereStructInst) _ =>
-      containsProofTree tree
-  | .node (.raw `Lean.Parser.Term.show) _ =>
-      containsProofTree tree
-  | _ => false
-
-def isProofLemmaCommand (tree : SyntaxTree.Tree) : Bool :=
-  match tree with
-  | .node (.raw `lemma) _ =>
-      LineBreakRules.treeFirstLexeme? tree == some "lemma" && containsProofTree tree
-  | .node (.raw `group) _ =>
-      LineBreakRules.treeFirstLexeme? tree == some "lemma" && containsProofTree tree
-  | _ => false
-
-def isAttributeModifierBlock (tree : SyntaxTree.Tree) : Bool :=
-  match tree with
-  | .node (.raw `Lean.Parser.Command.declModifiers) _ =>
-      LineBreakRules.treeContainsLexeme "@[" tree
-  | .node (.raw `Lean.Parser.Term.attributes) _ => true
-  | _ => false
-
-def ignoreNextMarker : String := "-- leanfmt: off next"
-
-def isIgnoreNextTarget (tree : SyntaxTree.Tree) : Bool :=
-  match tree with
-  | .node (.raw `Lean.Parser.Module.module) _
-  | .node (.raw `null) _ => false
-  | .node _ _ =>
-      tree.firstToken?.any fun token => token.leading.text.contains ignoreNextMarker
-  | _ => false
-
-def shouldEmitOriginalTree (tree : SyntaxTree.Tree) : Bool :=
-  isIgnoreNextTarget tree
-  || isProofTree tree
-  || isProofLayoutIsland tree
-  || isProofLemmaCommand tree
-  || isAttributeModifierBlock tree
-  || isDefinitionContainingQuotation tree
-  || isCalcTree tree
-  || isCommentSensitiveMatchExpr tree
-  || isQuotationLayoutIsland tree
-  || isQuotationTree tree
-  || isQqSyntaxTree tree
-  || isProofWidgetsJsxSyntaxTree tree
-  || isLeanJsonSyntaxTree tree
-  || isBatteriesLibraryNoteSyntaxTree tree
-  || isLayoutSensitiveCommand tree
-  || isMathlibTacticSyntaxTree tree
-  || isCustomBracedTermSyntaxTree tree
-  || isCustomSubalgebraAdjoinSyntaxTree tree
-  || isSyntaxCommentTree tree
-
-def shouldEmitOriginalChild
-    (_parent : SyntaxTree.Tree) (_index : Nat) (child : SyntaxTree.Tree)
-    : Bool :=
-  shouldEmitOriginalTree child
-
-partial def treeStartsWithOriginalEmission : SyntaxTree.Tree → Bool
-  | .missing => false
-  | .leaf _ => false
-  | tree@(.node _ children) =>
-      if shouldEmitOriginalTree tree then
-        true
-      else
-        let rec loop (index : Nat) : Bool :=
-          match children[index]? with
-          | some child =>
-              if SyntaxTree.Tree.firstToken? child |>.isSome then
-                treeStartsWithOriginalEmission child
-              else
-                loop (index + 1)
-          | none => false
-        loop 0
-
 def RenderState.emitOriginalTree
     (state : RenderState) (tree : SyntaxTree.Tree)
     (respectPendingIndent : Bool := false)
     (rebaseSourceTextTargetColumn? : Option Nat := none)
     : RenderState :=
-  match SyntaxTree.Tree.firstToken? tree, SyntaxTree.Tree.lastToken? tree with
-  | some firstToken, some lastToken =>
-      let usesPendingIndent :=
-        (respectPendingIndent
-          || isProofWidgetsJsxSyntaxTree tree
-          || isQuotationTree tree
-          || isSyntaxCommentTree tree)
-        && state.pendingIndent?.isSome
-      let originalLeading :=
-        match state.lastToken? with
-        | some leftToken =>
-            SyntaxTree.sourceText state.source leftToken.span.stop firstToken.span.start
-        | none => firstToken.leading.text
-      let leading :=
-        if usesPendingIndent then
-          state.defaultWhitespace firstToken true
-        else
-          originalLeading
-      let leadingColumn := lineWidth <| currentLineAfterAppend state.currentLine leading
-      let sourceText :=
-        SyntaxTree.sourceText state.source firstToken.span.start lastToken.span.stop
-      let sourceColumn := originalColumnAt state.source firstToken.span.start
-      let retainsRelativeLayout :=
-        isProofTree tree || isProofWidgetsJsxSyntaxTree tree || isQuotationTree tree
-      let inlineMultilineLayoutIsland :=
-        retainsRelativeLayout
-        && treeHasLineBreakTrivia tree
-        && !SpaceRules.hasLineStructure originalLeading
-      let inlineContinuationColumns? :=
-        if !inlineMultilineLayoutIsland then
-          none
-        else
-          match originalContinuationIndent? sourceText, state.lastToken? with
-          | some sourceIndent, some leftToken =>
-              let sourceAnchor := originalColumnAt state.source leftToken.span.start
-              let outputAnchor := lineWidth state.currentLine - leftToken.lexeme.length
-              let movedIndent :=
-                shiftColumnByAnchor sourceAnchor outputAnchor sourceIndent
-              let structuralIndent :=
-                if isProofTree tree then
-                  (state.segmentIndentation + 1) * indentationSpaces
-                else if usesPendingIndent then
-                  leadingColumn
-                else
-                  state.currentIndent
-              let movedIndent :=
-                if sourceAnchor < sourceIndent then movedIndent else sourceIndent
-              some (sourceIndent, max movedIndent structuralIndent)
-          | _, _ => none
-      let inlineContinuationColumns? :=
-        match inlineContinuationColumns? with
-        | some (sourceIndent, targetIndent) =>
-            if isQuotationTree tree then
-              some
-                (
-                  sourceIndent,
-                  fittingOriginalTreeTargetColumn state.source tree sourceText
-                    sourceIndent targetIndent state.options.lineWidth
-                    state.lineFitSuffixWidth
-                )
-            else
-              some (sourceIndent, targetIndent)
-        | none => none
-      let sourceColumnRebasedFromLayoutBase :=
-        shiftColumnByAnchor state.sourceLayoutBaseColumn
-          state.outputLayoutBaseColumn sourceColumn
-      let layoutTargetColumn? :=
-        if !retainsRelativeLayout || inlineMultilineLayoutIsland then
-          none
-        else if usesPendingIndent then
-          some leadingColumn
-        else if SpaceRules.hasLineStructure originalLeading then
-          some sourceColumnRebasedFromLayoutBase
-        else
-          none
-      let targetColumn? :=
-        rebaseSourceTextTargetColumn?.orElse fun _ => layoutTargetColumn?
-      let targetColumn? :=
-        if isProofTree tree && SpaceRules.hasLineStructure originalLeading then
-          targetColumn?.map
-            fun targetColumn =>
-              max state.outputLayoutBaseColumn targetColumn
-        else
-          targetColumn?
-      let targetColumn? :=
-        if (isProofTree tree || isQuotationTree tree) && !inlineMultilineLayoutIsland then
-          targetColumn?.map
-            fun targetColumn =>
-              fittingOriginalTreeTargetColumn state.source tree sourceText sourceColumn
-                targetColumn state.options.lineWidth state.lineFitSuffixWidth
-        else
-          targetColumn?
-      let leading :=
-        match targetColumn? with
-        | some targetColumn =>
-            rebaseOriginalTextIndent
-              (if usesPendingIndent then leadingColumn else sourceColumn)
-              targetColumn leading
-        | none => leading
-      let sourceTextRebase? :=
-        match inlineContinuationColumns?, rebaseSourceTextTargetColumn? with
-        | some continuationColumns, some targetColumn =>
-            if isProofTree tree then
-              some (sourceColumn, targetColumn)
-            else
-              some continuationColumns
-        | some continuationColumns, none => some continuationColumns
-        | none, some targetColumn => some (sourceColumn, targetColumn)
-        | none, none => targetColumn?.map fun targetColumn => (sourceColumn, targetColumn)
-      let sourceText :=
-        match sourceTextRebase? with
-        | some (sourceIndent, targetIndent) =>
-            if sourceIndent == targetIndent then
-              sourceText
-            else
-              rebaseOriginalTreeText state.source tree sourceIndent targetIndent
-        | none => sourceText
+  let request : OriginalTree.EmissionRequest :=
+    {
+      source := state.source
+      currentLine := state.currentLine
+      currentIndent := state.currentIndent
+      lastToken? := state.lastToken?
+      pendingLeadingWhitespace? :=
+        state.pendingIndent?.map
+          fun _ =>
+            match SyntaxTree.Tree.firstToken? tree with
+            | some firstToken => state.defaultWhitespace firstToken true
+            | none => ""
+      segmentIndentation := state.segmentIndentation
+      sourceLayoutBaseColumn := state.sourceLayoutBaseColumn
+      outputLayoutBaseColumn := state.outputLayoutBaseColumn
+      lineWidth := state.options.lineWidth
+      lineFitSuffixWidth := state.lineFitSuffixWidth
+      respectPendingIndent
+      rebaseSourceTextTargetColumn?
+    }
+  match OriginalTree.emit? request tree with
+  | some emission =>
       {
-        state.appendOutput <| leading ++ sourceText with
-          lastToken? := some lastToken
+        state.appendOutput emission.text with
+          lastToken? := some emission.lastToken
           pendingIndent? := none
           pendingCommandBoundary? := none
-          preserveNextStandaloneCommentIndent := isLayoutSensitiveCommand tree
+          preserveNextStandaloneCommentIndent :=
+            emission.preserveNextStandaloneCommentIndent
       }
-  | _, _ => state
+  | none => state
 
-def originalTreeHasLineStructure (source : String) (tree : SyntaxTree.Tree) : Bool :=
+def treeSourceHasLineStructure (source : String) (tree : SyntaxTree.Tree) : Bool :=
   match SyntaxTree.Tree.firstToken? tree, SyntaxTree.Tree.lastToken? tree with
   | some firstToken, some lastToken =>
       SpaceRules.hasLineStructure
@@ -1187,7 +749,7 @@ partial def renderWithoutRuleBreaks
         (fun state index =>
           match segment.child? index with
           | some child =>
-              if shouldEmitOriginalChild segment.parent index child then
+              if OriginalTree.shouldEmit child then
                 state.emitOriginalTree child
               else
                 renderWithoutRuleBreaks state (LineBreakRules.Segment.ofTree child)
@@ -1214,7 +776,7 @@ partial def probeLayoutWithoutRuleBreaks?
             | none => loop state rest
             | some child =>
                 let rendered? :=
-                  if shouldEmitOriginalChild segment.parent index child then
+                  if OriginalTree.shouldEmit child then
                     let rendered := state.emitOriginalTree child
                     if layoutProbeHasNotOverflowed rendered then some rendered else none
                   else
@@ -1428,7 +990,7 @@ partial def measureSuffixOfTree
         | .emit => state.emitToken token false
         | .stop => (state.appendCommentTriviaBeforeToken token, true)
   | .node _ _ =>
-      if shouldEmitOriginalTree tree then
+      if OriginalTree.shouldEmit tree then
         state.emitOriginalFirstLine tree
       else
         let segment := LineBreakRules.Segment.ofTree tree
@@ -1488,7 +1050,7 @@ partial def renderFirstLineOfTree (state : RenderState) (tree : SyntaxTree.Tree)
           stopped
         )
   | .node _ _ =>
-      if shouldEmitOriginalTree tree then
+      if OriginalTree.shouldEmit tree then
         state.firstLineOfOriginalTree tree
       else
         let segment := LineBreakRules.Segment.ofTree tree
@@ -1673,7 +1235,7 @@ def sourceBreaksAllowedByBreakPoints
     fun sourceBreak =>
       breakPoints.any fun breakPoint => breakPoint.index == sourceBreak.index
 
-def formattedWhitespaceKeepsSourceBreakAt
+def interveningCommentLineBreakAt
     (source : String) (segment : LineBreakRules.Segment) (index : Nat)
     : Bool :=
   match tokenBoundaryAt? segment index with
@@ -1770,10 +1332,9 @@ partial def segmentAllowsLayoutWithoutRuleBreaks
   | .missing => true
   | .leaf _ => true
   | .node _ _ =>
-      if shouldEmitOriginalTree segment.parent then
-        isAttributeModifierBlock segment.parent
-        || isProofTree segment.parent
-        || !originalTreeHasLineStructure source segment.parent
+      if OriginalTree.shouldEmit segment.parent then
+        OriginalTree.preservesMultilineLayoutWithoutRuleBreaks segment.parent
+        || !treeSourceHasLineStructure source segment.parent
       else
         let rule := LineBreakRules.formattingRuleFor segment.parent
         if rule.mandatory context segment then
@@ -2080,7 +1641,7 @@ def FlowRenderContext.stateForForcedNestedChild?
       else if breakAfterPreviousChild
               || !childFit.fits
               || flow.hasSourceBreakAt index
-              || formattedWhitespaceKeepsSourceBreakAt state.source flow.segment index
+              || interveningCommentLineBreakAt state.source flow.segment index
               || (breakPoint.indentLevels == 0 && !pieceFit.flat)
               || !pieceFit.fits then
         some <| flow.withBreak state breakPoint
@@ -2204,7 +1765,7 @@ mutual
     | .node _ children =>
         if segment.start == 0
             && segment.stop == children.size
-            && shouldEmitOriginalTree segment.parent then
+            && OriginalTree.shouldEmit segment.parent then
           state.emitOriginalTree segment.parent
         else
           renderSegmentByRule state segment rule breakPoints
@@ -2228,7 +1789,7 @@ mutual
       let hasRetainedSourceBreak :=
         breakPoints.any
           fun breakPoint =>
-            formattedWhitespaceKeepsSourceBreakAt state.source segment breakPoint.index
+            interveningCommentLineBreakAt state.source segment breakPoint.index
             || sourceBrokenCommentedDelimiterAt state.source segment breakPoint.index
       if rule.preferChildLayouts state.context segment && !hasRetainedSourceBreak then
         match renderPreferredChildLayout? state segment breakPoints with
@@ -2324,9 +1885,9 @@ mutual
       (state : RenderState) (segment : LineBreakRules.Segment) (index : Nat)
       (child : SyntaxTree.Tree) (suffixStop? : Option Nat := none)
       : RenderState :=
-    let emitOriginal := shouldEmitOriginalChild segment.parent index child
+    let emitOriginal := OriginalTree.shouldEmit child
     let state :=
-      if emitOriginal || treeStartsWithOriginalEmission child then
+      if emitOriginal || OriginalTree.startsWithEmission child then
         state
       else
         state.preserveBlankBoundaryBefore child
@@ -2470,14 +2031,11 @@ mutual
       if emitOriginal then
         childState.emitOriginalTree child
           (respectPendingIndent :=
-            isProofTree child
-            || !startsOnNewSourceLine
-            || isProofLemmaCommand child
-            || state.pendingCommandBoundary?.isSome)
+            !startsOnNewSourceLine || state.pendingCommandBoundary?.isSome)
       else
         renderSegment childState childSegment (some (childRule, childBreakPoints))
     let rendered :=
-      if !emitOriginal || !isProofWidgetsJsxSyntaxTree child then
+      if !emitOriginal || !OriginalTree.prefersParentRelativeColumn child then
         rendered
       else
         match parentRelativeOriginalColumn? with

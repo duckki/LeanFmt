@@ -38,6 +38,7 @@ The implementation is split by responsibility:
 | `LeanFmt.SyntaxTree` | Parse Lean source, keep token/trivia spans, build raw tree, regroup selected raw syntax into logical nodes. |
 | `LeanFmt.Formatter.SpaceRules` | Decide horizontal whitespace and trivia cleanup between adjacent emitted tokens. |
 | `LeanFmt.Formatter.LineBreakRules` | Define rule-facing segments, rule context, break points, node-kind dispatch, and syntax-specific break judgements. |
+| `LeanFmt.Formatter.OriginalTree` | Classify protected source-layout islands and plan their indentation-preserving source emission. |
 | `LeanFmt.Formatter.Renderer` | Carry render state, run fit checks, collect accepted source breaks, compute indentation, emit tokens. |
 | `LeanFmt.Formatter.Trace` | Record and format renderer traces for debugging. |
 | `LeanFmt.Formatter.Diagnostics` | Analyze compact bang syntax, code preservation, overflow, and missing formatting rules. |
@@ -479,7 +480,8 @@ For each segment:
 1. Dispatch to `formattingRuleFor`.
 2. Record a trace entry if tracing is enabled.
 3. Emit missing and leaf segments mechanically.
-4. Emit proof escape-hatch subtrees from original source.
+4. Ask `OriginalTree` to plan protected source-island emission and apply the returned
+   text and token-state update.
 5. If a rule is atomic, render all of its children flat as one measured unit.
 6. If a rule is mandatory, apply all returned breaks.
 7. If the rule has no break behavior, render children in source order.
@@ -569,6 +571,11 @@ Rules and regroupings should preserve these cross-syntax relationships:
   application argument that starts with a delimiter followed by a line comment retains
   its argument break so the delimiter and comment do not migrate onto the preceding
   application line.
+- A comment line at a rule breakpoint makes that renderer boundary structural. This is
+  independent of syntax kind: the renderer applies the rule's ordinary breakpoint
+  indentation to both the intervening comment and the following token. Syntax-specific
+  rules do not inspect comment trivia to make themselves mandatory. A trailing line
+  comment remains attached to preceding code while their complete line fits.
 
 This separation lets rules say "this boundary may follow source layout" without letting
 source indentation leak into renderer state.
@@ -702,8 +709,12 @@ boundary, same-line comment trivia preceding that boundary still contributes to 
 
 ### Proof and original-source escape hatches
 
-Proof subtrees and extensible attribute payloads are not reformatted. When the renderer reaches a recognized proof or attribute node, it
-emits the original source slice, adjusted only for indentation when needed. A protected
+Proof subtrees and extensible attribute payloads are not reformatted.
+`Formatter.OriginalTree` owns the protected-tree classification, source-slice rebasing,
+and emission plan. Its renderer-facing API returns the planned text, final token, and
+the one comment-boundary flag needed by subsequent ordinary rendering; it does not own
+or mutate renderer state. When the renderer reaches a recognized proof or attribute
+node, it applies that plan. A protected
 subtree that begins on a new source line inherits the source-to-output layout-base
 translation established by its enclosing formatted segment. The output-side anchor is
 the column where that segment actually starts, including when a child that began a source
@@ -782,10 +793,13 @@ diagnostic API lives under `Formatter.Diagnostics`.
 
 Formatter-exception checking is also separate from rendering. It orders source-backed
 tokens by their lexeme spans, scans every physical source gap between them for comments,
-then compares the code-token sequence and exact comment text. It does not rely solely on
-Lean's token-trivia attachment, because comments after delimiters may exist only in those
-source gaps. The check also reports remaining line overflow and missing rules with their
-source location and tree slice. Each missing raw
+then compares the code-token sequence and comment text. Line-comment text and relative
+block-comment whitespace are exact. A uniform indentation shift of a complete multiline
+block comment is normalized against the comment's opening column, allowing the comment
+to move with its owning syntax without allowing internal relative whitespace to change.
+The check does not rely solely on Lean's token-trivia attachment, because comments after
+delimiters may exist only in those source gaps. The check also reports remaining line
+overflow and missing rules with their source location and tree slice. Each missing raw
 syntax kind is also classified by whether Lean provides a registered formatter, only a
 parser-description fallback, or no formatter metadata. This is a read-only coverage audit:
 the renderer continues to use leanfmt's `defaultRule`, and non-ignorable missing leanfmt

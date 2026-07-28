@@ -13,6 +13,8 @@ linked below remains the source of truth when this summary and the code diverge.
 - `LeanFmt/Formatter/SpaceRules.lean` owns horizontal token spacing.
 - `LeanFmt/Formatter/LineBreakRules.lean` owns syntax-specific break rules and
   the complete rule dispatch table.
+- `LeanFmt/Formatter/OriginalTree.lean` classifies protected source-layout islands
+  and plans their indentation-preserving source emission.
 - `LeanFmt/Formatter/Renderer.lean` owns layout state, fit checks, indentation,
   and text emission. Keep syntax-specific decisions out of the renderer.
 - `LeanFmt/Formatter/Diagnostics.lean` checks code preservation, actionable line

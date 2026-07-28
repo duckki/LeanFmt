@@ -43,6 +43,8 @@ def ignoreRegionStartMarker : String := "-- leanfmt: off"
 
 def ignoreRegionStopMarker : String := "-- leanfmt: on"
 
+def ignoreNextMarker : String := "-- leanfmt: off next"
+
 def normalizeSource (source : String) : String :=
   SpaceRules.normalizeLineEndings source
 

@@ -379,8 +379,8 @@ def assertMovedStandaloneCommentsKeepSiblingIndent (env : Lean.Environment)
   let blockCommentExpected :=
     "def movedBlockComment :=\n"
     ++ "  fun value =>\n"
-    ++ "  /- If all elements of the family are evaluatable and the resulting family is compatible, take\n"
-    ++ "  the glued section without changing internal comment indentation. -/\n"
+    ++ "    /- If all elements of the family are evaluatable and the resulting family is compatible, take\n"
+    ++ "    the glued section without changing internal comment indentation. -/\n"
     ++ "    value\n"
   let blockCommentFormatted ←
     Formatter.formatSourceWithEnv env blockCommentSource
@@ -1049,20 +1049,15 @@ def assertMultitokenChildRetainsFittingSourceColumn (env : Lean.Environment)
   assertTrue "multitoken child source-column fallback fits"
     (Formatter.linesFit formatted 100)
 
-def assertOverflowingTrailingLineCommentBreaks (env : Lean.Environment) : IO Unit := do
+def assertFittingTrailingLineCommentStaysAttached (env : Lean.Environment) : IO Unit := do
   let source :=
     "def commentAfterCode : Nat := do\n"
     ++ "  let value := 0 -- explanatory trailing comment\n"
     ++ "  pure value\n"
-  let expected :=
-    "def commentAfterCode : Nat := do\n"
-    ++ "  let value := 0\n"
-    ++ "  -- explanatory trailing comment\n"
-    ++ "  pure value\n"
   let formatted ←
-    Formatter.formatSourceWithEnv env source "overflowing-trailing-line-comment.lean"
-      { lineWidth := 35 }
-  assertEq "overflowing trailing line comment moves to its own line" expected formatted
+    Formatter.formatSourceWithEnv env source "fitting-trailing-line-comment.lean"
+      { lineWidth := 50 }
+  assertEq "fitting trailing line comment stays attached" source formatted
 
 def assertAnonymousConstructorAfterListKeepsSpace (env : Lean.Environment) : IO Unit := do
   let source :=
@@ -2166,7 +2161,7 @@ def assertMovedProofBodiesKeepRelativeIndentation (env : Lean.Environment) : IO 
     ++ "  fun ⟨x, hx⟩ =>\n"
     ++ "    have h : True := by\n"
     ++ "      /- Keep this\n"
-    ++ "         internal comment indentation. -/\n"
+    ++ "           internal comment indentation. -/\n"
     ++ "      exact True.intro\n"
     ++ "    h\n"
   let lambdaFormatted ←
@@ -6776,6 +6771,19 @@ def assertFormattingExceptionChecks (env : Lean.Environment) : IO Unit := do
       "def value := /- outer /- keep spaces -/ comment -/ 0\n"
   assertTrue "nested block-comment whitespace is preserved"
     (!nestedBlockCommentWhitespacePreserved)
+  let indentedBlockComment :=
+    "def value :=\n" ++ "  /- keep\n" ++ "  relative indentation -/\n"
+    ++ "  0\n"
+  let movedBlockComment :=
+    "def value :=\n" ++ "    /- keep\n" ++ "    relative indentation -/\n"
+    ++ "    0\n"
+  assertTrue "uniform block-comment movement preserves relative whitespace"
+    (← codePreservedIgnoringWhitespace env indentedBlockComment movedBlockComment)
+  let changedBlockComment :=
+    "def value :=\n" ++ "  /- keep\n" ++ "    relative indentation -/\n"
+    ++ "  0\n"
+  assertTrue "relative block-comment whitespace is preserved"
+    (!(← codePreservedIgnoringWhitespace env indentedBlockComment changedBlockComment))
   assertTrue "string-literal whitespace remains code"
     (!(← codePreservedIgnoringWhitespace env
           "def value := \"keep  spaces\"\n"
@@ -7340,7 +7348,7 @@ def assertFormatterArchitecture : IO Unit := do
     SyntaxTree.Tree.node (.raw `Lean.Parser.Command.quot)
       #[.leaf (syntheticAtomToken "`("), .leaf (syntheticAtomToken ")")]
   assertTrue "command quotations preserve their original layout"
-    (Formatter.shouldEmitOriginalTree commandQuotation)
+    (Formatter.OriginalTree.shouldEmit commandQuotation)
   let annotation :=
     SyntaxTree.Tree.node (.raw `Lean.Parser.Command.declModifiers)
       #[.leaf (syntheticAtomToken "@[")]
@@ -8003,36 +8011,36 @@ def assertMathlibLowRiskSyntaxKindsHaveRules : IO Unit := do
     (!Formatter.Diagnostics.missingRuleReportIgnoresKindName "«tacticFoo»")
   let tacticTree := SyntaxTree.Tree.node (.raw `Mathlib.Tactic.ToDual.to_dual) #[]
   assertTrue "mathlib tactic syntax keeps original formatting"
-    (Formatter.shouldEmitOriginalTree tacticTree)
+    (Formatter.OriginalTree.shouldEmit tacticTree)
   assertTrue "mathlib tactic syntax is skipped by missing-rule reporting"
     (Formatter.Diagnostics.missingRuleOccurrences "" none tacticTree).isEmpty
   let qqTermTree := SyntaxTree.Tree.node (.raw `Qq.«termQ(__)») #[]
   assertTrue "Qq term quotation keeps original formatting"
-    (Formatter.shouldEmitOriginalTree qqTermTree)
+    (Formatter.OriginalTree.shouldEmit qqTermTree)
   let qqEqTree := SyntaxTree.Tree.node (.infixChain `Qq.«term_=Q_») #[]
   assertTrue "Qq infix quotation keeps original formatting"
-    (Formatter.shouldEmitOriginalTree qqEqTree)
+    (Formatter.OriginalTree.shouldEmit qqEqTree)
   let simprocTree :=
     SyntaxTree.Tree.node (.raw `Lean.Parser.«command_Simproc_decl_(_):=_») #[]
   assertTrue "simproc declarations keep original formatting"
-    (Formatter.shouldEmitOriginalTree simprocTree)
+    (Formatter.OriginalTree.shouldEmit simprocTree)
   let bracketedSimprocTree :=
     SyntaxTree.Tree.node (.raw `Lean.Parser.«command__Simproc__[_]_(_):=_») #[]
   assertTrue "bracketed simproc declarations keep original formatting"
-    (Formatter.shouldEmitOriginalTree bracketedSimprocTree)
+    (Formatter.OriginalTree.shouldEmit bracketedSimprocTree)
   let libraryNoteTree :=
     SyntaxTree.Tree.node (.raw `Batteries.Util.LibraryNote.«commandLibrary_note___») #[]
   assertTrue "Batteries library notes keep original formatting"
-    (Formatter.shouldEmitOriginalTree libraryNoteTree)
+    (Formatter.OriginalTree.shouldEmit libraryNoteTree)
   let jsxTree :=
     SyntaxTree.Tree.node (.raw `ProofWidgets.Jsx.«proofWidgetsJsxElement<__>_</_>») #[]
   assertTrue "ProofWidgets JSX keeps original formatting"
-    (Formatter.shouldEmitOriginalTree jsxTree)
+    (Formatter.OriginalTree.shouldEmit jsxTree)
   assertTrue "ProofWidgets JSX is skipped by missing-rule reporting"
     (Formatter.Diagnostics.missingRuleOccurrences "" none jsxTree).isEmpty
   let jsonTree := SyntaxTree.Tree.node (.raw `Lean.Json.«json{_}») #[]
   assertTrue "Lean JSON syntax keeps original formatting"
-    (Formatter.shouldEmitOriginalTree jsonTree)
+    (Formatter.OriginalTree.shouldEmit jsonTree)
   assertTrue "Lean JSON syntax is skipped by missing-rule reporting"
     (Formatter.Diagnostics.missingRuleOccurrences "" none jsonTree).isEmpty
 
@@ -8471,7 +8479,7 @@ def runBasicFormattingTests (env : Lean.Environment) : IO Unit := do
   assertProofIslandFitIncludesParentSuffix env
   assertQuotationIslandRetainsFittingSourceIndent env
   assertMultitokenChildRetainsFittingSourceColumn env
-  assertOverflowingTrailingLineCommentBreaks env
+  assertFittingTrailingLineCommentStaysAttached env
   assertAnonymousConstructorAfterListKeepsSpace env
   assertAttributeDeclarationPreservesSourceBreak env
   assertAttributesFlowBeforeDeclarations env

@@ -2368,13 +2368,6 @@ def matchAltBreaks (context : RuleContext) (segment : Segment) : List BreakPoint
     | some breakPoint => [breakPoint]
     | none => []
 
-def matchAltBodyStartsAfterCommentBreak (segment : Segment) : Bool :=
-  match segment.child? 3 >>= SyntaxTree.Tree.firstToken? with
-  | some token =>
-      SpaceRules.hasCommentStart token.leading.text
-      && SpaceRules.hasLineStructure token.leading.text
-  | none => false
-
 def matchExprAltBreaks (_context : RuleContext) (segment : Segment) : List BreakPoint :=
   [leadingBreak? segment segment.start 0, boundaryBreak? segment 3 1].filterMap id
 
@@ -2911,7 +2904,6 @@ def subtypeRule : LineBreakRule :=
 def matchAltRule : LineBreakRule :=
   {
     name := "matchAlt"
-    mandatory := fun _ segment => matchAltBodyStartsAfterCommentBreak segment
     useExistingBreaks := fun _ _ => true
     flow := fun _ _ => true
     breakPoints := matchAltBreaks
