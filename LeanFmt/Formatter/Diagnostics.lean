@@ -184,9 +184,17 @@ def treeSpan? (tree : SyntaxTree.Tree) : Option SyntaxTree.Span := do
 
 inductive PreservationFragment where
   | code (text : String)
-  | comment (text : String)
+  | comment (text normalizedIndent : String)
   | space
-deriving BEq, Repr
+deriving Repr
+
+instance : BEq PreservationFragment where
+  beq
+    | .code before, .code after => before == after
+    | .comment before beforeNormalized, .comment after afterNormalized =>
+        before == after || beforeNormalized == afterNormalized
+    | .space, .space => true
+    | _, _ => false
 
 structure PreservationFragmentMismatch where
   index : Nat
@@ -266,9 +274,9 @@ def normalizeBlockCommentIndent (openingColumn : Nat) (comment : String) : Strin
 
 def preservationComment (openingColumn : Nat) (comment : String) : PreservationFragment :=
   if comment.startsWith "/-" then
-    .comment (normalizeBlockCommentIndent openingColumn comment)
+    .comment comment (normalizeBlockCommentIndent openingColumn comment)
   else
-    .comment comment
+    .comment comment comment
 
 def columnAfterText (column : Nat) (text : String) : Nat :=
   text.toList.foldl
@@ -598,6 +606,25 @@ def lineStartPosition (source : String) (lineNumber : Nat) : String.Pos.Raw :=
   (source.splitOn "\n").take (lineNumber - 1)
   |>.foldl (fun position line => positionAfter position (line ++ "\n")) 0
 
+def sourceCommentLineTexts (moduleTree : SyntaxTree.Module) : List String :=
+  (preservationFragments moduleTree).flatMap
+    fun
+    | .comment text _ =>
+        (SpaceRules.normalizeLineEndings text).splitOn "\n" |>.map (·.trimAscii.toString)
+        |>.filter fun line => !line.isEmpty
+    | _ => []
+
+def commentOnlyOverflowMatchesSource
+    (formattedModule : SyntaxTree.Module)
+    (formattedTokens : List SyntaxTree.Token)
+    (sourceCommentLineTexts : List String)
+    (occurrence : OverflowOccurrence)
+    : Bool :=
+  let lineStart := lineStartPosition formattedModule.source occurrence.line
+  let contentStop := positionAfter lineStart occurrence.text.trimAsciiEnd.toString
+  !formattedTokens.any (tokenIntersects lineStart contentStop)
+  && sourceCommentLineTexts.contains occurrence.text.trimAscii.toString
+
 def atomicSyntaxSourceLineOverflowed
     (sourceModule formattedModule : SyntaxTree.Module)
     (sourceTokens formattedTokens : List SyntaxTree.Token)
@@ -652,9 +679,12 @@ def formattingExceptions (sourceModule formattedModule : SyntaxTree.Module)
         (overflowOccurrencesWith sourceModule options false).map
           fun occurrence =>
             occurrence.text.trimAscii
+      let sourceCommentLineTexts := sourceCommentLineTexts sourceModule
       formattedOccurrences.filterMap
         fun occurrence =>
           if sourceOverflowTexts.contains occurrence.text.trimAscii
+              || commentOnlyOverflowMatchesSource formattedModule formattedTokens
+                  sourceCommentLineTexts occurrence
               || isolatedTokenSourceLineOverflowed sourceModule formattedModule
                   sourceTokens formattedTokens occurrence options.lineWidth then
             none

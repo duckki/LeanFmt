@@ -777,13 +777,12 @@ indentation would create an otherwise avoidable overflow, the renderer first kee
 source column translated by the parent layout's movement. When a source-broken
 application begins with an unbreakable qualified head and that parent-relative column
 still overflows, the renderer may use the original absolute source column as a final
-fitting candidate. Single tokens, atomic rules, and projection-chain heads use the same
-mechanism. Multiline atomic tokens, quotation islands, and unwrappable comment trivia use
-the analogous source-fitting column check. Structural indentation of the following code
-remains unchanged. If reformatted code makes an attached line comment overflow, the
-renderer moves the unchanged comment text to its own line. It prefers the surrounding
-structural indentation, then the comment's original fitting column, without changing the
-following code's indentation.
+fitting candidate. Single tokens, atomic rules, projection-chain heads, multiline atomic
+tokens, and quotation islands use the same mechanism. Standalone comment trivia does not
+make an otherwise valid structural layout fail its fit probe: the comment follows the
+surrounding code's indentation even when the unchanged comment text then exceeds the line
+limit. If reformatted code makes an attached line comment overflow, the renderer moves the
+unchanged comment text to its own line without changing the following code's indentation.
 
 ## Diagnostics and formatter exceptions
 
@@ -912,9 +911,9 @@ Overflow analysis uses the formatted module's lossless token spans. A terminal t
 exempts overflow only when the token itself is wider than the configured limit; a token
 that fits by itself remains actionable because another rule may move it, unless the
 formatted line already consists only of that token and tight excluded line enders at its
-structural indentation. Comment-only overflow is similarly exempt only when the comment
-content without indentation is already wider than the limit. Avoidable overflow introduced
-by comment indentation is reported.
+structural indentation. Comment-only overflow is similarly exempt when the same literal
+comment line occurs in the source, even if formatting moves it to a deeper structural
+indentation. New or changed overflowing comment text remains actionable.
 Preserved original-source islands and syntax marked atomic by its line-break rule remain
 exempt when they cover the entire suffix beyond the width limit. This keeps rendering and
 diagnostics consistent for multi-token atomic syntax such as projection suffixes and

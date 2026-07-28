@@ -93,6 +93,33 @@ def appendedLines (currentLine text : String) (limit : Nat := maxLineWidth)
         loop (lineWidth + 1) breakCount overflowCount (char :: current) rest
   loop currentLine.length 0 0 [] text.toList
 
+def appendedTriviaLines (currentLine text : String) (limit : Nat := maxLineWidth)
+    : AppendedLines :=
+  let rec loop (lineWidth breakCount overflowCount : Nat) (countOverflow : Bool)
+      (current : List Char)
+      : List Char → AppendedLines
+    | [] =>
+        {
+          lineBreakCount := breakCount
+          completedLineOverflowCount := overflowCount
+          currentLine := String.ofList current.reverse
+        }
+    | '\r' :: '\n' :: rest =>
+        loop 0 (breakCount + 1)
+          (overflowCount + if countOverflow && lineWidth > limit then 1 else 0)
+          false [] rest
+    | '\n' :: rest =>
+        loop 0 (breakCount + 1)
+          (overflowCount + if countOverflow && lineWidth > limit then 1 else 0)
+          false [] rest
+    | '\r' :: rest =>
+        loop 0 (breakCount + 1)
+          (overflowCount + if countOverflow && lineWidth > limit then 1 else 0)
+          false [] rest
+    | char :: rest =>
+        loop (lineWidth + 1) breakCount overflowCount countOverflow (char :: current) rest
+  loop currentLine.length 0 0 (!currentLine.trimAscii.isEmpty) [] text.toList
+
 def charsAfterLastNewline (text : String) : String :=
   let rec loop : List Char → List Char → String
     | [], current => String.ofList current.reverse
@@ -277,6 +304,24 @@ def introducesCompletedLineOverflow
 def RenderState.appendOutput (state : RenderState) (text : String) : RenderState :=
   if hasLineBreakChar text then
     let appended := appendedLines state.currentLine text state.options.lineWidth
+    {
+      state with
+        output := state.output ++ text
+        outputLineBreakCount := state.outputLineBreakCount + appended.lineBreakCount
+        completedLineOverflowCount :=
+          state.completedLineOverflowCount + appended.completedLineOverflowCount
+        currentLine := appended.currentLine
+    }
+  else
+    {
+      state with
+        output := state.output ++ text
+        currentLine := state.currentLine ++ text
+    }
+
+def RenderState.appendTriviaOutput (state : RenderState) (text : String) : RenderState :=
+  if hasLineBreakChar text then
+    let appended := appendedTriviaLines state.currentLine text state.options.lineWidth
     {
       state with
         output := state.output ++ text
@@ -546,13 +591,13 @@ def RenderState.emitToken (state : RenderState) (token : SyntaxTree.Token)
     state
   else
     let whitespace := state.defaultWhitespace token preserveLines
+    let state := state.appendTriviaOutput whitespace
     let introducedAtomicOverflow :=
       match state.pendingIndent? with
       | none => false
       | some _ =>
           let tokenWidth := (firstLineAppendWidth token.lexeme).1
-          let outputColumn :=
-            lineWidth <| currentLineAfterAppend state.currentLine whitespace
+          let outputColumn := lineWidth state.currentLine
           if state.options.lineWidth < outputColumn + tokenWidth then
             let sourceLeading :=
               match state.lastToken? with
@@ -568,7 +613,7 @@ def RenderState.emitToken (state : RenderState) (token : SyntaxTree.Token)
           else
             false
     {
-      state.appendOutput (whitespace ++ token.lexeme) with
+      state.appendOutput token.lexeme with
         introducedAtomicOverflowCount :=
           state.introducedAtomicOverflowCount + if introducedAtomicOverflow then 1 else 0
         lastToken? := some token

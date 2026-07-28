@@ -389,6 +389,26 @@ def assertMovedStandaloneCommentsKeepSiblingIndent (env : Lean.Environment)
     blockCommentExpected blockCommentFormatted
   assertTrue "moved block comment preserves code"
     (← codePreservedIgnoringWhitespace env blockCommentSource blockCommentFormatted)
+  let matchArmSource :=
+    "def commentFitDoesNotOutdentCode value := Id.run do\n"
+    ++ "  let rec\n"
+    ++ "  align : Nat → Nat\n"
+    ++ "    | 0 => 0\n"
+    ++ "    | n =>\n"
+    ++ "      -- This comment is intentionally much too long for the configured formatter line width.\n"
+    ++ "      n\n"
+    ++ "  align value\n"
+  let matchArmExpectedFragment :=
+    "        | n =>\n"
+    ++ "            -- This comment is intentionally much too long for the configured formatter line width.\n"
+    ++ "            n\n"
+  let matchArmFormatted ←
+    Formatter.formatSourceWithEnv env matchArmSource
+      "comment-fit-does-not-outdent-code.lean" { lineWidth := 50 }
+  assertTextContains "comment overflow does not select a flatter match-arm layout"
+    matchArmFormatted matchArmExpectedFragment
+  assertTrue "moved match-arm comment preserves code"
+    (← codePreservedIgnoringWhitespace env matchArmSource matchArmFormatted)
 
 def assertAtomicTokenRetainsFittingSourceColumn (env : Lean.Environment) : IO Unit := do
   let firstLine := "\"" ++ String.ofList (List.replicate 98 'x')
@@ -6784,6 +6804,40 @@ def assertFormattingExceptionChecks (env : Lean.Environment) : IO Unit := do
     ++ "  0\n"
   assertTrue "relative block-comment whitespace is preserved"
     (!(← codePreservedIgnoringWhitespace env indentedBlockComment changedBlockComment))
+  let inlineBlockComment :=
+    "def value := /- keep\n" ++ "continuation at the margin -/ 0\n"
+  let movedInlineBlockComment :=
+    "def value :=\n" ++ "  /- keep\n" ++ "continuation at the margin -/\n"
+    ++ "  0\n"
+  assertTrue "unchanged block-comment text survives movement from an inline position"
+    (← codePreservedIgnoringWhitespace env inlineBlockComment movedInlineBlockComment)
+  assertTrue "unchanged block-comment text survives movement from the margin"
+    (← codePreservedIgnoringWhitespace env
+        "/- keep\ncontinuation at the margin -/\ndef value := 0\n"
+        "  /- keep\ncontinuation at the margin -/\ndef value := 0\n")
+  let commentOverflowSource :=
+    "def value := fun x => by\n" ++ "    /-\n" ++ "    123456789012345\n" ++ "    -/\n"
+    ++ "    exact x\n"
+  let movedCommentOverflow :=
+    "def value := fun x => by\n"
+    ++ "      /-\n"
+    ++ "      123456789012345\n"
+    ++ "      -/\n"
+    ++ "      exact x\n"
+  let commentOverflowSourceModule ←
+    SyntaxTree.parseModuleStringWithEnv env commentOverflowSource
+      "comment-overflow-source.lean"
+  let movedCommentOverflowModule ←
+    SyntaxTree.parseModuleStringWithEnv env movedCommentOverflow
+      "comment-overflow-formatted.lean"
+  let movedCommentExceptions :=
+    Formatter.Diagnostics.formattingExceptions
+      commentOverflowSourceModule movedCommentOverflowModule { lineWidth := 20 }
+  assertTrue "unchanged moved comment lines do not report actionable overflow"
+    (!movedCommentExceptions.any
+        fun
+        | .lineOverflow _ => true
+        | _ => false)
   assertTrue "string-literal whitespace remains code"
     (!(← codePreservedIgnoringWhitespace env
           "def value := \"keep  spaces\"\n"
@@ -6875,13 +6929,13 @@ def assertFormattingExceptionChecks (env : Lean.Environment) : IO Unit := do
   let unindentedCommentModule ←
     SyntaxTree.parseModuleStringWithEnv env unindentedCommentSource
       "unindented-comment-overflow-source.lean"
-  assertTrue "newly indented comment overflow is attributed to formatting"
-    ((Formatter.Diagnostics.formattingExceptions
+  assertTrue "unchanged comment text may follow its logical indentation"
+    (!(Formatter.Diagnostics.formattingExceptions
         unindentedCommentModule indentedCommentModule).any
-      fun exception =>
-        match exception with
-        | .lineOverflow _ => true
-        | _ => false)
+        fun exception =>
+          match exception with
+          | .lineOverflow _ => true
+          | _ => false)
   let proofOverflow :=
     "theorem preservedProofOverflow : True := by\n"
     ++ "  have veryLongProofName := "
@@ -7077,14 +7131,10 @@ def assertCliChecksStillFormatUnlessCheck
 
   let overflowFile := root / "Overflow.lean"
   let overflowSource :=
-    "def overflow :=\n"
-    ++ "-- "
-    ++ String.ofList (List.replicate (Formatter.maxLineWidth - 3) 'x')
-    ++ "\n"
-    ++ "-- "
-    ++ String.ofList (List.replicate Formatter.maxLineWidth 'y')
-    ++ "\n"
-    ++ "0\n"
+    "def overflow := do\n"
+    ++ "  match action with\n"
+    ++ "  | .help => IO.println usage;\n"
+    ++ "      pure 0\n"
   IO.FS.writeFile overflowFile overflowSource
   let afterExceptionFile := root / "AfterException.lean"
   let afterExceptionSource := "def  afterException  : Nat := 0\n"
@@ -7096,7 +7146,7 @@ def assertCliChecksStillFormatUnlessCheck
         includeHidden := true
         files := [overflowFile, afterExceptionFile]
       }
-  assertTrue "CLI exception check rejects remaining overflow" (overflowExitCode == 1)
+  assertTrue "CLI exception check rejects a format fallback" (overflowExitCode == 1)
   let overflowFormatted ←
     Formatter.formatSourceWithEnv env overflowSource overflowFile.toString
   assertEq "CLI exception failure writes the checked candidate"
