@@ -2342,6 +2342,28 @@ def assertMovedInlineProofBodiesRemainParseable (env : Lean.Environment) : IO Un
   assertEq "inline multiline declaration proof is idempotent"
     declarationResult.formatted declarationAgain
 
+def assertDetachedInlineProofBodyKeepsInternalIndentation (env : Lean.Environment)
+    : IO Unit := do
+  let source :=
+    "instance : IsScalarTower R Sₚ Tₚ :=\n"
+    ++ "  IsScalarTower.of_algebraMap_eq' <|\n"
+    ++ "    by rw [IsScalarTower.algebraMap_eq R S Sₚ, ← RingHom.comp_assoc,\n"
+    ++ "      ← IsScalarTower.algebraMap_eq S, ← IsScalarTower.algebraMap_eq]\n"
+  let expected :=
+    "instance : IsScalarTower R Sₚ Tₚ :=\n"
+    ++ "  IsScalarTower.of_algebraMap_eq' <| by\n"
+    ++ "    rw [IsScalarTower.algebraMap_eq R S Sₚ, ← RingHom.comp_assoc,\n"
+    ++ "      ← IsScalarTower.algebraMap_eq S, ← IsScalarTower.algebraMap_eq]\n"
+  let formatted ←
+    Formatter.formatSourceWithEnv env source
+      "detached-inline-proof-body.lean" { lineWidth := 100 }
+  assertEq "detached inline proof body keeps its internal indentation" expected formatted
+  assertTrue "detached inline proof body fits" (Formatter.linesFit formatted 100)
+  let formattedAgain ←
+    Formatter.formatSourceWithEnv env formatted
+      "detached-inline-proof-body-formatted.lean" { lineWidth := 100 }
+  assertEq "detached inline proof body is idempotent" formatted formattedAgain
+
 def assertShowProofTermUntouched (env : Lean.Environment) : IO Unit := do
   let source := "#check (show True by\n" ++ "  trivial)\n"
   let formatted ← Formatter.formatSourceWithEnv env source "show-proof-term.lean"
@@ -8572,6 +8594,7 @@ def runBasicFormattingTests (env : Lean.Environment) : IO Unit := do
   assertMovedProofBodiesKeepRelativeIndentation env
   assertMovedChildrenUseLogicalLayoutBases env
   assertMovedInlineProofBodiesRemainParseable env
+  assertDetachedInlineProofBodyKeepsInternalIndentation env
   assertShowProofTermUntouched env
   assertTheoremTermProofBodyUntouched env
   assertTheoremEquationProofBodyUntouched env

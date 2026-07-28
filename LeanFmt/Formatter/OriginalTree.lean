@@ -426,10 +426,17 @@ private def emitRebased? (request : EmissionRequest) (tree : SyntaxTree.Tree)
     SyntaxTree.sourceText request.source firstToken.span.start lastToken.span.stop
   let sourceColumn := originalColumnAt request.source firstToken.span.start
   let retainsRelativeLayout := proof || proofWidgetsJsx || quotation
+  let detachedInlineProofBody :=
+    proof
+    && treeHasLineBreakTrivia tree
+    && usesPendingIndent
+    && !SpaceRules.hasLineStructure originalLeading
+    && SpaceRules.hasLineStructure leading
   let inlineMultilineLayoutIsland :=
     retainsRelativeLayout
     && treeHasLineBreakTrivia tree
     && !SpaceRules.hasLineStructure originalLeading
+    && !detachedInlineProofBody
   let inlineContinuationColumns? :=
     if !inlineMultilineLayoutIsland then
       none
@@ -471,7 +478,9 @@ private def emitRebased? (request : EmissionRequest) (tree : SyntaxTree.Tree)
     shiftColumnByAnchor request.sourceLayoutBaseColumn
       request.outputLayoutBaseColumn sourceColumn
   let layoutTargetColumn? :=
-    if !retainsRelativeLayout || inlineMultilineLayoutIsland then
+    if !retainsRelativeLayout
+        || inlineMultilineLayoutIsland
+        || detachedInlineProofBody then
       none
     else if usesPendingIndent then
       some leadingColumn
