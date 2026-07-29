@@ -2771,6 +2771,17 @@ def notationRule : LineBreakRule :=
       fun _ segment => [breakAfterLexeme? segment "=>" 1].filterMap id
   }
 
+def macroRule : LineBreakRule :=
+  {
+    name := "macro"
+    useExistingBreaks := fun _ _ => true
+    breakPoints :=
+      fun _ segment =>
+        match firstChildRawKind? segment `Lean.Parser.Command.macroTail with
+        | some index => [boundaryBreak? segment index 1].filterMap id
+        | none => []
+  }
+
 def configEntriesRule : LineBreakRule :=
   {
     name := "configEntries"
@@ -3262,7 +3273,7 @@ def ruleFor : SyntaxTree.Tree → Option LineBreakRule
   | .node (.raw `Lean.Parser.Command.syntax) _ => some defaultRule
   | .node (.raw `Lean.Parser.Command.syntaxCat) _ => some defaultRule
   | .node (.raw `Lean.Parser.Command.binderPredicate) _ => some defaultRule
-  | .node (.raw `Lean.Parser.Command.macro) _ => some defaultRule
+  | .node (.raw `Lean.Parser.Command.macro) _ => some macroRule
   | .node (.raw `Lean.Parser.Command.macro_rules) _ => some defaultRule
   | .node (.raw `Lean.Parser.Command.elab) _ => some transparentRule
   | .node (.raw `Lean.Parser.Command.elabTail) _ => some transparentRule

@@ -202,8 +202,7 @@ def assertTacticQuotationAntiquotationPreserved (env : Lean.Environment) : IO Un
     ++ "    (repeat first | rw [← to_nat_inj] | rw [← lt_to_nat] | rw [← le_to_nat]\n"
     ++ "     repeat first | rw [add_to_nat] | rw [mul_to_nat] | rw [cast_one] | rw [cast_zero]))\n"
   let inlineMultilineExpected :=
-    "scoped\n"
-    ++ "macro (name := transfer_rw) \"transfer_rw\"\n"
+    "scoped macro (name := transfer_rw) \"transfer_rw\"\n"
     ++ "  : tactic =>\n"
     ++ "    `(tactic|\n"
     ++ "    (repeat first | rw [← to_nat_inj] | rw [← lt_to_nat] | rw [← le_to_nat]\n"
@@ -1103,8 +1102,7 @@ def assertQuotationIslandRetainsFittingSourceIndent (env : Lean.Environment)
     ++ "    Polynomial.map_ofNat, map_C, map_X, Polynomial.map_neg, Polynomial.map_add, Polynomial.map_sub,\n"
     ++ "    Polynomial.map_mul, Polynomial.map_pow])\n"
   let expected :=
-    "local\n"
-    ++ "macro \"map_simp\"\n"
+    "local macro \"map_simp\"\n"
     ++ "  : tactic =>\n"
     ++ "  `(tactic| simp only [map_ofNat, map_neg, map_add, map_sub, map_mul, map_pow, map_div₀,\n"
     ++ "    Polynomial.map_ofNat, map_C, map_X, Polynomial.map_neg, Polynomial.map_add, Polynomial.map_sub,\n"
