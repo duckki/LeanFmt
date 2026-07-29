@@ -2962,7 +2962,14 @@ def assertNotationValueBreaksAfterArrow (env : Lean.Environment) : IO Unit := do
     (rule.breakPoints {} segment == [{ index := 2, indentLevels := 1 }])
 
 def assertSetBuilderBreaksAfterSeparator : IO Unit := do
-  for kind in [`Mathlib.Meta.setBuilder, `Set.Mathlib.Meta.setBuilder] do
+  for kind
+      in [
+        `Mathlib.Meta.setBuilder,
+        `Set.Mathlib.Meta.setBuilder,
+        `Mathlib.Meta.«term{_|_}»,
+        `Mathlib.Meta.«term{_|_}_1»,
+        `Mathlib.Meta.macroPattSetBuilder
+      ] do
     let setBuilder :=
       SyntaxTree.Tree.node (.raw kind)
         #[

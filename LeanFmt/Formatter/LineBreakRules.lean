@@ -3629,11 +3629,13 @@ def ruleFor : SyntaxTree.Tree → Option LineBreakRule
   | .node (.raw `coeFunNotation) _ => some defaultRule
   | .node (.raw `Mathlib.Meta.setBuilder) _ => some setBuilderRule
   | .node (.raw `Set.Mathlib.Meta.setBuilder) _ => some setBuilderRule
+  | .node (.raw `Mathlib.Meta.«term{_|_}») _ => some setBuilderRule
+  | .node (.raw `Mathlib.Meta.«term{_|_}_1») _ => some setBuilderRule
   | .node
       (.raw
         `Ideal.Submodule.Module.Submodule.Module.Module.Submodule.Submodule.Module.Module.Submodule.Submodule.QuotientTorsion.Ideal.Quotient.AddMonoid.AddSubgroup.torsionByStx)
       _ => some defaultRule
-  | .node (.raw `Mathlib.Meta.macroPattSetBuilder) _ => some defaultRule
+  | .node (.raw `Mathlib.Meta.macroPattSetBuilder) _ => some setBuilderRule
   | .node (.raw `Mathlib.Notation3.notation3) _ => some notationRule
   | .node (.raw `Mathlib.Notation3.notation3Item) _ => some defaultRule
   | .node (.raw `Mathlib.Notation3.identOptScoped) _ => some defaultRule
