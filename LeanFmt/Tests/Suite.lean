@@ -8365,6 +8365,25 @@ def assertMathlibLowRiskSyntaxKindsHaveRules : IO Unit := do
     let rule := Formatter.LineBreakRules.formattingRuleFor tree
     assertTrue s!"extended binder inherits its logical collection base: {kind}"
       (rule.inheritBase context segment)
+  let extendedBinderTypeGroup :=
+    SyntaxTree.Tree.node (.raw `group)
+      #[.leaf (syntheticAtomToken ":"), .leaf (syntheticAtomToken "ExtendedBinderType")]
+  let extendedBinderTypeWrapper :=
+    SyntaxTree.Tree.node (.raw `null) #[extendedBinderTypeGroup]
+  let extendedBinder :=
+    SyntaxTree.Tree.node (.raw `Batteries.ExtendedBinder.extBinder)
+      #[.leaf (syntheticAtomToken "index"), extendedBinderTypeWrapper]
+  let extendedBinderTypeContext :=
+    ({} : Formatter.LineBreakRules.RuleContext)
+      |>.push (Formatter.LineBreakRules.Segment.ofTree extendedBinder) 1
+    |>.push (Formatter.LineBreakRules.Segment.ofTree extendedBinderTypeWrapper) 0
+  let extendedBinderTypeSegment :=
+    Formatter.LineBreakRules.Segment.ofTree extendedBinderTypeGroup
+  let extendedBinderTypeRule :=
+    Formatter.LineBreakRules.formattingRuleFor extendedBinderTypeGroup
+  assertTrue "extended binder type groups keep the colon with the type"
+    (extendedBinderTypeRule.breakPoints
+      extendedBinderTypeContext extendedBinderTypeSegment).isEmpty
   let linterItems :=
     SyntaxTree.Tree.node (.raw `null)
       #[.leaf (syntheticAtomToken "linter.one"), .leaf (syntheticAtomToken "linter.two")]

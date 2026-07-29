@@ -1013,7 +1013,8 @@ layout. This rule is recognized from the operator token and syntax shape, so
 generated notation node names do not need individual mappings. Decorated forms
 such as `∀ᵉ` share the classification of their base operator. A trailing
 notation suffix after the body, such as `∂μ` on an integral, stays with the body
-and does not move the comma/body break.
+and does not move the comma/body break. When an extended binder's type wraps,
+the `:` stays with the first line of the type.
 
 ```lean
 ⨆ p : Index,

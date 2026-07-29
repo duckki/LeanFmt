@@ -3113,26 +3113,38 @@ def doIfRule : LineBreakRule :=
     breakPoints := doIfBreaks
   }
 
+def extendedBinderTypeGroup (context : RuleContext) : Bool :=
+  match context.ancestors with
+  | parent :: grandparent :: _ =>
+      parent.rawKind? == some `null
+      && grandparent.rawKind? == some `Batteries.ExtendedBinder.extBinder
+      && grandparent.childIndex == 1
+  | _ => false
+
 def groupBreaks (context : RuleContext) (segment : Segment) : List BreakPoint :=
-  let elseIfBreaks := doElseIfBreaks context segment
-  if elseIfBreaks.isEmpty then defaultBreaks context segment else elseIfBreaks
+  if extendedBinderTypeGroup context then
+    []
+  else
+    let elseIfBreaks := doElseIfBreaks context segment
+    if elseIfBreaks.isEmpty then defaultBreaks context segment else elseIfBreaks
 
 def groupRule : LineBreakRule :=
   {
     name := "group"
     useExistingBreaks :=
       fun context segment =>
-        (doElseIfBreaks context segment).isEmpty
-        && !(defaultBreaks context segment).isEmpty
+        (doElseIfBreaks context segment).isEmpty && !(groupBreaks context segment).isEmpty
     mandatory := fun context segment => !(doElseIfBreaks context segment).isEmpty
     flow :=
       fun context segment =>
         (doElseIfBreaks context segment).isEmpty
-        && !(defaultBreaks context segment).isEmpty
+        && !(groupBreaks context segment).isEmpty
         && !defaultIsInfix context segment
     liftsTailIndentation :=
       fun context segment =>
-        (doElseIfBreaks context segment).isEmpty && defaultIsInfix context segment
+        (doElseIfBreaks context segment).isEmpty
+        && !(groupBreaks context segment).isEmpty
+        && defaultIsInfix context segment
     breakPoints := groupBreaks
   }
 
