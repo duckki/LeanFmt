@@ -6226,7 +6226,7 @@ def assertStructureExtendsBreaksBeforeWhereFields (env : Lean.Environment) : IO 
     ++ "  mk' ::\n"
   let namedConstructorFormatted ←
     Formatter.formatSourceWithEnv env namedConstructorSource
-      "structure-extends-named-constructor.lean"
+      "structure-extends-named-constructor.lean" { lineWidth := 80 }
   assertEq "structure named constructor uses the field indentation"
     namedConstructorExpected namedConstructorFormatted
 
