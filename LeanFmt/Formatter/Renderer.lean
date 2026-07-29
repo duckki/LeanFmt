@@ -774,12 +774,33 @@ def treeSourceHasLineStructure (source : String) (tree : SyntaxTree.Tree) : Bool
         (SyntaxTree.sourceText source firstToken.span.start lastToken.span.stop)
   | _, _ => false
 
+def childHasPriorContent (segment : LineBreakRules.Segment) (index : Nat) : Bool :=
+  segment.indexes.any
+    fun childIndex =>
+      childIndex < index && (segment.child? childIndex).any LineBreakRules.treeHasContent
+
+partial def ancestorFormatsLeadingBoundary (context : LineBreakRules.RuleContext)
+    : Bool :=
+  match context.ancestors with
+  | [] => false
+  | frame :: ancestors =>
+      let parentContext : LineBreakRules.RuleContext := { ancestors }
+      let parentRule := LineBreakRules.formattingRuleFor frame.segment.parent
+      if parentRule.formatOriginalChildLeadingBoundary
+          parentContext frame.segment frame.childIndex then
+        true
+      else if childHasPriorContent frame.segment frame.childIndex then
+        false
+      else
+        ancestorFormatsLeadingBoundary parentContext
+
 def formatOriginalChildLeadingBoundary
     (context : LineBreakRules.RuleContext) (segment : LineBreakRules.Segment)
     (index : Nat)
     : Bool :=
   let rule := LineBreakRules.formattingRuleFor segment.parent
   rule.formatOriginalChildLeadingBoundary context segment index
+  || (!childHasPriorContent segment index && ancestorFormatsLeadingBoundary context)
 
 def hasRuleBreakAt
     (context : LineBreakRules.RuleContext) (segment : LineBreakRules.Segment)

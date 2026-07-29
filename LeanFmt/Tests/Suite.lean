@@ -4766,6 +4766,31 @@ def assertOriginalTreeUsesParentLeadingWhitespace : IO Unit := do
   assertEq "original tree leaves its leading boundary to its parent"
     ": dsimp% value" rendered.output
 
+def assertOriginalTreeUsesAncestorLeadingWhitespace : IO Unit := do
+  let source := ":\n    dsimp% value = expected"
+  let colon := tokenAt ":" (String.Pos.Raw.mk 0) (String.Pos.Raw.mk 1)
+  let tacticHead := tokenAt "dsimp%" (String.Pos.Raw.mk 6) (String.Pos.Raw.mk 12)
+  let value := tokenAt "value" (String.Pos.Raw.mk 13) (String.Pos.Raw.mk 18)
+  let equals := tokenAt "=" (String.Pos.Raw.mk 19) (String.Pos.Raw.mk 20)
+  let expected := tokenAt "expected" (String.Pos.Raw.mk 21) (String.Pos.Raw.mk 29)
+  let tactic :=
+    SyntaxTree.Tree.node
+      (.raw `Mathlib.Tactic.syntheticForNestedLeadingBoundaryTest)
+      #[.leaf tacticHead, .leaf value]
+  let equality :=
+    SyntaxTree.Tree.node (.infixChain `«term_=_») #[tactic, .leaf equals, .leaf expected]
+  let typeSpec :=
+    SyntaxTree.Tree.node (.raw `Lean.Parser.Term.typeSpec) #[.leaf colon, equality]
+  let state : Formatter.RenderState :=
+    {
+      source
+      sourceMap := SyntaxTree.SourcePositionMap.ofString source
+    }
+  let rendered :=
+    Formatter.renderSegment state (Formatter.LineBreakRules.Segment.ofTree typeSpec)
+  assertEq "leading boundary ownership reaches an island through known wrappers"
+    ": dsimp% value = expected" rendered.output
+
 def assertMovedProofWidgetsJsxUsesPendingIndent : IO Unit := do
   let source := "previous\n      <div>\n        child\n      </div>"
   let previous := tokenAt "previous" (String.Pos.Raw.mk 0) (String.Pos.Raw.mk 8)
@@ -9049,6 +9074,7 @@ def runExpressionAndRendererTests (env : Lean.Environment) : IO Unit := do
   assertColumnIndentationIsConservative
   assertCurrentLineFitChecksCompletedLines
   assertOriginalTreeUsesParentLeadingWhitespace
+  assertOriginalTreeUsesAncestorLeadingWhitespace
   assertMovedProofWidgetsJsxUsesPendingIndent
   assertMovedInterpolatedStringUsesPendingIndent env
   assertSegmentBaseUsesRenderedStartColumn

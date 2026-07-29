@@ -799,6 +799,10 @@ ordinary flat-fit checks, so inline extension syntax does not force its parent t
 The island normally retains its source-leading boundary as well. A surrounding rule can
 claim that boundary with `formatOriginalChildLeadingBoundary`; the renderer then supplies
 the boundary whitespace and the island preserves only its internal relative layout.
+That ownership propagates through leading-child wrapper chains and stops at the first
+preceding sibling. A transparent type specification can therefore normalize the boundary
+after `:` even when a known application or infix node wraps the extension-owned term,
+without claiming spacing inside that known syntax.
 Syntax-authoring commands (`syntax`, source-broken `macro` signatures, `macro_rules`,
 `elab`, `elab_rules`, and `run_cmd`), Batteries
 alias and library-note commands, and other explicitly cataloged extension-owned commands
