@@ -1599,7 +1599,11 @@ def haveBreaks (_context : RuleContext) (segment : Segment) : List BreakPoint :=
   [boundaryBreak? segment 4 0].filterMap id
 
 def doIfBreaks (_context : RuleContext) (segment : Segment) : List BreakPoint :=
-  let thenBreak := boundaryBreak? segment 3 1
+  let thenBreak :=
+    if attachedBodyStart segment 3 then
+      none
+    else
+      boundaryBreak? segment 3 1
   let elseBreaks :=
     (segment.indexes.filter fun index => 4 <= index).filterMap
       fun index =>
@@ -2296,12 +2300,20 @@ def mutualBreaks (_context : RuleContext) (segment : Segment) : List BreakPoint 
 
 def ifThenElseBreaks (_context : RuleContext) (segment : Segment) : List BreakPoint :=
   [(3, 1), (4, 0), (5, 1)].filterMap
-    fun (index, indentLevels) => boundaryBreak? segment index indentLevels
+    fun (index, indentLevels) =>
+      if attachedBodyStart segment index then
+        none
+      else
+        boundaryBreak? segment index indentLevels
 
 def dependentIfThenElseBreaks (_context : RuleContext) (segment : Segment)
     : List BreakPoint :=
   [(3, 1), (4, 0), (5, 1), (6, 0), (7, 1)].filterMap
-    fun (index, indentLevels) => boundaryBreak? segment index indentLevels
+    fun (index, indentLevels) =>
+      if attachedBodyStart segment index then
+        none
+      else
+        boundaryBreak? segment index indentLevels
 
 def ifThenElseChainBreaks (_context : RuleContext) (segment : Segment)
     : List BreakPoint :=

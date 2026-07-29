@@ -1129,6 +1129,8 @@ def regroupRawNode (kind : SyntaxNodeKind) (children : Array Tree) : Tree :=
     | some patterns =>
         .node (.raw kind) <| children.set! 1 (regroupMatchPatterns patterns)
     | none => .node (.raw kind) children
+  else if kind == `Lean.Parser.Term.doIf then
+    .node (.raw kind) (regroupAttachedDoRhs children)
   else if kind == `Lean.Parser.Term.structInstField then
     match children[0]?, children[1]? >>= structInstFieldParts? with
     | some lvalue, some fieldParts =>

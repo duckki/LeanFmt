@@ -5244,6 +5244,46 @@ def assertIfThenElseUsesExistingBreaks (env : Lean.Environment) : IO Unit := do
     Formatter.formatSourceWithEnv env source "if-then-else-existing-breaks.lean"
   assertEq "if-then-else uses existing breaks" source formatted
 
+def assertIfThenElseKeepsAttachedDoBody (env : Lean.Environment) : IO Unit := do
+  let source :=
+    "def attachedIfLetDo (optional : Option Nat) : IO Nat := do\n"
+    ++ "  let result ← if let some value := optional then do\n"
+    ++ "    pure value\n"
+    ++ "  else\n"
+    ++ "    pure 0\n"
+    ++ "  pure result\n"
+  let expected :=
+    "def attachedIfLetDo (optional : Option Nat)\n"
+    ++ "    : IO Nat := do\n"
+    ++ "  let result ←\n"
+    ++ "    if let some value := optional then do\n"
+    ++ "      pure value\n"
+    ++ "    else\n"
+    ++ "      pure 0\n"
+    ++ "  pure result\n"
+  let formatted ←
+    Formatter.formatSourceWithEnv env source "if-then-else-attached-do.lean"
+      { lineWidth := 50 }
+  assertEq "if-then-else keeps an attached do with its branch delimiter"
+    expected formatted
+  let termSource :=
+    "def attachedTermIfDo (condition : Bool) : IO Nat :=\n"
+    ++ "  if condition && condition && condition then do\n"
+    ++ "    pure 1\n"
+    ++ "  else do\n"
+    ++ "    pure 0\n"
+  let termExpected :=
+    "def attachedTermIfDo (condition : Bool)\n"
+    ++ "    : IO Nat :=\n"
+    ++ "  if condition && condition && condition then do\n"
+    ++ "    pure 1\n"
+    ++ "  else do\n"
+    ++ "    pure 0\n"
+  let termFormatted ←
+    Formatter.formatSourceWithEnv env termSource "term-if-then-else-attached-do.lean"
+      { lineWidth := 50 }
+  assertEq "term if-then-else keeps attached do bodies" termExpected termFormatted
+
 def assertDependentIfThenElseKeepsHeaderAndBranchesAligned (env : Lean.Environment)
     : IO Unit := do
   let source :=
@@ -8838,6 +8878,7 @@ def runControlFlowTests (env : Lean.Environment) : IO Unit := do
   assertIfThenElseRuleBreaksBalancedShape env
   assertShortIfThenElseStaysFlatInEquationArm env
   assertIfThenElseUsesExistingBreaks env
+  assertIfThenElseKeepsAttachedDoBody env
   assertDependentIfThenElseKeepsHeaderAndBranchesAligned env
   assertElseIfContinuesOnElseLine env
   assertElseIfChainBreaksThenBranchesTogether env
