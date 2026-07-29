@@ -3086,6 +3086,39 @@ def assertDeclarationValueKeepsAttachedDoBody (env : Lean.Environment) : IO Unit
       "declaration-value-attached-do-formatted.lean"
   assertEq "declaration value attached do is idempotent" formatted formattedAgain
 
+def assertAttachedDoBodyStaysDeeperThanFollowingApplicationArgument
+    (env : Lean.Environment)
+    : IO Unit := do
+  let source :=
+    "def attachedDoWithFollowingArgument :=\n"
+    ++ "  values.filterMapM fun value =>\n"
+    ++ "    tryCatchRuntimeEx do\n"
+    ++ "        first value\n"
+    ++ "      fun _ =>\n"
+    ++ "        second\n"
+  let expected :=
+    "def attachedDoWithFollowingArgument :=\n"
+    ++ "  values.filterMapM\n"
+    ++ "    fun value =>\n"
+    ++ "      tryCatchRuntimeEx do\n"
+    ++ "          first value\n"
+    ++ "        fun _ =>\n"
+    ++ "          second\n"
+  let result ←
+    Formatter.formatSourceWithEnvDetailed env source
+      "attached-do-with-following-application-argument.lean"
+  assertTrue "attached do followed by application argument does not fall back"
+    (!result.fellBack)
+  assertEq "attached do body stays deeper than following application argument"
+    expected result.formatted
+  assertTrue "attached do followed by application argument preserves code"
+    (← codePreservedIgnoringWhitespace env source result.formatted)
+  let formattedAgain ←
+    Formatter.formatSourceWithEnv env result.formatted
+      "attached-do-with-following-application-argument-formatted.lean"
+  assertEq "attached do followed by application argument is idempotent"
+    result.formatted formattedAgain
+
 def assertAttachedDoInAssignmentInfixUsesDeclarationBase (env : Lean.Environment)
     : IO Unit := do
   let source :=
@@ -8823,6 +8856,7 @@ def runBasicFormattingTests (env : Lean.Environment) : IO Unit := do
   assertDeclarationWhereSuffixCountsForSignatureFit env
   assertDeclarationValueKeepsAttachedByBody env
   assertDeclarationValueKeepsAttachedDoBody env
+  assertAttachedDoBodyStaysDeeperThanFollowingApplicationArgument env
   assertAttachedDoInAssignmentInfixUsesDeclarationBase env
   assertProofValuesRemainLayoutIslands env
   assertOriginalLayoutValueHonorsDeclarationBreak env

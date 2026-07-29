@@ -2400,6 +2400,15 @@ def inMatchAltRhs (context : RuleContext) : Bool :=
       parent.rawKind? == some `Lean.Parser.Term.matchAlt && parent.childIndex == 3
   | _ => false
 
+def attachedBodyHasFollowingApplicationArgument (context : RuleContext) : Bool :=
+  match context.ancestors with
+  | parent :: _ =>
+      parent.nodeKind? == some .application
+      && parent.segment.indexes.any
+          fun index =>
+            parent.childIndex < index && (parent.segment.child? index).any treeHasContent
+  | _ => false
+
 def matchAltBreaks (context : RuleContext) (segment : Segment) : List BreakPoint :=
   if childIsRawKind segment 3 `Lean.Parser.Term.byTactic
       || attachedBodyStart segment 3 then
@@ -2416,6 +2425,8 @@ def doBreaks (context : RuleContext) (segment : Segment) : List BreakPoint :=
   let indentLevels :=
     if inMatchAltRhs context then
       matchAltRhsIndentLevels context segment
+    else if attachedBodyHasFollowingApplicationArgument context then
+      2
     else
       1
   match boundaryBreak? segment 1 indentLevels with
