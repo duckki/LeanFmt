@@ -1420,7 +1420,8 @@ def exportBreaks (_context : RuleContext) (segment : Segment) : List BreakPoint 
 /-! ### Applications, signatures, and binders -/
 
 def applicationBreaks (_context : RuleContext) (segment : Segment) : List BreakPoint :=
-  childBoundaryBreaks segment 1
+  (childBoundaryBreaks segment 1).filter
+    fun breakPoint => !attachedBodyStart segment breakPoint.index
 
 def pipeProjBreaks (_context : RuleContext) (segment : Segment) : List BreakPoint :=
   match boundaryBreak? segment 1 0 with

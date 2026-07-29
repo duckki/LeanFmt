@@ -59,23 +59,22 @@ def importEnvironmentReusingFirstImport
     (leakEnv := false)
     : IO (Lean.Environment × Option ImportPrefixState) := do
   unsafe Lean.enableInitializersExecution
-  Lean.withImporting
-    do
-      let (firstImportState?, state) ←
-        match spec.imports[0]? with
-        | none => pure (none, default)
-        | some firstImport =>
-            match firstImportState? with
-            | some state => pure (some state, state)
-            | none =>
-                let (_, state) ← (Lean.importModulesCore #[firstImport] spec.level).run
-                pure (some state, state)
-      let remainingImports := spec.imports.extract 1 spec.imports.size
-      let (_, state) ← (Lean.importModulesCore remainingImports spec.level).run state
-      let environment ←
-        Lean.finalizeImport state spec.imports {} 0 leakEnv true spec.level
-          (spec.level != .private)
-      pure (environment, firstImportState?)
+  Lean.withImporting do
+    let (firstImportState?, state) ←
+      match spec.imports[0]? with
+      | none => pure (none, default)
+      | some firstImport =>
+          match firstImportState? with
+          | some state => pure (some state, state)
+          | none =>
+              let (_, state) ← (Lean.importModulesCore #[firstImport] spec.level).run
+              pure (some state, state)
+    let remainingImports := spec.imports.extract 1 spec.imports.size
+    let (_, state) ← (Lean.importModulesCore remainingImports spec.level).run state
+    let environment ←
+      Lean.finalizeImport state spec.imports {} 0 leakEnv true spec.level
+        (spec.level != .private)
+    pure (environment, firstImportState?)
 
 def importEnvironment (spec : Spec) (leakEnv := false) : IO Lean.Environment :=
   importEnvironmentDirect spec leakEnv

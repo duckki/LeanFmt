@@ -215,31 +215,30 @@ def WorkerEnvironment.description : WorkerEnvironment → String
 def Options.workerArgs
     (options : Options) (environment : WorkerEnvironment) (files : List FilePath)
     : Array String :=
-  Id.run
-    do
-      let mut args :=
-        match environment with
-        | .default => #["--worker-default-environment"]
-        | .exact => #["--worker"]
-      if options.check then
-        args := args.push "--check"
-      if options.checkException then
-        args := args.push "--check-exception"
-      if options.checkIdempotent then
-        args := args.push "--check-idempotent"
-      if options.profile then
-        args := args.push "--profile"
-      if options.importEnvFirst then
-        args := args.push "--import-env-first"
-      if options.includeHidden then
-        args := args.push "--include-hidden"
-      args := args.push "--env-cache-size"
-      args := args.push s!"{options.importPrefixCacheSize}"
-      args := args.push "--line-width"
-      args := args.push s!"{options.formatterOptions.lineWidth}"
-      for file in files do
-        args := args.push file.toString
-      args
+  Id.run do
+    let mut args :=
+      match environment with
+      | .default => #["--worker-default-environment"]
+      | .exact => #["--worker"]
+    if options.check then
+      args := args.push "--check"
+    if options.checkException then
+      args := args.push "--check-exception"
+    if options.checkIdempotent then
+      args := args.push "--check-idempotent"
+    if options.profile then
+      args := args.push "--profile"
+    if options.importEnvFirst then
+      args := args.push "--import-env-first"
+    if options.includeHidden then
+      args := args.push "--include-hidden"
+    args := args.push "--env-cache-size"
+    args := args.push s!"{options.importPrefixCacheSize}"
+    args := args.push "--line-width"
+    args := args.push s!"{options.formatterOptions.lineWidth}"
+    for file in files do
+      args := args.push file.toString
+    args
 
 def expectedLeanToolchain : String :=
   s!"leanprover/lean4:v{Lean.versionStringCore}"

@@ -1365,8 +1365,8 @@ def elaborateParserStateCommand
     : IO Elab.Command.State := do
   let context := parserStateCommandContext inputContext
   let (_, (_, commandState)) ←
-    IO.FS.withIsolatedStreams (isolateStderr := true)
-      do
+    IO.FS.withIsolatedStreams
+      (isolateStderr := true) do
         EIO.toIO (fun _ => IO.userError "failed to update parser command state")
           ((Elab.Command.elabCommand command).run context |>.run commandState)
   pure commandState

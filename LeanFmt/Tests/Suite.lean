@@ -407,9 +407,9 @@ def assertMovedStandaloneCommentsKeepSiblingIndent (env : Lean.Environment)
     ++ "      n\n"
     ++ "  align value\n"
   let matchArmExpectedFragment :=
-    "        | n =>\n"
-    ++ "            -- This comment is intentionally much too long for the configured formatter line width.\n"
-    ++ "            n\n"
+    "      | n =>\n"
+    ++ "          -- This comment is intentionally much too long for the configured formatter line width.\n"
+    ++ "          n\n"
   let matchArmFormatted ←
     Formatter.formatSourceWithEnv env matchArmSource
       "comment-fit-does-not-outdent-code.lean" { lineWidth := 50 }
@@ -2796,18 +2796,17 @@ def assertMovedDocumentedDoLetRecRebasesCommentedArms (env : Lean.Environment)
   let expected :=
     "def run : Nat :=\n"
     ++ "  id\n"
-    ++ "    (Id.run\n"
-    ++ "      do\n"
-    ++ "        let rec\n"
-    ++ "        /-- First helper. -/\n"
-    ++ "        first : Nat → Nat\n"
-    ++ "          | 0 => 0,\n"
-    ++ "        /-- Second helper. -/\n"
-    ++ "        second : Nat → Nat\n"
-    ++ "          | 0 =>\n"
-    ++ "              -- Preserve this comment.\n"
-    ++ "              first 0\n"
-    ++ "        pure (second 0))\n"
+    ++ "    (Id.run do\n"
+    ++ "      let rec\n"
+    ++ "      /-- First helper. -/\n"
+    ++ "      first : Nat → Nat\n"
+    ++ "        | 0 => 0,\n"
+    ++ "      /-- Second helper. -/\n"
+    ++ "      second : Nat → Nat\n"
+    ++ "        | 0 =>\n"
+    ++ "            -- Preserve this comment.\n"
+    ++ "            first 0\n"
+    ++ "      pure (second 0))\n"
   let result ←
     Formatter.formatSourceWithEnvDetailed env source "moved-documented-do-let-rec.lean"
   assertTrue "moved documented do-let-rec does not fall back" (!result.fellBack)
