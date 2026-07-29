@@ -3827,8 +3827,8 @@ def ruleFor : SyntaxTree.Tree → Option LineBreakRule
   | .node (.raw `Lean.Parser.Term.doSeqIndent) _ => some doSeqIndentRule
   | .node (.raw `Lean.Parser.Term.doSeqItem) _ => some defaultRule
   | .node (.raw `Lean.Parser.Term.doExpr) _ => some defaultRule
-  | .node (.raw `Lean.Parser.Term.doIfLet) _ => some defaultRule
-  | .node (.raw `Lean.Parser.Term.doIfLetPure) _ => some defaultRule
+  | .node (.raw `Lean.Parser.Term.doIfLet) _ => some transparentRule
+  | .node (.raw `Lean.Parser.Term.doIfLetPure) _ => some declarationValueRule
   | .node (.raw `Lean.Parser.Term.doLetArrow) _ => some doLetRule
   | .node (.raw `Lean.Parser.Term.doIdDecl) _ => some doIdDeclRule
   | .node (.raw `Lean.Parser.Term.doPatDecl) _ => some doPatternDeclRule

@@ -5365,6 +5365,24 @@ def assertIfThenElseKeepsAttachedDoBody (env : Lean.Environment) : IO Unit := do
       { lineWidth := 50 }
   assertEq "term if-then-else keeps attached do bodies" termExpected termFormatted
 
+def assertIfLetPatternKeepsAssignmentWithHeader (env : Lean.Environment) : IO Unit := do
+  let source :=
+    "def longIfLetPattern := do\n"
+    ++ "  if let some ⟨className, isNotation, findArgs⟩ := notationClassAttr.find? environment projectionName then\n"
+    ++ "    pure findArgs\n"
+    ++ "  else\n"
+    ++ "    pure defaultArgs\n"
+  let expected :=
+    "def longIfLetPattern := do\n"
+    ++ "  if let some ⟨className, isNotation, findArgs⟩ :=\n"
+    ++ "      notationClassAttr.find? environment projectionName then\n"
+    ++ "    pure findArgs\n"
+    ++ "  else\n"
+    ++ "    pure defaultArgs\n"
+  let formatted ←
+    Formatter.formatSourceWithEnv env source "if-let-pattern-assignment.lean"
+  assertEq "if-let pattern keeps assignment with its header" expected formatted
+
 def assertDependentIfThenElseKeepsHeaderAndBranchesAligned (env : Lean.Environment)
     : IO Unit := do
   let source :=
@@ -8993,6 +9011,7 @@ def runControlFlowTests (env : Lean.Environment) : IO Unit := do
   assertShortIfThenElseStaysFlatInEquationArm env
   assertIfThenElseUsesExistingBreaks env
   assertIfThenElseKeepsAttachedDoBody env
+  assertIfLetPatternKeepsAssignmentWithHeader env
   assertDependentIfThenElseKeepsHeaderAndBranchesAligned env
   assertElseIfContinuesOnElseLine env
   assertElseIfChainBreaksThenBranchesTogether env
