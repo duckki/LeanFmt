@@ -151,6 +151,10 @@ structure Module where
 the regrouped tree used by rules and rendering. `tokens` is a flattened token view used
 for reconstruction and diagnostics.
 
+`SourcePositionMap` stores Lean's precomputed line starts for the normalized source.
+Renderer and diagnostic column queries share this map instead of rescanning the source
+prefix for every token.
+
 Tokens are exact source leaves:
 
 ```lean
@@ -428,6 +432,7 @@ Core state is:
 ```lean
 structure RenderState where
   source : String
+  sourceMap : SyntaxTree.SourcePositionMap
   output : String := ""
   currentLine : String := ""
   lastToken? : Option SyntaxTree.Token := none
@@ -447,6 +452,7 @@ structure RenderState where
 
 Key fields:
 
+- `sourceMap` is built once per rendering pass and answers source line/column queries.
 - `currentLine` avoids repeatedly scanning `output` for the current line.
 - `lastToken?` lets the renderer ask space rules for inter-token whitespace.
 - `pendingIndent?` records a scheduled newline before the next emitted token.
@@ -472,6 +478,11 @@ Key fields:
   room for.
 - `context` is the rule ancestor stack.
 - `trace` records optional debugging output.
+
+`WhitespaceState` is the token-spacing subset of `RenderState`. Both real token
+emission and suffix-width measurement use its single `defaultWhitespace` implementation.
+The measurement path retains only this smaller state and the measured suffix width, so
+it cannot drift into a second whitespace policy.
 
 ### Rendering algorithm
 
@@ -704,17 +715,20 @@ whether its final line fits.
 `lineFitSuffixWidth` stores that extra width. The renderer estimates suffix width by
 walking following siblings until the next active break boundary and stops at tokens that
 are not suffix-eligible. The suffix classifiers live with line-break rules; the renderer
-only measures with those classifications. When measurement stops before a token or rule
-boundary, same-line comment trivia preceding that boundary still contributes to the fit.
+only measures with those classifications and the same whitespace policy used by actual
+emission. When measurement stops before a token or rule boundary, same-line comment
+trivia preceding that boundary still contributes to the fit.
 
 ### Proof and original-source escape hatches
 
 Proof subtrees and extensible attribute payloads are not reformatted.
 `Formatter.OriginalTree` owns the protected-tree classification, source-slice rebasing,
-and emission plan. Its renderer-facing API returns the planned text, final token, and
-the one comment-boundary flag needed by subsequent ordinary rendering; it does not own
-or mutate renderer state. When the renderer reaches a recognized proof or attribute
-node, it applies that plan. A protected
+and emission plan. Classification produces one `LayoutIslandKind`; the renderer retains
+that result and passes it into emission instead of repeating the protected-tree scans.
+Its renderer-facing API returns the planned text, final token, and the one
+comment-boundary flag needed by subsequent ordinary rendering; it does not own or mutate
+renderer state. When the renderer reaches a recognized proof or attribute node, it
+applies that plan. A protected
 subtree that begins on a new source line inherits the source-to-output layout-base
 translation established by its enclosing formatted segment. The output-side anchor is
 the column where that segment actually starts, including when a child that began a source

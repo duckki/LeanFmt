@@ -42,6 +42,14 @@ def assertSyntaxTreeRoundTrip (env : Lean.Environment) : IO Unit := do
     SyntaxTree.parseModuleStringWithEnv env source "syntax-tree-round-trip.lean"
   assertEq "syntax tree reconstruction" source moduleTree.reconstruct
 
+def assertSourcePositionMapColumns : IO Unit := do
+  let source := "αβ\n  γ"
+  let sourceMap := SyntaxTree.SourcePositionMap.ofString source
+  assertTrue "source position map counts Unicode characters"
+    (sourceMap.columnAt (String.Pos.Raw.mk 2) == 1)
+  assertTrue "source position map starts columns after a newline"
+    (sourceMap.columnAt (String.Pos.Raw.mk 7) == 2)
+
 def assertSyntaxTreeWhereRoundTrip (env : Lean.Environment) : IO Unit := do
   let source :=
     "def outer : Nat :=\n" ++ "  inner\n" ++ "where\n" ++ "  inner : Nat := 0\n"
@@ -4573,12 +4581,18 @@ def assertColumnIndentationIsConservative : IO Unit := do
 
 def assertCurrentLineFitChecksCompletedLines : IO Unit := do
   let state : Formatter.RenderState :=
-    { source := "", currentLine := "12345", options := { lineWidth := 10 } }
+    {
+      source := ""
+      sourceMap := SyntaxTree.SourcePositionMap.ofString ""
+      currentLine := "12345"
+      options := { lineWidth := 10 }
+    }
   assertTrue "line fit rejects an introduced completed-line overflow"
     (!Formatter.currentLineFitsWith state "678901\nx")
   let alreadyOverflowing : Formatter.RenderState :=
     {
       source := ""
+      sourceMap := SyntaxTree.SourcePositionMap.ofString ""
       currentLine := "12345678901"
       options := { lineWidth := 10 }
     }
@@ -4609,6 +4623,7 @@ def assertMovedProofWidgetsJsxUsesPendingIndent : IO Unit := do
   let state : Formatter.RenderState :=
     {
       source
+      sourceMap := SyntaxTree.SourcePositionMap.ofString source
       output := "previous"
       currentLine := "previous"
       lastToken? := some previous
@@ -4637,6 +4652,7 @@ def assertMovedProofWidgetsJsxUsesPendingIndent : IO Unit := do
   let wideState : Formatter.RenderState :=
     {
       source := wideSource
+      sourceMap := SyntaxTree.SourcePositionMap.ofString wideSource
       output := "previous"
       currentLine := "previous"
       lastToken? := some previous
@@ -4687,6 +4703,7 @@ def assertSegmentBaseUsesRenderedStartColumn : IO Unit := do
   let state : Formatter.RenderState :=
     {
       source
+      sourceMap := SyntaxTree.SourcePositionMap.ofString source
       output := "left"
       currentLine := "left"
       lastToken? := some left
@@ -8532,6 +8549,7 @@ def assertCslibStyleCoreSyntaxHasRules (env : Lean.Environment) : IO Unit := do
 
 def runSyntaxTreeTests (env : Lean.Environment) : IO Unit := do
   assertSyntaxTreeRoundTrip env
+  assertSourcePositionMapColumns
   assertSyntaxTreeWhereRoundTrip env
   assertUnifHintChildrenRegrouped
   assertPreservationDetectsSyntaxChange env

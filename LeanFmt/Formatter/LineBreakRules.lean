@@ -3766,6 +3766,49 @@ def ruleFor : SyntaxTree.Tree → Option LineBreakRule
       else
         none
 
+partial def treeStartsWithProjectionChain : SyntaxTree.Tree → Bool
+  | .node (.infixChain `Lean.Parser.Term.proj) _ => true
+  | .node .application children =>
+      children[0]?.any treeStartsWithProjectionChain
+  | .node (.raw kind) children =>
+      (kind == `Lean.Parser.Term.paren
+        || kind == `Lean.Parser.Term.hygienicLParen
+        || kind == `null)
+      && children.any treeStartsWithProjectionChain
+  | _ => false
+
+def treeIsUnbreakableHead (tree : SyntaxTree.Tree) : Bool :=
+  tree.singleToken?.isSome
+  || treeStartsWithProjectionChain tree
+  || (ruleFor tree).any (·.atomic)
+
+partial def treeStartsWithSourceBrokenUnbreakableHead (source : String)
+    : SyntaxTree.Tree → Bool
+  | .node .application children =>
+      match children[0]?, children[1]? with
+      | some head, some firstArgument =>
+          treeIsUnbreakableHead head
+          && match head.lastToken?, firstArgument.firstToken? with
+              | some left, some right =>
+                  SpaceRules.hasLineStructure
+                    (SyntaxTree.sourceText source left.span.stop right.span.start)
+              | _, _ => false
+      | _, _ => false
+  | .node (.raw kind) children =>
+      (kind == `Lean.Parser.Term.paren
+        || kind == `Lean.Parser.Term.hygienicLParen
+        || kind == `null)
+      && children.any (treeStartsWithSourceBrokenUnbreakableHead source)
+  | _ => false
+
+def treeHasUnbreakableFirstLine
+    (source : String) (tree : SyntaxTree.Tree) (rule : LineBreakRule)
+    : Bool :=
+  tree.singleToken?.isSome
+  || rule.atomic
+  || treeStartsWithProjectionChain tree
+  || treeStartsWithSourceBrokenUnbreakableHead source tree
+
 def formattingRuleFor (tree : SyntaxTree.Tree) : LineBreakRule :=
   match ruleFor tree with
   | some rule => rule

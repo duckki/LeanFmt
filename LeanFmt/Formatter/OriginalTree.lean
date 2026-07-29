@@ -21,9 +21,6 @@ private def charsAfterLastNewline (text : String) : String :=
     | char :: rest, current => loop rest (char :: current)
   loop (SpaceRules.normalizeLineEndings text).toList []
 
-private def originalColumnAt (source : String) (position : String.Pos.Raw) : Nat :=
-  lineWidth <| charsAfterLastNewline <| SyntaxTree.sourceText source 0 position
-
 private def shiftColumnByAnchor (sourceAnchorColumn outputAnchorColumn sourceColumn : Nat)
     : Nat :=
   if sourceAnchorColumn <= outputAnchorColumn then
@@ -331,39 +328,107 @@ private def isIgnoreNextTarget (tree : SyntaxTree.Tree) : Bool :=
       tree.firstToken?.any fun token => token.leading.text.contains ignoreNextMarker
   | _ => false
 
+inductive LayoutIslandKind where
+  | ignored
+  | proof
+  | proofLayout
+  | proofLemma
+  | attributes
+  | definitionQuotation
+  | calc
+  | commentSensitiveMatch
+  | quotationLayout
+  | quotation
+  | qq
+  | proofWidgetsJsx
+  | leanJson
+  | batteriesLibraryNote
+  | layoutSensitiveCommand
+  | mathlibTactic
+  | customBracedTerm
+  | customSubalgebraAdjoin
+  | syntaxComment
+deriving BEq, Repr
+
+def classify? (tree : SyntaxTree.Tree) : Option LayoutIslandKind :=
+  if isIgnoreNextTarget tree then
+    some .ignored
+  else if isProofTree tree then
+    some .proof
+  else if isProofLayoutIsland tree then
+    some .proofLayout
+  else if isProofLemmaCommand tree then
+    some .proofLemma
+  else if isAttributeModifierBlock tree then
+    some .attributes
+  else if isDefinitionContainingQuotation tree then
+    some .definitionQuotation
+  else if isCalcTree tree then
+    some .calc
+  else if isCommentSensitiveMatchExpr tree then
+    some .commentSensitiveMatch
+  else if isQuotationLayoutIsland tree then
+    some .quotationLayout
+  else if isQuotationTree tree then
+    some .quotation
+  else if isQqSyntaxTree tree then
+    some .qq
+  else if isProofWidgetsJsxSyntaxTree tree then
+    some .proofWidgetsJsx
+  else if isLeanJsonSyntaxTree tree then
+    some .leanJson
+  else if isBatteriesLibraryNoteSyntaxTree tree then
+    some .batteriesLibraryNote
+  else if isLayoutSensitiveCommand tree then
+    some .layoutSensitiveCommand
+  else if isMathlibTacticSyntaxTree tree then
+    some .mathlibTactic
+  else if isCustomBracedTermSyntaxTree tree then
+    some .customBracedTerm
+  else if isCustomSubalgebraAdjoinSyntaxTree tree then
+    some .customSubalgebraAdjoin
+  else if isSyntaxCommentTree tree then
+    some .syntaxComment
+  else
+    none
+
 @[inline]
 def shouldEmit (tree : SyntaxTree.Tree) : Bool :=
-  isIgnoreNextTarget tree
-  || isProofTree tree
-  || isProofLayoutIsland tree
-  || isProofLemmaCommand tree
-  || isAttributeModifierBlock tree
-  || isDefinitionContainingQuotation tree
-  || isCalcTree tree
-  || isCommentSensitiveMatchExpr tree
-  || isQuotationLayoutIsland tree
-  || isQuotationTree tree
-  || isQqSyntaxTree tree
-  || isProofWidgetsJsxSyntaxTree tree
-  || isLeanJsonSyntaxTree tree
-  || isBatteriesLibraryNoteSyntaxTree tree
-  || isLayoutSensitiveCommand tree
-  || isMathlibTacticSyntaxTree tree
-  || isCustomBracedTermSyntaxTree tree
-  || isCustomSubalgebraAdjoinSyntaxTree tree
-  || isSyntaxCommentTree tree
+  (classify? tree).isSome
 
-def preservesMultilineLayoutWithoutRuleBreaks (tree : SyntaxTree.Tree) : Bool :=
-  isProofTree tree || isAttributeModifierBlock tree
+def LayoutIslandKind.preservesMultilineLayoutWithoutRuleBreaks : LayoutIslandKind → Bool
+  | .proof | .attributes => true
+  | _ => false
 
-def prefersParentRelativeColumn (tree : SyntaxTree.Tree) : Bool :=
-  isProofWidgetsJsxSyntaxTree tree
+def LayoutIslandKind.prefersParentRelativeColumn : LayoutIslandKind → Bool
+  | .proofWidgetsJsx => true
+  | _ => false
+
+def LayoutIslandKind.isProof : LayoutIslandKind → Bool
+  | .proof => true
+  | _ => false
+
+def LayoutIslandKind.isProofWidgetsJsx : LayoutIslandKind → Bool
+  | .proofWidgetsJsx => true
+  | _ => false
+
+def LayoutIslandKind.isQuotation : LayoutIslandKind → Bool
+  | .quotation => true
+  | _ => false
+
+def LayoutIslandKind.usesPendingIndent : LayoutIslandKind → Bool
+  | .proof | .proofLemma | .proofWidgetsJsx | .quotation | .syntaxComment => true
+  | _ => false
+
+def LayoutIslandKind.preservesFollowingCommentIndent : LayoutIslandKind → Bool
+  | .layoutSensitiveCommand => true
+  | _ => false
 
 partial def startsWithEmission : SyntaxTree.Tree → Bool
   | .missing => false
   | .leaf _ => false
   | tree@(.node _ children) =>
-      if shouldEmit tree then
+      if (classify? tree).isSome then
         true
       else
         let rec loop (index : Nat) : Bool :=
@@ -378,6 +443,7 @@ partial def startsWithEmission : SyntaxTree.Tree → Bool
 
 structure EmissionRequest where
   source : String
+  sourceMap : SyntaxTree.SourcePositionMap
   currentLine : String
   currentIndent : Nat
   lastToken? : Option SyntaxTree.Token
@@ -396,20 +462,16 @@ structure Emission where
   preserveNextStandaloneCommentIndent : Bool
 
 private def emitRebased? (request : EmissionRequest) (tree : SyntaxTree.Tree)
+    (classification? : Option LayoutIslandKind)
     : Option Emission := do
   let firstToken ← SyntaxTree.Tree.firstToken? tree
   let lastToken ← SyntaxTree.Tree.lastToken? tree
-  let proof := isProofTree tree
-  let proofWidgetsJsx := isProofWidgetsJsxSyntaxTree tree
-  let quotation := isQuotationTree tree
-  let syntaxComment := isSyntaxCommentTree tree
+  let proof := classification?.any LayoutIslandKind.isProof
+  let proofWidgetsJsx := classification?.any LayoutIslandKind.isProofWidgetsJsx
+  let quotation := classification?.any LayoutIslandKind.isQuotation
   let usesPendingIndent :=
     (request.respectPendingIndent
-      || proof
-      || isProofLemmaCommand tree
-      || proofWidgetsJsx
-      || quotation
-      || syntaxComment)
+      || classification?.any LayoutIslandKind.usesPendingIndent)
     && request.pendingLeadingWhitespace?.isSome
   let originalLeading :=
     match request.lastToken? with
@@ -424,18 +486,20 @@ private def emitRebased? (request : EmissionRequest) (tree : SyntaxTree.Tree)
   let leadingColumn := lineWidth <| currentLineAfterAppend request.currentLine leading
   let sourceText :=
     SyntaxTree.sourceText request.source firstToken.span.start lastToken.span.stop
-  let sourceColumn := originalColumnAt request.source firstToken.span.start
+  let sourceColumn := request.sourceMap.columnAt firstToken.span.start
   let retainsRelativeLayout := proof || proofWidgetsJsx || quotation
+  let hasLineBreakTrivia := retainsRelativeLayout && treeHasLineBreakTrivia tree
+  let originalLeadingHasLineStructure := SpaceRules.hasLineStructure originalLeading
   let detachedInlineProofBody :=
     proof
-    && treeHasLineBreakTrivia tree
+    && hasLineBreakTrivia
     && usesPendingIndent
-    && !SpaceRules.hasLineStructure originalLeading
+    && !originalLeadingHasLineStructure
     && SpaceRules.hasLineStructure leading
   let inlineMultilineLayoutIsland :=
     retainsRelativeLayout
-    && treeHasLineBreakTrivia tree
-    && !SpaceRules.hasLineStructure originalLeading
+    && hasLineBreakTrivia
+    && !originalLeadingHasLineStructure
     && !detachedInlineProofBody
   let inlineContinuationColumns? :=
     if !inlineMultilineLayoutIsland then
@@ -443,7 +507,7 @@ private def emitRebased? (request : EmissionRequest) (tree : SyntaxTree.Tree)
     else
       match continuationIndent? sourceText, request.lastToken? with
       | some sourceIndent, some leftToken =>
-          let sourceAnchor := originalColumnAt request.source leftToken.span.start
+          let sourceAnchor := request.sourceMap.columnAt leftToken.span.start
           let outputAnchor := lineWidth request.currentLine - leftToken.lexeme.length
           let movedIndent := shiftColumnByAnchor sourceAnchor outputAnchor sourceIndent
           let structuralIndent :=
@@ -484,14 +548,14 @@ private def emitRebased? (request : EmissionRequest) (tree : SyntaxTree.Tree)
       none
     else if usesPendingIndent then
       some leadingColumn
-    else if SpaceRules.hasLineStructure originalLeading then
+    else if originalLeadingHasLineStructure then
       some sourceColumnRebasedFromLayoutBase
     else
       none
   let targetColumn? :=
     request.rebaseSourceTextTargetColumn?.orElse fun _ => layoutTargetColumn?
   let targetColumn? :=
-    if proof && SpaceRules.hasLineStructure originalLeading then
+    if proof && originalLeadingHasLineStructure then
       targetColumn?.map
         fun targetColumn =>
           max request.outputLayoutBaseColumn targetColumn
@@ -539,12 +603,14 @@ private def emitRebased? (request : EmissionRequest) (tree : SyntaxTree.Tree)
       text := leading ++ sourceText
       lastToken
       preserveNextStandaloneCommentIndent :=
-        isLayoutSensitiveCommand tree
+        classification?.any LayoutIslandKind.preservesFollowingCommentIndent
     }
 
 @[inline]
-def emit? (request : EmissionRequest) (tree : SyntaxTree.Tree) : Option Emission :=
-  emitRebased? request tree
+def emit? (request : EmissionRequest) (tree : SyntaxTree.Tree)
+    (classification? : Option LayoutIslandKind := none)
+    : Option Emission :=
+  emitRebased? request tree classification?
 
 end OriginalTree
 end Formatter

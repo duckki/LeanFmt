@@ -113,12 +113,6 @@ partial def diagnosticsForTokensAux (source : String)
 def diagnosticsForModule (moduleTree : SyntaxTree.Module) : List Diagnostic :=
   diagnosticsForTokensAux moduleTree.source (realTokens moduleTree)
 
-def newlineCount (text : String) : Nat :=
-  text.toList.foldl (fun count char => if char == '\n' then count + 1 else count) 0
-
-def lineNumberAt (source : String) (position : String.Pos.Raw) : Nat :=
-  newlineCount (SyntaxTree.sourceText source 0 position) + 1
-
 def missingRuleReportSkipsTree : SyntaxTree.Tree → Bool
   | .node (.raw `Lean.Parser.Term.byTactic') _ => true
   | tree => OriginalTree.shouldEmit tree
@@ -147,8 +141,9 @@ def treeSourceText? (source : String) (tree : SyntaxTree.Tree) : Option String :
   let last ← tree.lastToken?
   some <| SyntaxTree.sourceText source first.span.start last.span.stop
 
-partial def missingRuleOccurrences
-    (source : String) (fallbackStart? : Option String.Pos.Raw)
+private partial def missingRuleOccurrencesWith
+    (sourceMap : SyntaxTree.SourcePositionMap)
+    (fallbackStart? : Option String.Pos.Raw)
     : SyntaxTree.Tree → List MissingRuleOccurrence
   | .missing => []
   | .leaf _ => []
@@ -168,14 +163,23 @@ partial def missingRuleOccurrences
                 [{
                   kind := kindName
                   syntaxKind? := syntaxNodeKind? kind
-                  line := currentStart?.map (lineNumberAt source ·) |>.getD 1
-                  treeText := (treeSourceText? source tree).getD ""
+                  line := currentStart?.map sourceMap.lineNumberAt |>.getD 1
+                  treeText := (treeSourceText? sourceMap.source tree).getD ""
                 }]
-        current ++ children.toList.flatMap (missingRuleOccurrences source currentStart?)
+        current
+        ++ children.toList.flatMap (missingRuleOccurrencesWith sourceMap currentStart?)
+
+def missingRuleOccurrences
+    (source : String) (fallbackStart? : Option String.Pos.Raw)
+    (tree : SyntaxTree.Tree)
+    : List MissingRuleOccurrence :=
+  missingRuleOccurrencesWith (SyntaxTree.SourcePositionMap.ofString source)
+    fallbackStart? tree
 
 def missingRuleOccurrencesForModule (moduleTree : SyntaxTree.Module)
     : List MissingRuleOccurrence :=
-  missingRuleOccurrences moduleTree.source none moduleTree.tree
+  missingRuleOccurrencesWith
+    (SyntaxTree.SourcePositionMap.ofString moduleTree.source) none moduleTree.tree
 
 def treeSpan? (tree : SyntaxTree.Tree) : Option SyntaxTree.Span := do
   let first ← tree.firstToken?
@@ -323,40 +327,6 @@ def commentSpanForToken? (spans : List SyntaxTree.Span) (token : SyntaxTree.Toke
     : Option SyntaxTree.Span :=
   spans.find? fun span => span.start <= token.span.start && token.span.stop <= span.stop
 
-def tokenPreservationFragments
-    (source : String) (syntaxCommentSpans : List SyntaxTree.Span)
-    (token : SyntaxTree.Token)
-    : List PreservationFragment :=
-  match commentSpanForToken? syntaxCommentSpans token with
-  | none =>
-      let code := if token.lexeme.isEmpty then [] else [.code token.lexeme]
-      commentFragments token.leading.text
-        (originalColumnAt source token.leading.span.start)
-      ++ code
-      ++ commentFragments token.trailing.text
-          (originalColumnAt source token.trailing.span.start)
-  | some span =>
-      let leading :=
-        if token.span.start == span.start then
-          commentFragments token.leading.text
-            (originalColumnAt source token.leading.span.start)
-        else
-          []
-      let comment :=
-        if token.span.start == span.start then
-          [preservationComment
-            (originalColumnAt source span.start)
-            (SyntaxTree.sourceText source span.start span.stop)]
-        else
-          []
-      let trailing :=
-        if token.span.stop == span.stop then
-          commentFragments token.trailing.text
-            (originalColumnAt source token.trailing.span.start)
-        else
-          []
-      leading ++ comment ++ trailing
-
 def preservationFragments (moduleTree : SyntaxTree.Module) : List PreservationFragment :=
   let tokens := (sourceLexicalTokens moduleTree).toList
   let syntaxCommentSpans := syntaxCommentSpans moduleTree.tree
@@ -422,12 +392,7 @@ partial def preservedOriginalSpans : SyntaxTree.Tree → List SyntaxTree.Span
       if OriginalTree.shouldEmit tree then
         treeSpan? tree |>.toList
       else
-        children.toList.flatMap
-          fun child =>
-            if OriginalTree.shouldEmit child then
-              treeSpan? child |>.toList
-            else
-              preservedOriginalSpans child
+        children.toList.flatMap preservedOriginalSpans
 
 def tokenIntersects (start stop : String.Pos.Raw) (token : SyntaxTree.Token) : Bool :=
   token.span.start < stop && start < token.span.stop
@@ -570,41 +535,41 @@ def overflowOccurrences (moduleTree : SyntaxTree.Module) (options : Options := {
     : List OverflowOccurrence :=
   overflowOccurrencesWith moduleTree options true
 
-def lineWidthAtToken? (moduleTree : SyntaxTree.Module) (token : SyntaxTree.Token)
+def lineWidthAtToken?
+    (sourceMap : SyntaxTree.SourcePositionMap) (token : SyntaxTree.Token)
     : Option Nat :=
-  let lineIndex := lineNumberAt moduleTree.source token.span.start - 1
-  (moduleTree.source.splitOn "\n")[lineIndex]? |>.map (·.length)
+  let lineNumber := sourceMap.lineNumberAt token.span.start
+  let fileMap := sourceMap.fileMap
+  let line :=
+    SyntaxTree.sourceText sourceMap.source
+      (fileMap.lineStart lineNumber) (fileMap.lineStart (lineNumber + 1))
+  (SpaceRules.normalizeLineEndings line).splitOn "\n" |>.head? |>.map (·.length)
 
 def isolatedOverflowTokenIndex?
-    (moduleTree : SyntaxTree.Module) (tokens : List SyntaxTree.Token)
+    (sourceMap : SyntaxTree.SourcePositionMap) (tokens : List SyntaxTree.Token)
     (occurrence : OverflowOccurrence)
     : Option Nat :=
   let text := occurrence.text.trimAscii
   let matching :=
     tokens.zipIdx.filter
       fun (token, _) =>
-        token.lexeme == text
-        && lineNumberAt moduleTree.source token.span.start == occurrence.line
+        token.lexeme == text && sourceMap.lineNumberAt token.span.start == occurrence.line
   match matching with
   | [(_, index)] => some index
   | _ => none
 
 def isolatedTokenSourceLineOverflowed
-    (sourceModule formattedModule : SyntaxTree.Module)
+    (sourceMap formattedMap : SyntaxTree.SourcePositionMap)
     (sourceTokens formattedTokens : List SyntaxTree.Token)
     (occurrence : OverflowOccurrence) (lineWidth : Nat)
     : Bool :=
-  match isolatedOverflowTokenIndex? formattedModule formattedTokens occurrence with
+  match isolatedOverflowTokenIndex? formattedMap formattedTokens occurrence with
   | none => false
   | some index =>
       match sourceTokens[index]? with
       | none => false
       | some sourceToken =>
-          lineWidthAtToken? sourceModule sourceToken |>.any (lineWidth < ·)
-
-def lineStartPosition (source : String) (lineNumber : Nat) : String.Pos.Raw :=
-  (source.splitOn "\n").take (lineNumber - 1)
-  |>.foldl (fun position line => positionAfter position (line ++ "\n")) 0
+          lineWidthAtToken? sourceMap sourceToken |>.any (lineWidth < ·)
 
 def sourceCommentLineTexts (moduleTree : SyntaxTree.Module) : List String :=
   (preservationFragments moduleTree).flatMap
@@ -615,23 +580,23 @@ def sourceCommentLineTexts (moduleTree : SyntaxTree.Module) : List String :=
     | _ => []
 
 def commentOnlyOverflowMatchesSource
-    (formattedModule : SyntaxTree.Module)
+    (formattedMap : SyntaxTree.SourcePositionMap)
     (formattedTokens : List SyntaxTree.Token)
     (sourceCommentLineTexts : List String)
     (occurrence : OverflowOccurrence)
     : Bool :=
-  let lineStart := lineStartPosition formattedModule.source occurrence.line
+  let lineStart := formattedMap.fileMap.lineStart occurrence.line
   let contentStop := positionAfter lineStart occurrence.text.trimAsciiEnd.toString
   !formattedTokens.any (tokenIntersects lineStart contentStop)
   && sourceCommentLineTexts.contains occurrence.text.trimAscii.toString
 
 def atomicSyntaxSourceLineOverflowed
-    (sourceModule formattedModule : SyntaxTree.Module)
+    (sourceMap formattedMap : SyntaxTree.SourcePositionMap)
     (sourceTokens formattedTokens : List SyntaxTree.Token)
     (formattedAtomicSpans : List SyntaxTree.Span)
     (occurrence : OverflowOccurrence) (lineWidth : Nat)
     : Bool :=
-  let lineStart := lineStartPosition formattedModule.source occurrence.line
+  let lineStart := formattedMap.fileMap.lineStart occurrence.line
   let overflowStart := positionAfter lineStart (occurrence.text.take lineWidth).toString
   let contentStop := positionAfter lineStart occurrence.text.trimAsciiEnd.toString
   let span? :=
@@ -653,9 +618,9 @@ def atomicSyntaxSourceLineOverflowed
       | some firstIndex, some lastIndex =>
           match sourceTokens[firstIndex]?, sourceTokens[lastIndex]? with
           | some firstToken, some lastToken =>
-              lineNumberAt sourceModule.source firstToken.span.start
-                == lineNumberAt sourceModule.source lastToken.span.start
-              && (lineWidthAtToken? sourceModule firstToken).any (lineWidth < ·)
+              sourceMap.lineNumberAt firstToken.span.start
+                == sourceMap.lineNumberAt lastToken.span.start
+              && (lineWidthAtToken? sourceMap firstToken).any (lineWidth < ·)
           | _, _ => false
       | _, _ => false
 
@@ -672,6 +637,8 @@ def formattingExceptions (sourceModule formattedModule : SyntaxTree.Module)
     if formattedOccurrences.isEmpty then
       []
     else
+      let sourceMap := SyntaxTree.SourcePositionMap.ofString sourceModule.source
+      let formattedMap := SyntaxTree.SourcePositionMap.ofString formattedModule.source
       let sourceTokens := realTokens sourceModule
       let formattedTokens := realTokens formattedModule
       let formattedAtomicSpans := indivisibleOverflowSpans formattedModule.tree
@@ -683,12 +650,12 @@ def formattingExceptions (sourceModule formattedModule : SyntaxTree.Module)
       formattedOccurrences.filterMap
         fun occurrence =>
           if sourceOverflowTexts.contains occurrence.text.trimAscii
-              || commentOnlyOverflowMatchesSource formattedModule formattedTokens
+              || commentOnlyOverflowMatchesSource formattedMap formattedTokens
                   sourceCommentLineTexts occurrence
-              || isolatedTokenSourceLineOverflowed sourceModule formattedModule
+              || isolatedTokenSourceLineOverflowed sourceMap formattedMap
                   sourceTokens formattedTokens occurrence options.lineWidth then
             none
-          else if atomicSyntaxSourceLineOverflowed sourceModule formattedModule
+          else if atomicSyntaxSourceLineOverflowed sourceMap formattedMap
                     sourceTokens formattedTokens formattedAtomicSpans occurrence
                     options.lineWidth then
             none

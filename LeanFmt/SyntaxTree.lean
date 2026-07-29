@@ -218,6 +218,28 @@ end Module
 def sourceText (source : String) (start stop : String.Pos.Raw) : String :=
   String.Pos.Raw.extract source start stop
 
+structure SourcePositionMap where
+  source : String
+  lineStarts : Array String.Pos.Raw
+deriving Repr
+
+namespace SourcePositionMap
+
+def ofString (source : String) : SourcePositionMap :=
+  let fileMap := Lean.FileMap.ofString source
+  { source, lineStarts := fileMap.positions }
+
+def fileMap (sourceMap : SourcePositionMap) : Lean.FileMap :=
+  { source := sourceMap.source, positions := sourceMap.lineStarts }
+
+def columnAt (sourceMap : SourcePositionMap) (position : String.Pos.Raw) : Nat :=
+  (sourceMap.fileMap.toPosition position).column
+
+def lineNumberAt (sourceMap : SourcePositionMap) (position : String.Pos.Raw) : Nat :=
+  (sourceMap.fileMap.toPosition position).line
+
+end SourcePositionMap
+
 def syntheticTrivia : Trivia :=
   { span := { start := 0, stop := 0 }, text := "" }
 

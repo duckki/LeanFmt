@@ -70,30 +70,14 @@ structure AppendedLines where
   completedLineOverflowCount : Nat
   currentLine : String
 
-def appendedLines (currentLine text : String) (limit : Nat := maxLineWidth)
-    : AppendedLines :=
-  let rec loop (lineWidth breakCount overflowCount : Nat) (current : List Char)
-      : List Char → AppendedLines
-    | [] =>
-        {
-          lineBreakCount := breakCount
-          completedLineOverflowCount := overflowCount
-          currentLine := String.ofList current.reverse
-        }
-    | '\r' :: '\n' :: rest =>
-        loop 0 (breakCount + 1)
-          (overflowCount + if lineWidth > limit then 1 else 0) [] rest
-    | '\n' :: rest =>
-        loop 0 (breakCount + 1)
-          (overflowCount + if lineWidth > limit then 1 else 0) [] rest
-    | '\r' :: rest =>
-        loop 0 (breakCount + 1)
-          (overflowCount + if lineWidth > limit then 1 else 0) [] rest
-    | char :: rest =>
-        loop (lineWidth + 1) breakCount overflowCount (char :: current) rest
-  loop currentLine.length 0 0 [] text.toList
+inductive AppendedTextKind where
+  | code
+  | trivia
+deriving BEq
 
-def appendedTriviaLines (currentLine text : String) (limit : Nat := maxLineWidth)
+def appendedLines
+    (currentLine text : String) (limit : Nat := maxLineWidth)
+    (kind : AppendedTextKind := .code)
     : AppendedLines :=
   let rec loop (lineWidth breakCount overflowCount : Nat) (countOverflow : Bool)
       (current : List Char)
@@ -107,18 +91,19 @@ def appendedTriviaLines (currentLine text : String) (limit : Nat := maxLineWidth
     | '\r' :: '\n' :: rest =>
         loop 0 (breakCount + 1)
           (overflowCount + if countOverflow && lineWidth > limit then 1 else 0)
-          false [] rest
+          (kind == .code) [] rest
     | '\n' :: rest =>
         loop 0 (breakCount + 1)
           (overflowCount + if countOverflow && lineWidth > limit then 1 else 0)
-          false [] rest
+          (kind == .code) [] rest
     | '\r' :: rest =>
         loop 0 (breakCount + 1)
           (overflowCount + if countOverflow && lineWidth > limit then 1 else 0)
-          false [] rest
+          (kind == .code) [] rest
     | char :: rest =>
         loop (lineWidth + 1) breakCount overflowCount countOverflow (char :: current) rest
-  loop currentLine.length 0 0 (!currentLine.trimAscii.isEmpty) [] text.toList
+  let countInitialOverflow := kind == .code || !currentLine.trimAscii.isEmpty
+  loop currentLine.length 0 0 countInitialOverflow [] text.toList
 
 def charsAfterLastNewline (text : String) : String :=
   let rec loop : List Char → List Char → String
@@ -130,9 +115,6 @@ def charsAfterLastNewline (text : String) : String :=
 def hasBlankLineStructure (text : String) : Bool :=
   hasLineBreakChar text
   && SpaceRules.containsSubstring (SpaceRules.normalizeLineEndings text) "\n\n"
-
-def originalColumnAt (source : String) (position : String.Pos.Raw) : Nat :=
-  lineWidth <| charsAfterLastNewline <| SyntaxTree.sourceText source 0 position
 
 def shiftColumnByAnchor (sourceAnchorColumn outputAnchorColumn sourceColumn : Nat)
     : Nat :=
@@ -148,50 +130,6 @@ def treeFirstSourceLineWidth? (source : String) (tree : SyntaxTree.Tree)
   some
   <| (firstLineAppendWidth
         (SyntaxTree.sourceText source first.span.start last.span.stop)).1
-
-partial def treeStartsWithProjectionChain : SyntaxTree.Tree → Bool
-  | .node (.infixChain `Lean.Parser.Term.proj) _ => true
-  | .node .application children =>
-      children[0]?.any treeStartsWithProjectionChain
-  | .node (.raw kind) children =>
-      (kind == `Lean.Parser.Term.paren
-        || kind == `Lean.Parser.Term.hygienicLParen
-        || kind == `null)
-      && children.any treeStartsWithProjectionChain
-  | _ => false
-
-def treeIsUnbreakableHead (tree : SyntaxTree.Tree) : Bool :=
-  tree.singleToken?.isSome
-  || treeStartsWithProjectionChain tree
-  || (LineBreakRules.ruleFor tree).any (·.atomic)
-
-partial def treeStartsWithSourceBrokenUnbreakableHead (source : String)
-    : SyntaxTree.Tree → Bool
-  | .node .application children =>
-      match children[0]?, children[1]? with
-      | some head, some firstArgument =>
-          treeIsUnbreakableHead head
-          && match head.lastToken?, firstArgument.firstToken? with
-              | some left, some right =>
-                  SpaceRules.hasLineStructure
-                    (SyntaxTree.sourceText source left.span.stop right.span.start)
-              | _, _ => false
-      | _, _ => false
-  | .node (.raw kind) children =>
-      (kind == `Lean.Parser.Term.paren
-        || kind == `Lean.Parser.Term.hygienicLParen
-        || kind == `null)
-      && children.any (treeStartsWithSourceBrokenUnbreakableHead source)
-  | _ => false
-
-def treeHasUnbreakableFirstLine
-    (source : String) (tree : SyntaxTree.Tree)
-    (rule : LineBreakRules.LineBreakRule)
-    : Bool :=
-  tree.singleToken?.isSome
-  || rule.atomic
-  || treeStartsWithProjectionChain tree
-  || treeStartsWithSourceBrokenUnbreakableHead source tree
 
 structure SourceBreak where
   index : Nat
@@ -211,6 +149,7 @@ deriving BEq, Repr
 structure RenderState where
   options : Options := {}
   source : String
+  sourceMap : SyntaxTree.SourcePositionMap
   output : String := ""
   outputLineBreakCount : Nat := 0
   completedLineOverflowCount : Nat := 0
@@ -232,6 +171,28 @@ structure RenderState where
   context : LineBreakRules.RuleContext := {}
   trace : Trace.State := {}
 deriving Repr
+
+structure WhitespaceState where
+  options : Options
+  source : String
+  sourceMap : SyntaxTree.SourcePositionMap
+  currentLine : String
+  lastToken? : Option SyntaxTree.Token
+  pendingIndent? : Option Nat
+  pendingCommandBoundary? : Option CommandBoundarySpacing
+  preserveNextStandaloneCommentIndent : Bool
+
+def RenderState.whitespaceState (state : RenderState) : WhitespaceState :=
+  {
+    options := state.options
+    source := state.source
+    sourceMap := state.sourceMap
+    currentLine := state.currentLine
+    lastToken? := state.lastToken?
+    pendingIndent? := state.pendingIndent?
+    pendingCommandBoundary? := state.pendingCommandBoundary?
+    preserveNextStandaloneCommentIndent := state.preserveNextStandaloneCommentIndent
+  }
 
 structure SegmentBase where
   column : Nat
@@ -301,9 +262,11 @@ def introducesCompletedLineOverflow
     | _ :: rest => loop (lineWidth + 1) true rest
   loop currentLine.length false text.toList
 
-def RenderState.appendOutput (state : RenderState) (text : String) : RenderState :=
+def RenderState.appendOutputAs
+    (state : RenderState) (kind : AppendedTextKind) (text : String)
+    : RenderState :=
   if hasLineBreakChar text then
-    let appended := appendedLines state.currentLine text state.options.lineWidth
+    let appended := appendedLines state.currentLine text state.options.lineWidth kind
     {
       state with
         output := state.output ++ text
@@ -319,23 +282,11 @@ def RenderState.appendOutput (state : RenderState) (text : String) : RenderState
         currentLine := state.currentLine ++ text
     }
 
+def RenderState.appendOutput (state : RenderState) (text : String) : RenderState :=
+  state.appendOutputAs .code text
+
 def RenderState.appendTriviaOutput (state : RenderState) (text : String) : RenderState :=
-  if hasLineBreakChar text then
-    let appended := appendedTriviaLines state.currentLine text state.options.lineWidth
-    {
-      state with
-        output := state.output ++ text
-        outputLineBreakCount := state.outputLineBreakCount + appended.lineBreakCount
-        completedLineOverflowCount :=
-          state.completedLineOverflowCount + appended.completedLineOverflowCount
-        currentLine := appended.currentLine
-    }
-  else
-    {
-      state with
-        output := state.output ++ text
-        currentLine := state.currentLine ++ text
-    }
+  state.appendOutputAs .trivia text
 
 def segmentFirstToken? (segment : LineBreakRules.Segment) : Option SyntaxTree.Token :=
   match segment.parent with
@@ -357,10 +308,13 @@ def RenderState.currentColumn (state : RenderState) : Nat :=
   | some indent => indent
   | none => lineWidth state.currentLine
 
-def RenderState.currentIndent (state : RenderState) : Nat :=
+def WhitespaceState.currentIndent (state : WhitespaceState) : Nat :=
   match state.pendingIndent? with
   | some indent => indent
   | none => (leadingWhitespace state.currentLine).length
+
+def RenderState.currentIndent (state : RenderState) : Nat :=
+  state.whitespaceState.currentIndent
 
 def RenderState.segmentBaseIndent (state : RenderState) : Nat :=
   state.segmentIndentation * indentationSpaces
@@ -426,8 +380,8 @@ def whitespaceForPendingBoundary
     | some .lineBreak => "\n" ++ indentation
     | some .blankLine => "\n\n" ++ indentation
 
-def RenderState.moveOverflowingTrailingLineComment
-    (state : RenderState) (token : SyntaxTree.Token) (whitespace : String)
+def WhitespaceState.moveOverflowingTrailingLineComment
+    (state : WhitespaceState) (token : SyntaxTree.Token) (whitespace : String)
     : String :=
   match (SpaceRules.normalizeLineEndings whitespace).splitOn "\n" with
   | firstLine :: rest =>
@@ -447,7 +401,7 @@ def RenderState.moveOverflowingTrailingLineComment
                 SyntaxTree.sourceText state.source left.span.stop token.span.start
               match (SpaceRules.normalizeLineEndings trivia).splitOn "\n" with
               | sourceFirstLine :: _ =>
-                  originalColumnAt state.source left.span.stop + sourceFirstLine.length
+                  state.sourceMap.columnAt left.span.stop + sourceFirstLine.length
                   - (SpaceRules.stripLeadingHorizontalWhitespace sourceFirstLine).length
               | [] => desiredIndent
         let maximumIndent := state.options.lineWidth - comment.length
@@ -459,14 +413,14 @@ def RenderState.moveOverflowingTrailingLineComment
         "\n" ++ spaces commentIndent ++ comment ++ "\n" ++ String.intercalate "\n" rest
   | [] => whitespace
 
-def RenderState.indentForMultilineToken
-    (state : RenderState) (token : SyntaxTree.Token) (desiredIndent : Nat)
+def WhitespaceState.indentForMultilineToken
+    (state : WhitespaceState) (token : SyntaxTree.Token) (desiredIndent : Nat)
     : Nat :=
   if hasLineBreakChar token.lexeme then
     match (SpaceRules.normalizeLineEndings token.lexeme).splitOn "\n" with
     | [] => desiredIndent
     | firstLine :: _ =>
-        let sourceColumn := originalColumnAt state.source token.span.start
+        let sourceColumn := state.sourceMap.columnAt token.span.start
         if desiredIndent + firstLine.length > state.options.lineWidth
             && sourceColumn + firstLine.length <= state.options.lineWidth then
           sourceColumn
@@ -475,7 +429,7 @@ def RenderState.indentForMultilineToken
   else
     desiredIndent
 
-def RenderState.defaultWhitespace (state : RenderState) (token : SyntaxTree.Token)
+def WhitespaceState.defaultWhitespace (state : WhitespaceState) (token : SyntaxTree.Token)
     (preserveLines : Bool := false)
     : String :=
   let whitespace :=
@@ -486,12 +440,10 @@ def RenderState.defaultWhitespace (state : RenderState) (token : SyntaxTree.Toke
         let indentation := spaces indent
         if state.preserveNextStandaloneCommentIndent
             && SpaceRules.hasCommentStart trivia then
-          -- `originalColumnAt` scans the source prefix, so keep it behind the
-          -- uncommon layout-sensitive-command/comment guards.
           let leftStayedAtSourceColumn :=
             state.currentLine.endsWith left.lexeme
             && lineWidth state.currentLine - left.lexeme.length
-                == originalColumnAt state.source left.span.start
+                == state.sourceMap.columnAt left.span.start
           if leftStayedAtSourceColumn then
             match SpaceRules.standaloneSourceCommentIndent? trivia with
             | some sourceIndent =>
@@ -522,6 +474,11 @@ def RenderState.defaultWhitespace (state : RenderState) (token : SyntaxTree.Toke
     | some left, none =>
         SpaceRules.interTokenWhitespace state.source left token preserveLines
   state.moveOverflowingTrailingLineComment token whitespace
+
+def RenderState.defaultWhitespace (state : RenderState) (token : SyntaxTree.Token)
+    (preserveLines : Bool := false)
+    : String :=
+  state.whitespaceState.defaultWhitespace token preserveLines
 
 def RenderState.allowsStartAlignment (state : RenderState) : Bool :=
   match state.lastToken?, state.pendingIndent? with
@@ -608,7 +565,7 @@ def RenderState.emitToken (state : RenderState) (token : SyntaxTree.Token)
               if SpaceRules.hasLineStructure sourceLeading then
                 lineWidth <| charsAfterLastNewline sourceLeading
               else
-                originalColumnAt state.source token.span.start
+                state.sourceMap.columnAt token.span.start
             sourceColumn + tokenWidth <= state.options.lineWidth
           else
             false
@@ -741,10 +698,12 @@ def RenderState.emitOriginalTree
     (state : RenderState) (tree : SyntaxTree.Tree)
     (respectPendingIndent : Bool := false)
     (rebaseSourceTextTargetColumn? : Option Nat := none)
+    (classification? : Option OriginalTree.LayoutIslandKind := none)
     : RenderState :=
   let request : OriginalTree.EmissionRequest :=
     {
       source := state.source
+      sourceMap := state.sourceMap
       currentLine := state.currentLine
       currentIndent := state.currentIndent
       lastToken? := state.lastToken?
@@ -762,7 +721,7 @@ def RenderState.emitOriginalTree
       respectPendingIndent
       rebaseSourceTextTargetColumn?
     }
-  match OriginalTree.emit? request tree with
+  match OriginalTree.emit? request tree classification? with
   | some emission =>
       {
         state.appendOutput emission.text with
@@ -794,10 +753,11 @@ partial def renderWithoutRuleBreaks
         (fun state index =>
           match segment.child? index with
           | some child =>
-              if OriginalTree.shouldEmit child then
-                state.emitOriginalTree child
-              else
-                renderWithoutRuleBreaks state (LineBreakRules.Segment.ofTree child)
+              match OriginalTree.classify? child with
+              | some classification =>
+                  state.emitOriginalTree child (classification? := some classification)
+              | none =>
+                  renderWithoutRuleBreaks state (LineBreakRules.Segment.ofTree child)
           | none => state)
         state
 
@@ -821,12 +781,15 @@ partial def probeLayoutWithoutRuleBreaks?
             | none => loop state rest
             | some child =>
                 let rendered? :=
-                  if OriginalTree.shouldEmit child then
-                    let rendered := state.emitOriginalTree child
-                    if layoutProbeHasNotOverflowed rendered then some rendered else none
-                  else
-                    probeLayoutWithoutRuleBreaks? state
-                      (LineBreakRules.Segment.ofTree child)
+                  match OriginalTree.classify? child with
+                  | some classification =>
+                      let rendered :=
+                        state.emitOriginalTree child
+                          (classification? := some classification)
+                      if layoutProbeHasNotOverflowed rendered then some rendered else none
+                  | none =>
+                      probeLayoutWithoutRuleBreaks? state
+                        (LineBreakRules.Segment.ofTree child)
                 match rendered? with
                 | some rendered => loop rendered rest
                 | none => none
@@ -864,61 +827,12 @@ def suffixMayContinueAcrossRuleBreak (segment : LineBreakRules.Segment) (index :
       LineBreakRules.suffixTokenAction { ancestors := [] } token == .emit
   | none => false
 
-structure WidthState where
-  source : String
-  currentLineWidth : Nat
-  lastToken? : Option SyntaxTree.Token
-  pendingIndent? : Option Nat
+def WhitespaceState.appendText (state : WhitespaceState) (text : String)
+    : WhitespaceState :=
+  { state with currentLine := currentLineAfterAppend state.currentLine text }
 
-def WidthState.ofRenderState (state : RenderState) : WidthState :=
-  {
-    source := state.source
-    currentLineWidth := lineWidth state.currentLine
-    lastToken? := state.lastToken?
-    pendingIndent? := state.pendingIndent?
-  }
-
-def widthAfterAppend (currentLineWidth : Nat) (text : String) : Nat :=
-  let rec loop : List Char → Nat → Nat
-    | [], width => width
-    | '\n' :: rest, _ => loop rest 0
-    | '\r' :: rest, _ => loop rest 0
-    | _ :: rest, width => loop rest (width + 1)
-  loop text.toList currentLineWidth
-
-def WidthState.defaultWhitespace (state : WidthState) (token : SyntaxTree.Token)
-    (preserveLines : Bool := false)
-    : String :=
-  match state.lastToken?, state.pendingIndent? with
-  | some left, some indent =>
-      let trivia := SyntaxTree.sourceText state.source left.span.stop token.span.start
-      let indentation := spaces indent
-      if SpaceRules.hasCommentStart trivia then
-        SpaceRules.commentTriviaForBreak trivia indentation
-      else if hasBlankLineStructure trivia then
-        "\n\n" ++ indentation
-      else
-        "\n" ++ indentation
-  | none, some indent =>
-      let indentation := spaces indent
-      if SpaceRules.hasCommentStart token.leading.text then
-        SpaceRules.commentTriviaForBreak token.leading.text indentation
-      else if hasBlankLineStructure token.leading.text then
-        "\n\n" ++ indentation
-      else
-        "\n" ++ indentation
-  | none, none =>
-      if SpaceRules.hasCommentStart token.leading.text then
-        SpaceRules.reindentCommentTrivia token.leading.text ""
-      else
-        ""
-  | some left, none =>
-      SpaceRules.interTokenWhitespace state.source left token preserveLines
-
-def WidthState.appendText (state : WidthState) (text : String) : WidthState :=
-  { state with currentLineWidth := widthAfterAppend state.currentLineWidth text }
-
-def WidthState.hasBlankBoundaryBefore (state : WidthState) (tree : SyntaxTree.Tree)
+def WhitespaceState.hasBlankBoundaryBefore
+    (state : WhitespaceState) (tree : SyntaxTree.Tree)
     : Bool :=
   match state.lastToken?, SyntaxTree.Tree.firstToken? tree with
   | some left, some right =>
@@ -926,25 +840,34 @@ def WidthState.hasBlankBoundaryBefore (state : WidthState) (tree : SyntaxTree.Tr
       hasBlankLineStructure trivia
   | _, _ => false
 
-def WidthState.afterFlatTreeForSuffix (state : WidthState) (tree : SyntaxTree.Tree)
-    : WidthState :=
+def WhitespaceState.afterToken (state : WhitespaceState) (token : SyntaxTree.Token)
+    : WhitespaceState :=
+  {
+    state with
+      lastToken? := some token
+      pendingIndent? := none
+  }
+
+def WhitespaceState.afterFlatTreeForSuffix
+    (state : WhitespaceState) (tree : SyntaxTree.Tree)
+    : WhitespaceState :=
   match SyntaxTree.Tree.lastToken? tree with
-  | some token => { state with lastToken? := some token, pendingIndent? := none }
+  | some token => state.afterToken token
   | none => state
 
 structure SuffixState where
-  widthState : WidthState
+  whitespaceState : WhitespaceState
   suffixWidth : Nat
   delimiterDepth : Nat := 0
 
 def SuffixState.appendText (state : SuffixState) (text : String) : SuffixState × Bool :=
   let (addedWidth, stopped) := firstLineAppendWidth text
-  let widthState :=
+  let whitespaceState :=
     if stopped then
-      state.widthState
+      state.whitespaceState
     else
-      state.widthState.appendText text
-  ({ widthState, suffixWidth := state.suffixWidth + addedWidth }, stopped)
+      state.whitespaceState.appendText text
+  ({ whitespaceState, suffixWidth := state.suffixWidth + addedWidth }, stopped)
 
 def SuffixState.emitToken (state : SuffixState) (token : SyntaxTree.Token)
     (preserveLines : Bool := false)
@@ -952,7 +875,8 @@ def SuffixState.emitToken (state : SuffixState) (token : SyntaxTree.Token)
   if token.lexeme.isEmpty then
     (state, false)
   else
-    let text := state.widthState.defaultWhitespace token preserveLines ++ token.lexeme
+    let text :=
+      state.whitespaceState.defaultWhitespace token preserveLines ++ token.lexeme
     let (state, stopped) := state.appendText text
     let delimiterDepth :=
       if LineBreakRules.suffixOpeningDelimiterLexeme token.lexeme then
@@ -964,12 +888,7 @@ def SuffixState.emitToken (state : SuffixState) (token : SyntaxTree.Token)
     (
       {
         state with
-          widthState :=
-            {
-              state.widthState with
-                lastToken? := some token
-                pendingIndent? := none
-            }
+          whitespaceState := state.whitespaceState.afterToken token
           delimiterDepth
       },
       stopped
@@ -979,12 +898,12 @@ def SuffixState.appendCommentTriviaBeforeToken
     (state : SuffixState) (token : SyntaxTree.Token)
     : SuffixState :=
   let trivia :=
-    match state.widthState.lastToken? with
+    match state.whitespaceState.lastToken? with
     | some left =>
-        SyntaxTree.sourceText state.widthState.source left.span.stop token.span.start
+        SyntaxTree.sourceText state.whitespaceState.source left.span.stop token.span.start
     | none => token.leading.text
   if SpaceRules.hasCommentStart trivia then
-    (state.appendText (state.widthState.defaultWhitespace token false)).1
+    (state.appendText (state.whitespaceState.defaultWhitespace token false)).1
   else
     state
 
@@ -1000,23 +919,15 @@ def SuffixState.emitOriginalFirstLine (state : SuffixState) (tree : SyntaxTree.T
   match SyntaxTree.Tree.firstToken? tree, SyntaxTree.Tree.lastToken? tree with
   | some firstToken, some lastToken =>
       let text :=
-        state.widthState.defaultWhitespace firstToken true
-        ++ SyntaxTree.sourceText state.widthState.source firstToken.span.start
+        state.whitespaceState.defaultWhitespace firstToken true
+        ++ SyntaxTree.sourceText state.whitespaceState.source firstToken.span.start
             lastToken.span.stop
       let (state, stopped) := state.appendText text
       let state :=
         if stopped then
           state
         else
-          {
-            state with
-              widthState :=
-                {
-                  state.widthState with
-                    lastToken? := some lastToken
-                    pendingIndent? := none
-                }
-          }
+          { state with whitespaceState := state.whitespaceState.afterToken lastToken }
       (state, stopped)
   | _, _ => (state, false)
 
@@ -1035,7 +946,7 @@ partial def measureSuffixOfTree
         | .emit => state.emitToken token false
         | .stop => (state.appendCommentTriviaBeforeToken token, true)
   | .node _ _ =>
-      if OriginalTree.shouldEmit tree then
+      if (OriginalTree.classify? tree).isSome then
         state.emitOriginalFirstLine tree
       else
         let segment := LineBreakRules.Segment.ofTree tree
@@ -1095,7 +1006,7 @@ partial def renderFirstLineOfTree (state : RenderState) (tree : SyntaxTree.Tree)
           stopped
         )
   | .node _ _ =>
-      if OriginalTree.shouldEmit tree then
+      if (OriginalTree.classify? tree).isSome then
         state.firstLineOfOriginalTree tree
       else
         let segment := LineBreakRules.Segment.ofTree tree
@@ -1121,13 +1032,13 @@ partial def lineFitSuffixAfterChild
     (state : RenderState) (segment : LineBreakRules.Segment) (index : Nat)
     (child : SyntaxTree.Tree)
     : Nat × Bool :=
-  let afterChild := (WidthState.ofRenderState state).afterFlatTreeForSuffix child
+  let afterChild := state.whitespaceState.afterFlatTreeForSuffix child
   let context := state.context
   let rec loop (suffixState : SuffixState) (nextIndex : Nat) : SuffixState × Bool :=
     if nextIndex < segment.stop then
       match segment.child? nextIndex with
       | some nextChild =>
-          if suffixState.widthState.hasBlankBoundaryBefore nextChild then
+          if suffixState.whitespaceState.hasBlankBoundaryBefore nextChild then
             (suffixState.appendCommentTriviaBeforeTree nextChild, false)
           else
             let childContext := context.push segment nextIndex
@@ -1142,7 +1053,7 @@ partial def lineFitSuffixAfterChild
         | none => suffixState
       (suffixState, true)
   let (suffixState, reachedEnd) :=
-    loop { widthState := afterChild, suffixWidth := 0 } (index + 1)
+    loop { whitespaceState := afterChild, suffixWidth := 0 } (index + 1)
   (suffixState.suffixWidth, reachedEnd)
 
 def firstRuleBreakAfter
@@ -1377,34 +1288,35 @@ partial def segmentAllowsLayoutWithoutRuleBreaks
   | .missing => true
   | .leaf _ => true
   | .node _ _ =>
-      if OriginalTree.shouldEmit segment.parent then
-        OriginalTree.preservesMultilineLayoutWithoutRuleBreaks segment.parent
-        || !treeSourceHasLineStructure source segment.parent
-      else
-        let rule := LineBreakRules.formattingRuleFor segment.parent
-        if rule.mandatory context segment then
-          false
-        else
-          match segment.singleChild? with
-          | some (index, child) =>
-              segmentAllowsLayoutWithoutRuleBreaks source (context.push segment index)
-                (LineBreakRules.Segment.ofTree child)
-          | none =>
-              if respectSourceBreaks
-                  && segmentHasAllowedSourceBreaks source context segment then
-                false
-              else
-                let rec loop : List Nat → Bool
-                  | [] => true
-                  | index :: rest =>
-                      match segment.child? index with
-                      | none => true
-                      | some child =>
-                          segmentAllowsLayoutWithoutRuleBreaks source
-                            (context.push segment index)
-                            (LineBreakRules.Segment.ofTree child)
-                          && loop rest
-                loop segment.indexes
+      match OriginalTree.classify? segment.parent with
+      | some classification =>
+          classification.preservesMultilineLayoutWithoutRuleBreaks
+          || !treeSourceHasLineStructure source segment.parent
+      | none =>
+          let rule := LineBreakRules.formattingRuleFor segment.parent
+          if rule.mandatory context segment then
+            false
+          else
+            match segment.singleChild? with
+            | some (index, child) =>
+                segmentAllowsLayoutWithoutRuleBreaks source (context.push segment index)
+                  (LineBreakRules.Segment.ofTree child)
+            | none =>
+                if respectSourceBreaks
+                    && segmentHasAllowedSourceBreaks source context segment then
+                  false
+                else
+                  let rec loop : List Nat → Bool
+                    | [] => true
+                    | index :: rest =>
+                        match segment.child? index with
+                        | none => true
+                        | some child =>
+                            segmentAllowsLayoutWithoutRuleBreaks source
+                              (context.push segment index)
+                              (LineBreakRules.Segment.ofTree child)
+                            && loop rest
+                  loop segment.indexes
 
 structure LayoutProbe where
   fits : Bool
@@ -1808,10 +1720,13 @@ mutual
     | .missing => state
     | .leaf token => state.emitToken token
     | .node _ children =>
-        if segment.start == 0
-            && segment.stop == children.size
-            && OriginalTree.shouldEmit segment.parent then
-          state.emitOriginalTree segment.parent
+        if segment.start == 0 && segment.stop == children.size then
+          match OriginalTree.classify? segment.parent with
+          | some classification =>
+              state.emitOriginalTree segment.parent
+                (classification? := some classification)
+          | none =>
+              renderSegmentByRule state segment rule breakPoints
         else
           renderSegmentByRule state segment rule breakPoints
 
@@ -1930,7 +1845,8 @@ mutual
       (state : RenderState) (segment : LineBreakRules.Segment) (index : Nat)
       (child : SyntaxTree.Tree) (suffixStop? : Option Nat := none)
       : RenderState :=
-    let emitOriginal := OriginalTree.shouldEmit child
+    let originalClassification? := OriginalTree.classify? child
+    let emitOriginal := originalClassification?.isSome
     let state :=
       if emitOriginal || OriginalTree.startsWithEmission child then
         state
@@ -1985,19 +1901,19 @@ mutual
     let state :=
       match state.pendingIndent?, firstToken? with
       | some desiredIndent, some firstToken =>
-          if treeHasUnbreakableFirstLine state.source child childRule then
+          if LineBreakRules.treeHasUnbreakableFirstLine state.source child childRule then
             match treeFirstSourceLineWidth? state.source child with
             | some firstLineWidth =>
                 if desiredIndent + firstLineWidth <= state.options.lineWidth then
                   state
                 else
-                  let sourceColumn := originalColumnAt state.source firstToken.span.start
+                  let sourceColumn := state.sourceMap.columnAt firstToken.span.start
                   let renderedParentRelativeColumn? :=
                     match state.lastToken? with
                     | some leftToken =>
                         if state.currentLine.endsWith leftToken.lexeme then
                           let sourceAnchor :=
-                            originalColumnAt state.source leftToken.span.start
+                            state.sourceMap.columnAt leftToken.span.start
                           let outputAnchor :=
                             lineWidth state.currentLine - leftToken.lexeme.length
                           some
@@ -2096,10 +2012,13 @@ mutual
         childState.emitOriginalTree child
           (respectPendingIndent :=
             !startsOnNewSourceLine || state.pendingCommandBoundary?.isSome)
+          (classification? := originalClassification?)
       else
         renderSegment childState childSegment (some (childRule, childBreakPoints))
     let rendered :=
-      if !emitOriginal || !OriginalTree.prefersParentRelativeColumn child then
+      if !emitOriginal
+          || !originalClassification?.any
+                OriginalTree.LayoutIslandKind.prefersParentRelativeColumn then
         rendered
       else
         match parentRelativeOriginalColumn? with
@@ -2109,6 +2028,7 @@ mutual
               childState.emitOriginalTree child
                 (respectPendingIndent := true)
                 (rebaseSourceTextTargetColumn? := some targetColumn)
+                (classification? := originalClassification?)
             preferCandidateWithFewerOverflows childState rendered original
     let rendered :=
       if emitOriginal
@@ -2400,16 +2320,18 @@ def RenderState.finalTrivia (state : RenderState) : String :=
 
 def renderModuleTree (moduleTree : SyntaxTree.Module) (options : Options := {})
     : String :=
+  let sourceMap := SyntaxTree.SourcePositionMap.ofString moduleTree.source
   let state :=
-    renderSegment { options, source := moduleTree.source }
+    renderSegment { options, source := moduleTree.source, sourceMap }
       (LineBreakRules.Segment.ofTree moduleTree.tree)
   SpaceRules.normalizeFinalNewline (state.output ++ state.finalTrivia)
 
 def renderModuleTreeWithTrace (moduleTree : SyntaxTree.Module) (options : Options := {})
     : String × String :=
+  let sourceMap := SyntaxTree.SourcePositionMap.ofString moduleTree.source
   let state :=
     renderSegment
-      { options, source := moduleTree.source, trace := { enabled := true } }
+      { options, source := moduleTree.source, sourceMap, trace := { enabled := true } }
       (LineBreakRules.Segment.ofTree moduleTree.tree)
   let formatted := SpaceRules.normalizeFinalNewline (state.output ++ state.finalTrivia)
   (formatted, state.trace.formatWithOutput formatted)
