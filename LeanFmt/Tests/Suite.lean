@@ -481,6 +481,8 @@ def assertDoBodyRetainsSourceLayoutToAvoidOverflow (env : Lean.Environment)
   let inlineFormatted ←
     Formatter.formatSourceWithEnv env inlineSource
       "do-body-inline-atomic-overflow.lean" { lineWidth := 60 }
+  assertTextContains "configuration blocks stay attached to their application"
+    inlineFormatted "registerBuiltinAttribute {\n"
   assertTrue "do body source layout avoids moved inline atomic overflow"
     (Formatter.linesFit inlineFormatted 60)
   assertTrue "inline atomic do body fallback preserves code"

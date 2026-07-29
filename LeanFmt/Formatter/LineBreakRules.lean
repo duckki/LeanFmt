@@ -1419,9 +1419,18 @@ def exportBreaks (_context : RuleContext) (segment : Segment) : List BreakPoint 
 
 /-! ### Applications, signatures, and binders -/
 
-def applicationBreaks (_context : RuleContext) (segment : Segment) : List BreakPoint :=
+def applicationArgumentStaysAttached
+    (context : RuleContext) (segment : Segment) (index : Nat)
+    : Bool :=
+  attachedBodyStart segment index
+  || (childIsRawKind segment index `Lean.Parser.Term.structInst
+      && context.ancestors.any
+          fun frame => frame.rawKind? == some `Lean.Parser.Command.initialize)
+
+def applicationBreaks (context : RuleContext) (segment : Segment) : List BreakPoint :=
   (childBoundaryBreaks segment 1).filter
-    fun breakPoint => !attachedBodyStart segment breakPoint.index
+    fun breakPoint =>
+      !applicationArgumentStaysAttached context segment breakPoint.index
 
 def pipeProjBreaks (_context : RuleContext) (segment : Segment) : List BreakPoint :=
   match boundaryBreak? segment 1 0 with
