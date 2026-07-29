@@ -2762,6 +2762,15 @@ def declarationValueRule : LineBreakRule :=
     breakPoints := declarationValueBreaks
   }
 
+def notationRule : LineBreakRule :=
+  {
+    name := "notation"
+    useExistingBreaks := fun _ _ => true
+    inheritBase := fun _ _ => true
+    breakPoints :=
+      fun _ segment => [breakAfterLexeme? segment "=>" 1].filterMap id
+  }
+
 def configEntriesRule : LineBreakRule :=
   {
     name := "configEntries"
@@ -3277,13 +3286,13 @@ def ruleFor : SyntaxTree.Tree → Option LineBreakRule
   | .node (.raw `Lean.Parser.Command.abbrev) _ => some defaultRule
   | .node (.raw `Lean.Parser.Command.classAbbrev) _ => some defaultRule
   | .node (.raw `Lean.Parser.Command.nonrec) _ => some defaultRule
-  | .node (.raw `Lean.Parser.Command.notation) _ => some defaultRule
-  | .node (.raw `Lean.Parser.Command.mixfix) _ => some defaultRule
-  | .node (.raw `Lean.Parser.Command.infix) _ => some defaultRule
-  | .node (.raw `Lean.Parser.Command.infixl) _ => some defaultRule
-  | .node (.raw `Lean.Parser.Command.infixr) _ => some defaultRule
-  | .node (.raw `Lean.Parser.Command.prefix) _ => some defaultRule
-  | .node (.raw `Lean.Parser.Command.postfix) _ => some defaultRule
+  | .node (.raw `Lean.Parser.Command.notation) _ => some notationRule
+  | .node (.raw `Lean.Parser.Command.mixfix) _ => some notationRule
+  | .node (.raw `Lean.Parser.Command.infix) _ => some notationRule
+  | .node (.raw `Lean.Parser.Command.infixl) _ => some notationRule
+  | .node (.raw `Lean.Parser.Command.infixr) _ => some notationRule
+  | .node (.raw `Lean.Parser.Command.prefix) _ => some notationRule
+  | .node (.raw `Lean.Parser.Command.postfix) _ => some notationRule
   | .node (.raw `Lean.Parser.Command.identPrec) _ => some defaultRule
   | .node (.raw `Lean.Parser.Command.grindPattern) _ => some defaultRule
   | .node (.raw `Lean.Parser.Command.omit) _ => some defaultRule
@@ -3594,7 +3603,7 @@ def ruleFor : SyntaxTree.Tree → Option LineBreakRule
         `Ideal.Submodule.Module.Submodule.Module.Module.Submodule.Submodule.Module.Module.Submodule.Submodule.QuotientTorsion.Ideal.Quotient.AddMonoid.AddSubgroup.torsionByStx)
       _ => some defaultRule
   | .node (.raw `Mathlib.Meta.macroPattSetBuilder) _ => some defaultRule
-  | .node (.raw `Mathlib.Notation3.notation3) _ => some defaultRule
+  | .node (.raw `Mathlib.Notation3.notation3) _ => some notationRule
   | .node (.raw `Mathlib.Notation3.notation3Item) _ => some defaultRule
   | .node (.raw `Mathlib.Notation3.identOptScoped) _ => some defaultRule
   | .node (.raw `Mathlib.Notation3.prettyPrintOpt) _ => some defaultRule

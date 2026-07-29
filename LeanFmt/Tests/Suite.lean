@@ -2943,6 +2943,26 @@ def assertTopLevelAnnotationsBreakConsistently (env : Lean.Environment) : IO Uni
     assertTextContains s!"{name} preserves its source annotation break"
       formattedBrokenBeforeCommand ("@[simp]\n" ++ commandPrefix)
 
+def assertNotationValueBreaksAfterArrow (env : Lean.Environment) : IO Unit := do
+  let source :=
+    "local notation \"result\" => firstVeryLongFunctionName secondVeryLongArgumentName thirdVeryLongArgumentName\n"
+  let expected :=
+    "local notation \"result\" =>\n"
+    ++ "  firstVeryLongFunctionName secondVeryLongArgumentName thirdVeryLongArgumentName\n"
+  let formatted ← Formatter.formatSourceWithEnv env source "notation-value-break.lean"
+  assertEq "notation value breaks after its arrow" expected formatted
+  let notation3 :=
+    SyntaxTree.Tree.node (.raw `Mathlib.Notation3.notation3)
+      #[
+        .leaf (syntheticAtomToken "notation3"),
+        .leaf (syntheticAtomToken "=>"),
+        .leaf (syntheticAtomToken "value")
+      ]
+  let segment := Formatter.LineBreakRules.Segment.ofTree notation3
+  let rule := Formatter.LineBreakRules.formattingRuleFor notation3
+  assertTrue "notation3 uses the notation value boundary"
+    (rule.breakPoints {} segment == [{ index := 2, indentLevels := 1 }])
+
 def assertDeclarationValueInfixBreaksAfterAssign (env : Lean.Environment) : IO Unit := do
   let source :=
     "def declarationValueInfixBreakWithLongEnoughHeaderExtra : Nat := inferInstanceAs <| OfNat Nat 0\n"
@@ -8913,6 +8933,7 @@ def runBasicFormattingTests (env : Lean.Environment) : IO Unit := do
   assertBasicDeclarationBreak env
   assertLongDeclarationNamesBreakConsistently env
   assertTopLevelAnnotationsBreakConsistently env
+  assertNotationValueBreaksAfterArrow env
   assertDeclarationValueInfixBreaksAfterAssign env
   assertLongDeclarationDirectValueBreaksAfterAssign env
   assertDeclarationProofValueBreaksAfterAssignWhenSignatureCannotFit env
