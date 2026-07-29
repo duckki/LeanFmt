@@ -451,6 +451,7 @@ structure EmissionRequest where
   currentLine : String
   currentIndent : Nat
   lastToken? : Option SyntaxTree.Token
+  formattedLeadingWhitespace? : Option String
   pendingLeadingWhitespace? : Option String
   segmentIndentation : Nat
   sourceLayoutBaseColumn : Nat
@@ -483,10 +484,11 @@ private def emitRebased? (request : EmissionRequest) (tree : SyntaxTree.Tree)
         SyntaxTree.sourceText request.source leftToken.span.stop firstToken.span.start
     | none => firstToken.leading.text
   let leading :=
-    if usesPendingIndent then
-      request.pendingLeadingWhitespace?.getD originalLeading
-    else
-      originalLeading
+    request.formattedLeadingWhitespace?.getD
+      (if usesPendingIndent then
+          request.pendingLeadingWhitespace?.getD originalLeading
+        else
+          originalLeading)
   let leadingColumn := lineWidth <| currentLineAfterAppend request.currentLine leading
   let sourceText :=
     SyntaxTree.sourceText request.source firstToken.span.start lastToken.span.stop

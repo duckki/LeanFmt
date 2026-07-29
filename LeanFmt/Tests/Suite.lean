@@ -4728,6 +4728,27 @@ def tokenAt (lexeme : String) (start stop : String.Pos.Raw) : SyntaxTree.Token :
     span := { start, stop }
   }
 
+def assertOriginalTreeUsesParentLeadingWhitespace : IO Unit := do
+  let source := ":\n    dsimp% value"
+  let colon := tokenAt ":" (String.Pos.Raw.mk 0) (String.Pos.Raw.mk 1)
+  let tacticHead := tokenAt "dsimp%" (String.Pos.Raw.mk 6) (String.Pos.Raw.mk 12)
+  let value := tokenAt "value" (String.Pos.Raw.mk 13) (String.Pos.Raw.mk 18)
+  let tactic :=
+    SyntaxTree.Tree.node
+      (.raw `Mathlib.Tactic.syntheticForLeadingBoundaryTest)
+      #[.leaf tacticHead, .leaf value]
+  let typeSpec :=
+    SyntaxTree.Tree.node (.raw `Lean.Parser.Term.typeSpec) #[.leaf colon, tactic]
+  let state : Formatter.RenderState :=
+    {
+      source
+      sourceMap := SyntaxTree.SourcePositionMap.ofString source
+    }
+  let rendered :=
+    Formatter.renderSegment state (Formatter.LineBreakRules.Segment.ofTree typeSpec)
+  assertEq "original tree leaves its leading boundary to its parent"
+    ": dsimp% value" rendered.output
+
 def assertMovedProofWidgetsJsxUsesPendingIndent : IO Unit := do
   let source := "previous\n      <div>\n        child\n      </div>"
   let previous := tokenAt "previous" (String.Pos.Raw.mk 0) (String.Pos.Raw.mk 8)
@@ -8997,6 +9018,7 @@ def runExpressionAndRendererTests (env : Lean.Environment) : IO Unit := do
   assertLineFitCountsTrailingComment env
   assertColumnIndentationIsConservative
   assertCurrentLineFitChecksCompletedLines
+  assertOriginalTreeUsesParentLeadingWhitespace
   assertMovedProofWidgetsJsxUsesPendingIndent
   assertMovedInterpolatedStringUsesPendingIndent env
   assertSegmentBaseUsesRenderedStartColumn

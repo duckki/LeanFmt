@@ -340,6 +340,8 @@ inductive StartAlignment where
 structure LineBreakRule where
   name : String
   atomic : Bool := false
+  formatOriginalChildLeadingBoundary
+    : RuleContext -> Segment -> Nat -> Bool := fun _ _ _ => false
   preferChildLayouts : RuleContext -> Segment -> Bool := fun _ _ => false
   useExistingBreaks : RuleContext -> Segment -> Bool := fun _ _ => false
   mandatory : RuleContext -> Segment -> Bool := fun _ _ => false
@@ -387,6 +389,11 @@ Rule methods mean:
 - `atomic`: the segment is always rendered flat internally. Its parent still measures
   its complete width and may break before it. Interpolated strings use this so `s!` and
   interpolation contents cannot split independently.
+- `formatOriginalChildLeadingBoundary`: the parent rule owns the whitespace before the
+  selected original-layout child. The renderer applies ordinary token spacing at that
+  boundary and rebases the island's internal source layout to its formatted start
+  column. Transparent wrappers use this for later children, so a source newline inside
+  a type specification cannot detach its term from the preceding `:`.
 - `preferChildLayouts`: after the complete flat form fails, try the children's legal
   layouts before activating this segment's own break points. Structure headers use this
   only when a fitting `extends` child can remain flat; mandatory field breaks then do
@@ -786,6 +793,9 @@ is reconstructed token by token so whitespace inside string and other atomic tok
 lexemes is never changed.
 An original-source island whose own source slice is single-line still participates in
 ordinary flat-fit checks, so inline extension syntax does not force its parent to break.
+The island normally retains its source-leading boundary as well. A surrounding rule can
+claim that boundary with `formatOriginalChildLeadingBoundary`; the renderer then supplies
+the boundary whitespace and the island preserves only its internal relative layout.
 Syntax-authoring commands (`syntax`, source-broken `macro` signatures, `macro_rules`,
 `elab`, `elab_rules`, and `run_cmd`), Batteries
 alias and library-note commands, and other explicitly cataloged extension-owned commands

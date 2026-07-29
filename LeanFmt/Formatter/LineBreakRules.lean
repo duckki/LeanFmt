@@ -210,6 +210,8 @@ def hasRawKindAncestor (context : RuleContext) (kind : Lean.SyntaxNodeKind) : Bo
 structure LineBreakRule where
   name : String
   atomic : Bool := false
+  formatOriginalChildLeadingBoundary : RuleContext → Segment → Nat → Bool :=
+    fun _ _ _ => false
   preferChildLayouts : RuleContext → Segment → Bool := fun _ _ => false
   useExistingBreaks : RuleContext → Segment → Bool := fun _ _ => false
   mandatory : RuleContext → Segment → Bool := fun _ _ => false
@@ -2843,7 +2845,14 @@ def setOptionRule : LineBreakRule :=
   }
 
 def transparentRule : LineBreakRule :=
-  { name := "transparent" }
+  {
+    name := "transparent"
+    formatOriginalChildLeadingBoundary :=
+      fun _ segment index =>
+        segment.indexes.any
+          fun childIndex =>
+            childIndex < index && (segment.child? childIndex).any treeHasContent
+  }
 
 def dotIdentRule : LineBreakRule :=
   {

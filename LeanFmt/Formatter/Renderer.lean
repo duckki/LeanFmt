@@ -706,10 +706,20 @@ def RenderState.hasBlankBoundaryBefore (state : RenderState) (tree : SyntaxTree.
 
 def RenderState.emitOriginalTree
     (state : RenderState) (tree : SyntaxTree.Tree)
+    (formatLeadingBoundary : Bool := false)
     (respectPendingIndent : Bool := false)
     (rebaseSourceTextTargetColumn? : Option Nat := none)
     (classification? : Option OriginalTree.LayoutIslandKind := none)
     : RenderState :=
+  let formattedLeadingWhitespace? :=
+    if formatLeadingBoundary then
+      SyntaxTree.Tree.firstToken? tree
+      |>.map fun firstToken => state.defaultWhitespace firstToken
+    else
+      none
+  let formattedLeadingTargetColumn? :=
+    formattedLeadingWhitespace?.map
+      fun whitespace => lineWidth <| currentLineAfterAppend state.currentLine whitespace
   let request : OriginalTree.EmissionRequest :=
     {
       source := state.source
@@ -717,6 +727,7 @@ def RenderState.emitOriginalTree
       currentLine := state.currentLine
       currentIndent := state.currentIndent
       lastToken? := state.lastToken?
+      formattedLeadingWhitespace?
       pendingLeadingWhitespace? :=
         state.pendingIndent?.map
           fun _ =>
@@ -729,7 +740,8 @@ def RenderState.emitOriginalTree
       lineWidth := state.options.lineWidth
       lineFitSuffixWidth := state.lineFitSuffixWidth
       respectPendingIndent
-      rebaseSourceTextTargetColumn?
+      rebaseSourceTextTargetColumn? :=
+        rebaseSourceTextTargetColumn?.orElse fun _ => formattedLeadingTargetColumn?
     }
   match OriginalTree.emit? request tree classification? with
   | some emission =>
@@ -750,6 +762,22 @@ def treeSourceHasLineStructure (source : String) (tree : SyntaxTree.Tree) : Bool
         (SyntaxTree.sourceText source firstToken.span.start lastToken.span.stop)
   | _, _ => false
 
+def formatOriginalChildLeadingBoundary
+    (context : LineBreakRules.RuleContext) (segment : LineBreakRules.Segment)
+    (index : Nat)
+    : Bool :=
+  let rule := LineBreakRules.formattingRuleFor segment.parent
+  rule.formatOriginalChildLeadingBoundary context segment index
+
+def hasRuleBreakAt
+    (context : LineBreakRules.RuleContext) (segment : LineBreakRules.Segment)
+    (index : Nat)
+    : Bool :=
+  let rule := LineBreakRules.formattingRuleFor segment.parent
+  (rule.breakPoints context segment).any
+    fun breakPoint =>
+      breakPoint.index == index
+
 /-! ## Flat rendering and fit measurement -/
 
 partial def renderWithoutRuleBreaks
@@ -765,7 +793,10 @@ partial def renderWithoutRuleBreaks
           | some child =>
               match OriginalTree.classify? child with
               | some classification =>
-                  state.emitOriginalTree child (classification? := some classification)
+                  state.emitOriginalTree child
+                    (formatLeadingBoundary :=
+                      formatOriginalChildLeadingBoundary state.context segment index)
+                    (classification? := some classification)
               | none =>
                   renderWithoutRuleBreaks state (LineBreakRules.Segment.ofTree child)
           | none => state)
@@ -795,6 +826,9 @@ partial def probeLayoutWithoutRuleBreaks?
                   | some classification =>
                       let rendered :=
                         state.emitOriginalTree child
+                          (formatLeadingBoundary :=
+                            formatOriginalChildLeadingBoundary
+                              state.context segment index)
                           (classification? := some classification)
                       if layoutProbeHasNotOverflowed rendered then some rendered else none
                   | none =>
@@ -820,15 +854,6 @@ def firstLineWithBreakFlag (text : String) : String × Bool :=
 
 def RenderState.withoutLineFitSuffix (state : RenderState) : RenderState :=
   { state with lineFitSuffixWidth := 0 }
-
-def hasRuleBreakAt
-    (context : LineBreakRules.RuleContext) (segment : LineBreakRules.Segment)
-    (index : Nat)
-    : Bool :=
-  let rule := LineBreakRules.formattingRuleFor segment.parent
-  (rule.breakPoints context segment).any
-    fun breakPoint =>
-      breakPoint.index == index
 
 def suffixMayContinueAcrossRuleBreak (segment : LineBreakRules.Segment) (index : Nat)
     : Bool :=
@@ -2020,6 +2045,8 @@ mutual
     let rendered :=
       if emitOriginal then
         childState.emitOriginalTree child
+          (formatLeadingBoundary :=
+            formatOriginalChildLeadingBoundary state.context segment index)
           (respectPendingIndent :=
             !startsOnNewSourceLine || state.pendingCommandBoundary?.isSome)
           (classification? := originalClassification?)
@@ -2045,6 +2072,8 @@ mutual
         | some targetColumn =>
             let original :=
               childState.emitOriginalTree child
+                (formatLeadingBoundary :=
+                  formatOriginalChildLeadingBoundary state.context segment index)
                 (respectPendingIndent := true)
                 (rebaseSourceTextTargetColumn? := some targetColumn)
                 (classification? := originalClassification?)
@@ -2062,6 +2091,8 @@ mutual
         | some targetColumn =>
             let original :=
               childState.emitOriginalTree child
+                (formatLeadingBoundary :=
+                  formatOriginalChildLeadingBoundary state.context segment index)
                 (respectPendingIndent := true)
                 (rebaseSourceTextTargetColumn? := some targetColumn)
             preferCandidateWithFewerOverflows childState rendered original
@@ -2082,6 +2113,8 @@ mutual
         else
           let original :=
             childState.emitOriginalTree child
+              (formatLeadingBoundary :=
+                formatOriginalChildLeadingBoundary state.context segment index)
               (respectPendingIndent := true)
               (rebaseSourceTextTargetColumn? := targetColumn?)
           preferCandidateWithFewerOverflows childState rendered original
