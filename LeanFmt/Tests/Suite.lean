@@ -7623,8 +7623,9 @@ def assertBracketedNotationRulesKeepDelimitersAttached : IO Unit := do
         ]
     let segment := Formatter.LineBreakRules.Segment.ofTree relation
     let rule := Formatter.LineBreakRules.formattingRuleFor relation
-    assertTrue s!"bracketed relation breaks only before its right operand: {kind}"
-      (rule.breakPoints {} segment == [{ index := 4, indentLevels := 1 }])
+    assertTrue s!"bracketed relation breaks before its operator and right operand: {kind}"
+      (rule.breakPoints {} segment
+        == [{ index := 1, indentLevels := 1 }, { index := 4, indentLevels := 1 }])
     assertTrue s!"bracketed relation operands flow: {kind}" (rule.flow {} segment)
 
 def assertLakeDslFormatting : IO Unit := do

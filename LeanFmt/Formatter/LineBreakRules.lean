@@ -2197,8 +2197,12 @@ def anonymousCtorRule : LineBreakRule :=
 def bracketedRelationBreaks (_context : RuleContext) (segment : Segment)
     : List BreakPoint :=
   match nonemptyChildIndexes segment with
-  | [_, _, _, _, rhsIndex] =>
-      [boundaryBreak? segment rhsIndex 1].filterMap id
+  | [_, operatorIndex, _, _, rhsIndex] =>
+      [
+        boundaryBreak? segment operatorIndex 1,
+        boundaryBreak? segment rhsIndex 1
+      ].filterMap
+        id
   | _ => []
 
 def bracketedRelationRule : LineBreakRule :=
