@@ -3713,6 +3713,14 @@ def assertCliSelfFormattingRegressions (env : Lean.Environment) : IO Unit := do
   assertEq "interpolated string is a single atom"
     interpolatedAtomExpected interpolatedAtomFormatted
 
+  let pipeLet :=
+    "private def G (values : List Nat) : Option Nat :=\n"
+    ++ "  Option.some <|\n"
+    ++ "    let value := values.length\n"
+    ++ "    value\n"
+  let pipeLetFormatted ← Formatter.formatSourceWithEnv env pipeLet "pipe-let-spacing.lean"
+  assertEq "operator spacing is not padded by child alignment" pipeLet pipeLetFormatted
+
 def assertSelfFormattingRulePriorities (env : Lean.Environment) : IO Unit := do
   let flatConstructor :=
     "def short := { ancestors := { segment, childIndex } :: context.ancestors }\n"

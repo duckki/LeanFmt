@@ -816,8 +816,27 @@ def declarationValueBreaks (_context : RuleContext) (segment : Segment)
         else
           none
 
+def lowPriorityInfixSegment (segment : Segment) : Bool :=
+  match segment.parent with
+  | .node (.infixChain `«term_<|_») _ => true
+  | _ => false
+
+def childUsesMandatoryStartAlignment (segment : Segment) (index : Nat) : Bool :=
+  match segment.child? index with
+  | some (.node (.letExpression _ _) _) => true
+  | some (.node (.raw kind) _) =>
+      kind == `Lean.Parser.Term.let || kind == `Lean.Parser.Term.letrec
+  | _ => false
+
+def lowPriorityInfixHasMandatoryAlignedRhs (segment : Segment) : Bool :=
+  lowPriorityInfixSegment segment
+  && segment.indexes.any
+      fun index =>
+        index % 2 == 0 && 0 < index && childUsesMandatoryStartAlignment segment index
+
 def attachedBodyInfixOperator (segment : Segment) (index : Nat) : Bool :=
-  childStartsWithLexeme segment index "<|"
+  lowPriorityInfixSegment segment
+  && index % 2 == 1
   && (childIsRawKind segment (index + 1) `Lean.Parser.Term.byTactic
       || attachedBodyStart segment (index + 1))
 
@@ -2482,17 +2501,25 @@ def infixBreaks (_context : RuleContext) (segment : Segment) : List BreakPoint :
       match segment.children? with
       | none => []
       | some children =>
-          (List.range children.size).filterMap
+          (List.range children.size).flatMap
             fun index =>
               if index % 2 == 1 && !attachedBodyInfixOperator segment index then
-                boundaryBreak? segment index 0
+                [
+                  boundaryBreak? segment index 0,
+                  if lowPriorityInfixSegment segment
+                      && childUsesMandatoryStartAlignment segment (index + 1) then
+                    boundaryBreak? segment (index + 1) 1
+                  else
+                    none
+                ].filterMap
+                  id
               else if 1 < index
                       && index % 2 == 0
                       && (childIsRawKind segment index `Lean.Parser.Term.have
                           || childIsRawKind segment index `Lean.Parser.Term.haveI) then
-                boundaryBreak? segment index 0
+                [boundaryBreak? segment index 0].filterMap id
               else
-                none
+                []
 
 def infixRuleBreaks (context : RuleContext) (segment : Segment) : List BreakPoint :=
   let breaks :=
@@ -2582,7 +2609,8 @@ def arrowInfixLogicalContext (context : RuleContext) : Bool :=
   framesContainLogicalContext context.ancestors
 
 def infixFlow (context : RuleContext) (segment : Segment) : Bool :=
-  arrowInfixSegment segment && !arrowInfixLogicalContext context
+  lowPriorityInfixHasMandatoryAlignedRhs segment
+  || (arrowInfixSegment segment && !arrowInfixLogicalContext context)
 
 def infixAlternativeSequence (context : RuleContext) (segment : Segment) : Bool :=
   barSeparatedSequence segment
