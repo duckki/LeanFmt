@@ -2961,6 +2961,23 @@ def assertNotationValueBreaksAfterArrow (env : Lean.Environment) : IO Unit := do
   assertTrue "notation3 uses the notation value boundary"
     (rule.breakPoints {} segment == [{ index := 2, indentLevels := 1 }])
 
+def assertSetBuilderBreaksAfterSeparator : IO Unit := do
+  for kind in [`Mathlib.Meta.setBuilder, `Set.Mathlib.Meta.setBuilder] do
+    let setBuilder :=
+      SyntaxTree.Tree.node (.raw kind)
+        #[
+          .leaf (syntheticAtomToken "{"),
+          .leaf (syntheticAtomToken "element"),
+          .leaf (syntheticAtomToken "|"),
+          .leaf (syntheticAtomToken "predicate"),
+          .leaf (syntheticAtomToken "}")
+        ]
+    let segment := Formatter.LineBreakRules.Segment.ofTree setBuilder
+    let rule := Formatter.LineBreakRules.formattingRuleFor setBuilder
+    assertTrue s!"set builder keeps its header and aligns its closing delimiter: {kind}"
+      (rule.breakPoints {} segment
+        == [{ index := 3, indentLevels := 1 }, { index := 4, indentLevels := 0 }])
+
 def assertDeclarationValueInfixBreaksAfterAssign (env : Lean.Environment) : IO Unit := do
   let source :=
     "def declarationValueInfixBreakWithLongEnoughHeaderExtra : Nat := inferInstanceAs <| OfNat Nat 0\n"
@@ -8953,6 +8970,7 @@ def runBasicFormattingTests (env : Lean.Environment) : IO Unit := do
   assertLongDeclarationNamesBreakConsistently env
   assertTopLevelAnnotationsBreakConsistently env
   assertNotationValueBreaksAfterArrow env
+  assertSetBuilderBreaksAfterSeparator
   assertDeclarationValueInfixBreaksAfterAssign env
   assertLongDeclarationDirectValueBreaksAfterAssign env
   assertDeclarationProofValueBreaksAfterAssignWhenSignatureCannotFit env

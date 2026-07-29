@@ -1336,6 +1336,17 @@ When it does not fit, it breaks before `//`:
 
 The property can then use ordinary proposition layout.
 
+Set builders keep the opening delimiter, binder, and `|` in one header. When the
+predicate does not fit, it breaks after `|`, and a detached closing delimiter
+aligns with `{`:
+
+```lean
+{ value |
+  firstLongCondition value
+    ∧ secondLongCondition value
+}
+```
+
 ## Arrays, tuples, anonymous constructors, and structure instances
 
 Single-line collections remain compact:

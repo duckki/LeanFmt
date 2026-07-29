@@ -1133,6 +1133,9 @@ def anonymousCtorItemCount (segment : Segment) : Nat :=
 def anonymousCtorBreaks (_context : RuleContext) (segment : Segment) : List BreakPoint :=
   delimitedCollectionBreaks segment
 
+def setBuilderBreaks (_context : RuleContext) (segment : Segment) : List BreakPoint :=
+  [breakAfterLexeme? segment "|" 1, breakBeforeLexeme? segment "}" 0].filterMap id
+
 def arrayItemIndexes (segment : Segment) : List Nat :=
   delimitedItemIndexes segment
 
@@ -2227,6 +2230,14 @@ def anonymousCtorRule : LineBreakRule :=
     inheritBase := fun _ segment => 1 < anonymousCtorItemCount segment
     roundUpBaseIndentation := true
     breakPoints := anonymousCtorBreaks
+  }
+
+def setBuilderRule : LineBreakRule :=
+  {
+    name := "setBuilder"
+    useExistingBreaks := fun _ _ => true
+    roundUpBaseIndentation := true
+    breakPoints := setBuilderBreaks
   }
 
 def bracketedRelationBreaks (_context : RuleContext) (segment : Segment)
@@ -3616,8 +3627,8 @@ def ruleFor : SyntaxTree.Tree → Option LineBreakRule
   | .node (.raw `«term_≡_[ZMOD_]») _ => some defaultRule
   | .node (.raw `PiNotation.piNotation) _ => some defaultRule
   | .node (.raw `coeFunNotation) _ => some defaultRule
-  | .node (.raw `Mathlib.Meta.setBuilder) _ => some defaultRule
-  | .node (.raw `Set.Mathlib.Meta.setBuilder) _ => some defaultRule
+  | .node (.raw `Mathlib.Meta.setBuilder) _ => some setBuilderRule
+  | .node (.raw `Set.Mathlib.Meta.setBuilder) _ => some setBuilderRule
   | .node
       (.raw
         `Ideal.Submodule.Module.Submodule.Module.Module.Submodule.Submodule.Module.Module.Submodule.Submodule.QuotientTorsion.Ideal.Quotient.AddMonoid.AddSubgroup.torsionByStx)
