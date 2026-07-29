@@ -619,16 +619,25 @@ def regroupDefinitionTrailingWhereDecls? (children : Array Tree) : Option (Array
       | none => none
   | none => none
 
-def regroupDefinitionChildren (children : Array Tree) : Option (Array Tree) := do
-  let declVal ← children[3]?
-  match declVal with
-  | .node (.raw `Lean.Parser.Command.declValSimple) valueChildren =>
-      let flattened :=
-        childrenRange children 0 3
-        ++ valueChildren
-        ++ childrenRange children 4 children.size
+def flattenSimpleDeclarationValueChildren? (children : Array Tree)
+    : Option (Array Tree) := do
+  let valueIndex ←
+    children.findIdx?
+      fun child => rawKind? child == some `Lean.Parser.Command.declValSimple
+  let value ← children[valueIndex]?
+  match value with
+  | .node _ valueChildren =>
+      some
+      <| childrenRange children 0 valueIndex
+          ++ valueChildren
+          ++ childrenRange children (valueIndex + 1) children.size
+  | _ => none
+
+def regroupDefinitionChildren (children : Array Tree) : Option (Array Tree) :=
+  match flattenSimpleDeclarationValueChildren? children with
+  | some flattened =>
       some <| (regroupDefinitionTrailingWhereDecls? flattened).getD flattened
-  | _ => regroupDefinitionTrailingWhereDecls? children
+  | none => regroupDefinitionTrailingWhereDecls? children
 
 def splitEquationTrailingClauses? : Tree → Option (Tree × Array Tree)
   | .node (.raw `Lean.Parser.Command.declValEqns) valueChildren => do
@@ -1074,6 +1083,8 @@ def regroupRawNode (kind : SyntaxNodeKind) (children : Array Tree) : Tree :=
         .node (.infixChain kind) parts
     | _, _, _ =>
         .node (.raw kind) children
+  else if kind == `Lean.Parser.Command.classAbbrev then
+    .node .definition children
   else if kind == `Lean.Parser.Command.definition
           || kind == `Lean.Parser.Command.abbrev then
     let children := regroupEquationTrailingClauseChildren children
@@ -1082,6 +1093,11 @@ def regroupRawNode (kind : SyntaxNodeKind) (children : Array Tree) : Tree :=
     | none => .node (.raw kind) children
   else if declarationValueCommandKind kind then
     regroupDeclarationValueCommand kind children
+  else if (flattenSimpleDeclarationValueChildren? children).isSome then
+    let children := regroupEquationTrailingClauseChildren children
+    match regroupDefinitionChildren children with
+    | some definitionChildren => .node .definition definitionChildren
+    | none => .node (.raw kind) children
   else if kind == `Lean.Parser.Command.deriving then
     .node (.raw kind) (regroupDerivingCommandChildren children)
   else if kind == `Lean.Parser.Command.declaration then

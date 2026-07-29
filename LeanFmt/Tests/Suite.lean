@@ -816,6 +816,45 @@ def assertGroupedInfixChain (env : Lean.Environment) : IO Unit := do
       <| IO.userError
           s!"expected infix chain to contain three operands and two operators, got {repr other}"
 
+def assertDefinitionLikeCommandsRegroup : IO Unit := do
+  let declarationValue :=
+    SyntaxTree.Tree.node (.raw `Lean.Parser.Command.declValSimple)
+      #[.leaf (syntheticAtomToken ":="), .leaf (syntheticAtomToken "value")]
+  let customDefinition :=
+    SyntaxTree.regroupTree
+    <| .node (.raw `Lean.Elab.Command.command_Irreducible_def____)
+        #[
+          .missing,
+          .leaf (syntheticAtomToken "irreducible_def"),
+          .leaf (syntheticAtomToken "name"),
+          .missing,
+          .missing,
+          declarationValue
+        ]
+  let classAbbreviation :=
+    SyntaxTree.regroupTree
+    <| .node (.raw `Lean.Parser.Command.classAbbrev)
+        #[
+          .leaf (syntheticAtomToken "class"),
+          .leaf (syntheticAtomToken "abbrev"),
+          .leaf (syntheticAtomToken "Name"),
+          .leaf (syntheticAtomToken ":="),
+          .leaf (syntheticAtomToken "value")
+        ]
+  for (label, tree, expectedValueIndex)
+      in [
+        ("wrapped declaration value", customDefinition, 6),
+        ("class abbreviation", classAbbreviation, 4)
+      ] do
+    match tree with
+    | .node .definition _ =>
+        let segment := Formatter.LineBreakRules.Segment.ofTree tree
+        let rule := Formatter.LineBreakRules.formattingRuleFor tree
+        assertTrue s!"{label} breaks after its assignment separator"
+          (rule.breakPoints {} segment
+            == [{ index := expectedValueIndex, indentLevels := 1 }])
+    | _ => throw <| IO.userError s!"{label} was not regrouped as a definition"
+
 def assertDelimitedCollectionsFlattenOnlySeparatedItems : IO Unit := do
   let first := SyntaxTree.Tree.leaf (syntheticAtomToken "first")
   let second := SyntaxTree.Tree.leaf (syntheticAtomToken "second")
@@ -8753,6 +8792,7 @@ def runSyntaxTreeTests (env : Lean.Environment) : IO Unit := do
   assertOverlappingEmptySyntaxTokensRemoved env
   assertGroupedApplication env
   assertGroupedInfixChain env
+  assertDefinitionLikeCommandsRegroup
   assertDelimitedCollectionsFlattenOnlySeparatedItems
 
 def runBasicFormattingTests (env : Lean.Environment) : IO Unit := do
