@@ -197,7 +197,9 @@ lake build LeanFmt.Tests
 ```
 
 `LeanFmt.Tests.Suite` is the test library root. Its broad suite runners execute the
-unit-style checks with `#eval`.
+unit-style checks concurrently from one `#eval`. Syntax environments shared by multiple
+groups are loaded before their tasks start, so tests do not repeat environment setup or
+race Lean's initializer loading.
 
 Run fixture checks without rewriting fixture files:
 

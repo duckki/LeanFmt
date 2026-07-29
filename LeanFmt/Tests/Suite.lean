@@ -4892,8 +4892,7 @@ def assertInfixAlternativeSequenceFlows (env : Lean.Environment) : IO Unit := do
       "infix-alternative-sequence-formatted.lean" { lineWidth := 60 }
   assertEq "infix RHS alternative formatting is idempotent" formatted formattedAgain
 
-def assertBigOperatorBodyBreaksAfterComma (_env : Lean.Environment) : IO Unit := do
-  let env ← SyntaxTree.importEnvironment #[{ module := `LeanFmt.Tests.ProjectSyntax }]
+def assertBigOperatorBodyBreaksAfterComma (env : Lean.Environment) : IO Unit := do
   let source :=
     "def longSum :=\n"
     ++ "  ∑ gh ∈ Finset.SMulAntidiagonal p (veryLongFiniteSupportArgumentName x), f.coeff gh.1 • x gh.2\n"
@@ -5645,9 +5644,7 @@ def assertBreakNeverPrecedesTrailingSeparator (env : Lean.Environment) : IO Unit
       { lineWidth := 55 }
   assertEq "line breaks are not inserted immediately before separators" expected formatted
 
-def assertGeneratedBinderOperatorBreaksBeforeBody (_env : Lean.Environment)
-    : IO Unit := do
-  let env ← SyntaxTree.importEnvironment #[{ module := `LeanFmt.Tests.ProjectSyntax }]
+def assertGeneratedBinderOperatorBreaksBeforeBody (env : Lean.Environment) : IO Unit := do
   let source :=
     "def generatedBinderOperator := ⨆ value : SomeTypeWithALongName, longBodyFunction value anotherArgument\n"
   let expected :=
@@ -8926,17 +8923,29 @@ def runCompatibilityTests (env : Lean.Environment) : IO Unit := do
   assertExportedEnvironmentIncludesMetaIrClosure
   assertFmtExecutableConfigured
 
+def runTestGroups (env : Lean.Environment) : IO Unit := do
+  let projectSyntaxEnv ←
+    SyntaxTree.importEnvironment #[{ module := `LeanFmt.Tests.ProjectSyntax }]
+  let groups :=
+    #[
+      runSyntaxTreeTests env,
+      runBasicFormattingTests env,
+      runExpressionAndRendererTests projectSyntaxEnv,
+      runControlFlowTests projectSyntaxEnv,
+      runCollectionAndDeclarationTests env,
+      runCliAndArchitectureTests env
+    ]
+  let tasks ← (groups.mapM IO.asTask).toIO
+  let results := tasks.map Task.get
+  for result in results do
+    IO.ofExcept result
+
 #eval
   show IO Unit from do
     let env ← Formatter.defaultEnvironment
     if (← IO.getEnv "LEANFMT_COMPATIBILITY_TEST") == some "1" then
       runCompatibilityTests env
     else
-      runSyntaxTreeTests env
-      runBasicFormattingTests env
-      runExpressionAndRendererTests env
-      runControlFlowTests env
-      runCollectionAndDeclarationTests env
-      runCliAndArchitectureTests env
+      runTestGroups env
 
 end LeanFmt.Tests
