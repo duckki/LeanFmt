@@ -7095,6 +7095,37 @@ def assertFormattingExceptionChecks (env : Lean.Environment) : IO Unit := do
         match exception with
         | .lineOverflow _ => true
         | _ => false)
+  let jsxPayload := String.ofList (List.replicate 85 'x')
+  let jsxText := "<div>" ++ jsxPayload ++ "</div>"
+  let sourceJsxTree :=
+    SyntaxTree.Tree.node
+      (.raw `ProofWidgets.Jsx.syntheticOverflowIsland)
+      #[.leaf <| tokenAt jsxText (String.Pos.Raw.mk 4) (String.Pos.Raw.mk 100)]
+  let formattedJsxTree :=
+    SyntaxTree.Tree.node
+      (.raw `ProofWidgets.Jsx.syntheticOverflowIsland)
+      #[.leaf <| tokenAt jsxText (String.Pos.Raw.mk 6) (String.Pos.Raw.mk 102)]
+  let sourceJsxModule : SyntaxTree.Module :=
+    {
+      source := "    " ++ jsxText
+      rawSyntax := .missing
+      tree := sourceJsxTree
+      tokens := sourceJsxTree.tokens
+    }
+  let formattedJsxModule : SyntaxTree.Module :=
+    {
+      source := "      " ++ jsxText
+      rawSyntax := .missing
+      tree := formattedJsxTree
+      tokens := formattedJsxTree.tokens
+    }
+  assertTrue "moved unbreakable JSX layout does not report actionable overflow"
+    (!(Formatter.Diagnostics.formattingExceptions sourceJsxModule formattedJsxModule
+        { lineWidth := 100 }).any
+        fun exception =>
+          match exception with
+          | .lineOverflow _ => true
+          | _ => false)
   let longDeclarationName :=
     "declaration" ++ String.ofList (List.replicate (Formatter.maxLineWidth - 14) 'x')
   let longDeclarationSource :=

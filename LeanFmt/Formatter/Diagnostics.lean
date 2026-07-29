@@ -394,6 +394,15 @@ partial def preservedOriginalSpans : SyntaxTree.Tree → List SyntaxTree.Span
       else
         children.toList.flatMap preservedOriginalSpans
 
+partial def unbreakableOriginalSpans : SyntaxTree.Tree → List SyntaxTree.Span
+  | .missing | .leaf _ => []
+  | tree@(.node _ children) =>
+      if (OriginalTree.classify? tree).any
+          OriginalTree.LayoutIslandKind.hasUnbreakableLineLayout then
+        treeSpan? tree |>.toList
+      else
+        children.toList.flatMap unbreakableOriginalSpans
+
 def tokenIntersects (start stop : String.Pos.Raw) (token : SyntaxTree.Token) : Bool :=
   token.span.start < stop && start < token.span.stop
 
@@ -624,6 +633,17 @@ def atomicSyntaxSourceLineOverflowed
           | _, _ => false
       | _, _ => false
 
+def overflowCoveredBySpans
+    (formattedMap : SyntaxTree.SourcePositionMap)
+    (formattedTokens : List SyntaxTree.Token)
+    (spans : List SyntaxTree.Span)
+    (occurrence : OverflowOccurrence) (lineWidth : Nat)
+    : Bool :=
+  let lineStart := formattedMap.fileMap.lineStart occurrence.line
+  let overflowStart := positionAfter lineStart (occurrence.text.take lineWidth).toString
+  let contentStop := positionAfter lineStart occurrence.text.trimAsciiEnd.toString
+  spans.any (spanWithLineEndersCovers formattedTokens overflowStart contentStop)
+
 def formattingExceptions (sourceModule formattedModule : SyntaxTree.Module)
     (options : Options := {})
     : List FormattingException :=
@@ -642,6 +662,8 @@ def formattingExceptions (sourceModule formattedModule : SyntaxTree.Module)
       let sourceTokens := realTokens sourceModule
       let formattedTokens := realTokens formattedModule
       let formattedAtomicSpans := indivisibleOverflowSpans formattedModule.tree
+      let formattedUnbreakableOriginalSpans :=
+        unbreakableOriginalSpans formattedModule.tree
       let sourceOverflowTexts :=
         (overflowOccurrencesWith sourceModule options false).map
           fun occurrence =>
@@ -649,7 +671,9 @@ def formattingExceptions (sourceModule formattedModule : SyntaxTree.Module)
       let sourceCommentLineTexts := sourceCommentLineTexts sourceModule
       formattedOccurrences.filterMap
         fun occurrence =>
-          if sourceOverflowTexts.contains occurrence.text.trimAscii
+          if overflowCoveredBySpans formattedMap formattedTokens
+                formattedUnbreakableOriginalSpans occurrence options.lineWidth
+              || sourceOverflowTexts.contains occurrence.text.trimAscii
               || commentOnlyOverflowMatchesSource formattedMap formattedTokens
                   sourceCommentLineTexts occurrence
               || isolatedTokenSourceLineOverflowed sourceMap formattedMap

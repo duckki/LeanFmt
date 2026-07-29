@@ -404,6 +404,10 @@ def LayoutIslandKind.prefersParentRelativeColumn : LayoutIslandKind → Bool
   | .proofWidgetsJsx => true
   | _ => false
 
+def LayoutIslandKind.hasUnbreakableLineLayout : LayoutIslandKind → Bool
+  | .proofWidgetsJsx => true
+  | _ => false
+
 def LayoutIslandKind.isProof : LayoutIslandKind → Bool
   | .proof => true
   | _ => false
