@@ -934,11 +934,11 @@ When a `doIdDecl` or `doPatDecl` contains a fallback tail, the declaration may b
 after `←` and before the `|` fallback arm. The wrapper that owns `| fallback` plus the
 following `do` continuation forces a break before that continuation. This keeps
 continuation commands at the outer `do` indentation instead of allowing them to become
-source text after the fallback expression. If the fallback is itself a multiline
-`doSeqIndent`, its existing source break is a structural breakpoint one level beneath
-the pipe; the later continuation still returns to the declaration base. The post-format
-build remains the guardrail for preservation classes that syntax diagnostics cannot
-prove.
+source text after the fallback expression. A fallback containing multiple direct
+`do` items receives a structural breakpoint one level beneath the pipe; a single
+fallback expression may move onto the pipe line even when the source broke there. The
+later continuation still returns to the declaration base. The post-format build remains
+the guardrail for preservation classes that syntax diagnostics cannot prove.
 
 A refutable `let pattern := value | fallback` receives the same treatment when
 the fallback contains multiple direct `do` statements: the fallback breaks after

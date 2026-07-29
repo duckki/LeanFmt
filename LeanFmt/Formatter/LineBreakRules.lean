@@ -1750,9 +1750,20 @@ def parentIsDoLetArrowDecl (context : RuleContext) : Bool :=
       || parent.rawKind? == some `Lean.Parser.Term.doPatDecl
   | _ => false
 
+partial def directDoSequenceItemCount : SyntaxTree.Tree → Nat
+  | .node (.raw `Lean.Parser.Term.doSeqItem) _ => 1
+  | .node (.raw kind) children =>
+      if kind == `Lean.Parser.Term.doSeqIndent || kind == `null then
+        children.foldl (fun count child => count + directDoSequenceItemCount child) 0
+      else
+        0
+  | .node _ _ => 0
+  | .missing | .leaf _ => 0
+
 -- Lean's `let pattern ← action | fallback` parser stores the fallback and the
--- following `do` continuation in one wrapper.  Once the fallback tail contains
--- continuation commands, that boundary is semantic layout and must not flatten.
+-- following `do` continuation in one wrapper.  Multiple fallback statements and
+-- the boundary before continuation commands are semantic layout and must not
+-- flatten.
 def doLetArrowFallbackTailBreaks (context : RuleContext) (segment : Segment)
     : List BreakPoint :=
   if parentIsDoLetArrowDecl context then
@@ -1761,9 +1772,8 @@ def doLetArrowFallbackTailBreaks (context : RuleContext) (segment : Segment)
     | _pipeIndex :: fallbackIndex :: continuationIndex :: _ =>
         let fallbackBreak :=
           match segment.child? fallbackIndex with
-          | some (.node (.raw `Lean.Parser.Term.doSeqIndent) _) =>
-              if segment.child? fallbackIndex |>.bind SyntaxTree.Tree.firstToken?
-                  |>.any fun token => SpaceRules.hasLineStructure token.leading.text then
+          | some fallback =>
+              if 1 < directDoSequenceItemCount fallback then
                 boundaryBreak? segment fallbackIndex 1
               else
                 none
@@ -1780,16 +1790,6 @@ def doLetElseContinuationBreak? (segment : Segment) : Option BreakPoint := do
   let continuationIndex ←
     (nonemptyChildIndexes segment).find? fun index => fallbackIndex < index
   boundaryBreak? segment continuationIndex 0
-
-partial def directDoSequenceItemCount : SyntaxTree.Tree → Nat
-  | .node (.raw `Lean.Parser.Term.doSeqItem) _ => 1
-  | .node (.raw kind) children =>
-      if kind == `Lean.Parser.Term.doSeqIndent || kind == `null then
-        children.foldl (fun count child => count + directDoSequenceItemCount child) 0
-      else
-        0
-  | .node _ _ => 0
-  | .missing | .leaf _ => 0
 
 def doLetElseFallbackBreak? (segment : Segment) : Option BreakPoint := do
   let pipeIndex ←

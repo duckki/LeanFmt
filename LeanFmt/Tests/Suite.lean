@@ -1602,7 +1602,8 @@ def assertDoLetArrowFallbackBreaksBeforeContinuation (env : Lean.Environment)
     ++ "def assertInstancesCommute : Option Unit := some ()\n"
     ++ "\n"
     ++ "def doLetArrowFallbackExample : Option Nat := do\n"
-    ++ "  let .some value ← veryLongOptionProviderNameForDoLetArrowFallbackBreak (some 1) (some 2) (some 3) (some 4) | fallbackValue\n"
+    ++ "  let .some value ← veryLongOptionProviderNameForDoLetArrowFallbackBreak (some 1) (some 2) (some 3) (some 4) |\n"
+    ++ "    fallbackValue\n"
     ++ "  assertInstancesCommute\n"
     ++ "  some value\n"
   let expected :=
