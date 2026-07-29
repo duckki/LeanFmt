@@ -422,6 +422,13 @@ nonempty node children is treated as an infix-like break point; otherwise bounda
 between present children are flow break points. It does not inspect token kind, token
 role, or token text.
 
+When a known grammar's immediate child shape does not describe its legal layout,
+`ruleFor` selects a separate syntax rule instead of weakening this invariant. For
+example, a notation whose opening delimiter is part of one composite atom can be
+transparent so its enclosed term owns the wrapping, while a bracketed relation can
+offer an outer break only before its right operand. These rules classify parser node
+kinds; neither the default rule nor the renderer infers the layout from token spelling.
+
 ## Renderer
 
 The renderer owns physical layout. It is the only layer that emits text, measures line

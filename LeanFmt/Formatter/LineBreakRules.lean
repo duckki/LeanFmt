@@ -2194,6 +2194,21 @@ def anonymousCtorRule : LineBreakRule :=
     breakPoints := anonymousCtorBreaks
   }
 
+def bracketedRelationBreaks (_context : RuleContext) (segment : Segment)
+    : List BreakPoint :=
+  match nonemptyChildIndexes segment with
+  | [_, _, _, _, rhsIndex] =>
+      [boundaryBreak? segment rhsIndex 1].filterMap id
+  | _ => []
+
+def bracketedRelationRule : LineBreakRule :=
+  {
+    name := "bracketedRelation"
+    useExistingBreaks := fun _ _ => true
+    flow := fun _ _ => true
+    breakPoints := bracketedRelationBreaks
+  }
+
 def isGeneratedTermKind (kind : Lean.SyntaxNodeKind) : Bool :=
   let name := toString kind
   name.startsWith "«term" || SpaceRules.containsSubstring name ".«term"
@@ -3496,6 +3511,10 @@ def ruleFor : SyntaxTree.Tree → Option LineBreakRule
   | .node (.raw `«term_ˣ») _ => some defaultRule
   | .node (.raw `«term_ᵐᵒᵖ») _ => some defaultRule
   | .node (.raw `«term__[_]») _ => some defaultRule
+  | .node (.raw `Uniformity.«term𝓤[_]») _ => some transparentRule
+  | .node (.raw `Asymptotics.«term_=O[_]_») _ => some bracketedRelationRule
+  | .node (.raw `Asymptotics.«term_=o[_]_») _ => some bracketedRelationRule
+  | .node (.raw `Asymptotics.«term_=Θ[_]_») _ => some bracketedRelationRule
   | .node (.raw `«term_→ₗ[_]_») _ => some defaultRule
   | .node (.raw `«term_≃ₗ[_]_») _ => some defaultRule
   | .node (.raw `«term_→ₐ[_]_») _ => some defaultRule

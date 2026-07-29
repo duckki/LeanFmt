@@ -7566,6 +7566,58 @@ def assertDeclarationRuleTransparent : IO Unit := do
   assertTrue "declaration rule has no break points"
     (rule.breakPoints context segment == [])
 
+def assertBracketedNotationRulesKeepDelimitersAttached : IO Unit := do
+  let indexedTerm :=
+    SyntaxTree.Tree.node (.raw `Uniformity.«term𝓤[_]»)
+      #[
+        .leaf (syntheticAtomToken "𝓤["),
+        .node .application
+          #[
+            .leaf (syntheticAtomToken "PseudoEMetricSpace.toUniformSpace"),
+            .leaf (syntheticAtomToken "argument")
+          ],
+        .leaf (syntheticAtomToken "]")
+      ]
+  let indexedSegment := Formatter.LineBreakRules.Segment.ofTree indexedTerm
+  let indexedRule := Formatter.LineBreakRules.formattingRuleFor indexedTerm
+  assertTrue "uniformity notation has no outer break points"
+    (indexedRule.breakPoints {} indexedSegment).isEmpty
+  assertTrue "uniformity notation delegates wrapping to its index"
+    (!indexedRule.flow {} indexedSegment
+      && !indexedRule.useExistingBreaks {} indexedSegment)
+  let genericIndexedTerm :=
+    SyntaxTree.Tree.node (.raw `«term__[_]»)
+      #[
+        .leaf (syntheticAtomToken "head"),
+        .leaf (syntheticAtomToken "["),
+        .leaf (syntheticAtomToken "argument"),
+        .leaf (syntheticAtomToken "]")
+      ]
+  let genericSegment := Formatter.LineBreakRules.Segment.ofTree genericIndexedTerm
+  let genericRule := Formatter.LineBreakRules.formattingRuleFor genericIndexedTerm
+  assertTrue "generic generated terms retain shape-based default breaks"
+    (!(genericRule.breakPoints {} genericSegment).isEmpty)
+  for kind
+      in [
+        `Asymptotics.«term_=O[_]_»,
+        `Asymptotics.«term_=o[_]_»,
+        `Asymptotics.«term_=Θ[_]_»
+      ] do
+    let relation :=
+      SyntaxTree.Tree.node (.raw kind)
+        #[
+          .leaf (syntheticAtomToken "f"),
+          .leaf (syntheticAtomToken "=O["),
+          .leaf (syntheticAtomToken "filter"),
+          .leaf (syntheticAtomToken "]"),
+          .leaf (syntheticAtomToken "g")
+        ]
+    let segment := Formatter.LineBreakRules.Segment.ofTree relation
+    let rule := Formatter.LineBreakRules.formattingRuleFor relation
+    assertTrue s!"bracketed relation breaks only before its right operand: {kind}"
+      (rule.breakPoints {} segment == [{ index := 4, indentLevels := 1 }])
+    assertTrue s!"bracketed relation operands flow: {kind}" (rule.flow {} segment)
+
 def assertLakeDslFormatting : IO Unit := do
   let env ← SyntaxTree.importEnvironment #[{ module := `Lake }]
   let source :=
@@ -8833,6 +8885,7 @@ def runCliAndArchitectureTests (env : Lean.Environment) : IO Unit := do
   assertCliFixtureUpdate env
   assertFormatterArchitecture
   assertDeclarationRuleTransparent
+  assertBracketedNotationRulesKeepDelimitersAttached
   assertLakeDslFormatting
   assertMathlibLowRiskSyntaxKindsHaveRules
   assertMissingRuleCheckUsesDispatch env loader
