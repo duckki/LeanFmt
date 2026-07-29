@@ -485,6 +485,25 @@ def assertDoBodyRetainsSourceLayoutToAvoidOverflow (env : Lean.Environment)
     (Formatter.linesFit inlineFormatted 60)
   assertTrue "inline atomic do body fallback preserves code"
     (← codePreservedIgnoringWhitespace env inlineSource inlineFormatted)
+  let interpolatedMessage :=
+    "m!\"" ++ String.ofList (List.replicate 34 'x') ++ "{value}\""
+  let interpolatedSource :=
+    "def nestedMessage (condition : Bool) : IO Nat := do\n"
+    ++ "  let cont (value : Nat) : IO Nat := do\n"
+    ++ "    if condition then\n"
+    ++ "      throwError\n"
+    ++ "        "
+    ++ interpolatedMessage
+    ++ "\n"
+    ++ "    pure value\n"
+    ++ "  cont 0\n"
+  let interpolatedFormatted ←
+    Formatter.formatSourceWithEnv env interpolatedSource
+      "do-body-interpolated-atomic-overflow.lean" { lineWidth := 60 }
+  assertTrue "do body source layout avoids moved interpolated-string overflow"
+    (Formatter.linesFit interpolatedFormatted 60)
+  assertTrue "interpolated-string do body fallback preserves code"
+    (← codePreservedIgnoringWhitespace env interpolatedSource interpolatedFormatted)
 
 def assertRegisterOptionValueUsesDeclarationLayout (env : Lean.Environment)
     : IO Unit := do

@@ -628,6 +628,16 @@ def preferCandidateWithFewerOverflows (before current candidate : RenderState)
   else
     current
 
+def atomicTreeIntroducedOverflow (before after : RenderState) (tree : SyntaxTree.Tree)
+    : Bool :=
+  after.introducedAtomicOverflowCount == before.introducedAtomicOverflowCount
+  && 0 < renderedOverflowCount before after
+  && match tree.firstToken?, treeFirstSourceLineWidth? before.source tree with
+      | some firstToken, some firstLineWidth =>
+          before.sourceMap.columnAt firstToken.span.start + firstLineWidth
+          <= before.options.lineWidth
+      | _, _ => false
+
 def RenderState.segmentStartBaseFor
     (state : RenderState) (segment : LineBreakRules.Segment)
     : SegmentBase :=
@@ -2015,6 +2025,15 @@ mutual
           (classification? := originalClassification?)
       else
         renderSegment childState childSegment (some (childRule, childBreakPoints))
+    let rendered :=
+      if childRule.atomic && atomicTreeIntroducedOverflow childState rendered child then
+        {
+          rendered with
+            introducedAtomicOverflowCount :=
+              rendered.introducedAtomicOverflowCount + 1
+        }
+      else
+        rendered
     let rendered :=
       if !emitOriginal
           || !originalClassification?.any
