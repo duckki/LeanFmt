@@ -406,6 +406,9 @@ Rule methods mean:
   `extends ... where` clause to break.
 - `inheritBase`: this segment uses the surrounding base indentation instead of its
   rendered start column.
+- `preserveBaseAfterBreak`: a rule break schedules its continuation indentation
+  without redefining the surrounding base inherited by later children. Structure
+  headers use this so a broken `extends` clause cannot shift the `where` body.
 - `liftsTailIndentation`: while rendering every child except the final child, establish
   the indentation of the following rule boundary as that child's tail indentation.
   Infix-like and flow rules lift continuations one level beyond that tail. Rules never

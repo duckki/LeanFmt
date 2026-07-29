@@ -113,11 +113,6 @@ def Frame.nodeKind? (frame : Frame) : Option SyntaxTree.NodeKind :=
   | .node kind _ => some kind
   | _ => none
 
-partial def treeContainsLexemeForContext (lexeme : String) : SyntaxTree.Tree → Bool
-  | .missing => false
-  | .leaf token => token.lexeme == lexeme
-  | .node _ children => children.any (treeContainsLexemeForContext lexeme)
-
 def RuleContext.parentIsSingletonArrayItemWrapper (context : RuleContext) : Bool :=
   match context.ancestors with
   | parent :: grandparent :: _ =>
@@ -131,13 +126,6 @@ def RuleContext.parentIsStructureWhereWrapper (context : RuleContext) : Bool :=
   match context.ancestors with
   | parent :: _ =>
       parent.rawKind? == some `Lean.Parser.Command.structure && parent.childIndex == 4
-  | _ => false
-
-def RuleContext.parentStructureHasExtends (context : RuleContext) : Bool :=
-  match context.ancestors with
-  | parent :: _ =>
-      parent.rawKind? == some `Lean.Parser.Command.structure
-      && treeContainsLexemeForContext "extends" parent.segment.parent
   | _ => false
 
 def RuleContext.parentIsCommandBinderList (context : RuleContext) : Bool :=
@@ -177,9 +165,7 @@ def defaultInheritBase (context : RuleContext) (segment : Segment) : Bool :=
   || (segment.rawKind? == some `null && context.parentIsStructureFieldDefaultValue)
   || (segment.rawKind? == some `Lean.Parser.Term.binderDefault
       && context.parentWrapsStructureFieldDefaultValue)
-  || (segment.rawKind? == some `null
-      && context.parentIsStructureWhereWrapper
-      && !context.parentStructureHasExtends)
+  || (segment.rawKind? == some `null && context.parentIsStructureWhereWrapper)
   || (segment.rawKind? == some `null
       && context.parentRawKind? == some `Lean.Parser.Term.doReturn)
 
@@ -217,6 +203,7 @@ structure LineBreakRule where
   mandatory : RuleContext → Segment → Bool := fun _ _ => false
   flow : RuleContext → Segment → Bool := fun _ _ => false
   inheritBase : RuleContext → Segment → Bool := defaultInheritBase
+  preserveBaseAfterBreak : RuleContext → Segment → Bool := fun _ _ => false
   liftsTailIndentation : RuleContext → Segment → Bool := fun _ _ => false
   startAlignment : RuleContext → Segment → StartAlignment := fun _ _ => .none
   roundUpBaseIndentation : Bool := false
@@ -2128,6 +2115,7 @@ def structureRule : LineBreakRule :=
         && (derivingBreaks context segment).isEmpty
     useExistingBreaks := fun _ _ => true
     flow := fun context segment => !(structureBreaks context segment).isEmpty
+    preserveBaseAfterBreak := fun _ _ => true
     inheritBase :=
       fun context _ =>
         match context.ancestors with

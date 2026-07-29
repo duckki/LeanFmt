@@ -6193,6 +6193,18 @@ def assertStructureExtendsBreaksBeforeWhereFields (env : Lean.Environment) : IO 
   let formatted ← Formatter.formatSourceWithEnv env source "structure-extends-rule.lean"
   assertEq "structure extends breaks before where fields" expected formatted
 
+  let namedConstructorSource :=
+    "structure NamedConstructorStructure (α : Type) extends FirstParent α, SecondParent α where mk' ::\n"
+  let namedConstructorExpected :=
+    "structure NamedConstructorStructure (α : Type)\n"
+    ++ "    extends FirstParent α, SecondParent α where\n"
+    ++ "  mk' ::\n"
+  let namedConstructorFormatted ←
+    Formatter.formatSourceWithEnv env namedConstructorSource
+      "structure-extends-named-constructor.lean"
+  assertEq "structure named constructor uses the field indentation"
+    namedConstructorExpected namedConstructorFormatted
+
   let multipleParentsSource :=
     "structure MultipleParentStructure (A : Type) extends FirstLongParentName A, SecondLongParentName A,\n"
     ++ "    ThirdLongParentName A, FourthLongParentName A, FifthLongParentName A where\n"
