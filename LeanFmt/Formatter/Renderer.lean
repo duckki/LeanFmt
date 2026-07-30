@@ -1235,7 +1235,7 @@ def breakPointPreservesTightTokenBoundary
             && SpaceRules.preservesTightPostfixSpacing right)
   | none => true
 
-def interveningCommentLineBreakAt
+def commentForcesBreakAt
     (source : String) (segment : LineBreakRules.Segment) (index : Nat)
     : Bool :=
   match tokenBoundaryAt? segment index with
@@ -1661,7 +1661,7 @@ def FlowRenderContext.stateForForcedNestedChild?
       else if breakAfterPreviousChild
               || !childFit.fits
               || flow.hasSourceBreakAt index
-              || interveningCommentLineBreakAt state.source flow.segment index
+              || commentForcesBreakAt state.source flow.segment index
               || (breakPoint.indentLevels == 0 && !pieceFit.flat)
               || !pieceFit.fits then
         some <| flow.withBreak state breakPoint
@@ -1812,7 +1812,7 @@ mutual
       let hasRetainedSourceBreak :=
         breakPoints.any
           fun breakPoint =>
-            interveningCommentLineBreakAt state.source segment breakPoint.index
+            commentForcesBreakAt state.source segment breakPoint.index
             || sourceBrokenCommentedDelimiterAt state.source segment breakPoint.index
       if rule.preferChildLayouts state.context segment && !hasRetainedSourceBreak then
         match renderPreferredChildLayout? state segment breakPoints with

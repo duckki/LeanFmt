@@ -189,6 +189,8 @@ inductive NodeKind where
   | matchDiscriminants
   | matchPatterns
   | doForHeader
+  | doFallbackClause
+  | doFallbackContinuation
   | structureUpdate
   | ifThenElseClause
   | ifThenElseChain
@@ -235,6 +237,7 @@ Current logical regroupings are:
 | `.matchDiscriminants` | Multiple match scrutinees need peer flow boundaries after commas, aligned under the first scrutinee, rather than generic nested parser wrapping. | Children of the discriminant sequence immediately before `with`, preserving alternating discriminants and commas. |
 | `.matchPatterns` | Multiple patterns in one alternative need peer/balanced wrapping rather than raw nested `null` behavior. | Pattern children from the `matchAlt` pattern wrapper, with a redundant single `null` wrapper removed. |
 | `.doForHeader` | A `for` binder and its collection need separate LHS and `in` layout without teaching the renderer about `do` syntax. | The `for` keyword and declaration children before the loop body. |
+| `.doFallbackClause` and `.doFallbackContinuation` | Lean's raw `do` tree may store `| fallback` and later commands in one wrapper. Formatting needs an ordinary optional boundary before a fitting fallback, a body boundary after `|`, and a structural boundary before the later command without a source-dependent breakpoint predicate. | The clause contains `|` and its fallback body. The continuation contains every following child that belongs to the surrounding `do` sequence. Both `let pattern := value \| fallback` and `let pattern ← action \| fallback` use this shape, including extensible `let_expr` syntax. |
 | `.structureUpdate` | The source before `with` behaves as an LHS expression, while the surrounding braces remain an ordinary balanced structure. | The comma-separated source expressions as direct children, including their separators and the final `with` token. Redundant anonymous sequence wrappers are removed. |
 | `.ifThenElseClause` and `.ifThenElseChain` | Nested raw `else if` nodes must share one balanced branch decision without making the renderer inspect conditional syntax or ancestor paths. | The chain alternates clause headers and result branches, followed by the final `else` and fallback branch. A clause header contains `if ... then` or `else if ... then` as one transparent segment, so the condition can still wrap by its own rules. |
 | `.proofBody` | Tactic syntax after `by` or `decreasing_by` is one protected proof-layout region, including ordinary term proofs, binder default tactics, and termination proofs. | The tactic-sequence children after the separate introducer token. For `binderTactic`, the preceding `:=` also remains a separate sibling. |
@@ -347,6 +350,7 @@ structure LineBreakRule where
   mandatory : RuleContext -> Segment -> Bool := fun _ _ => false
   flow : RuleContext -> Segment -> Bool := fun _ _ => false
   inheritBase : RuleContext -> Segment -> Bool := defaultInheritBase
+  preserveBaseAfterBreak : RuleContext -> Segment -> Bool := fun _ _ => false
   liftsTailIndentation : RuleContext -> Segment -> Bool := fun _ _ => false
   startAlignment : RuleContext -> Segment -> StartAlignment := fun _ _ => .none
   roundUpBaseIndentation : Bool := false
@@ -355,9 +359,9 @@ structure LineBreakRule where
 
 A `BreakPoint` index means "break before child at this index." `indentLevels` is a
 logical two-space continuation count. It is not an absolute column and not a token
-anchor. Its condition is normally `always`; an `interveningCommentLine` point is
-available only when source trivia at that boundary contains a comment that already
-requires a physical line break.
+anchor. Every returned point is an ordinary layout opportunity or a structural break
+when its rule is mandatory. Break points carry no source-, token-, or comment-dependent
+activation predicate.
 
 Top-level command sequences are the one file-layout specialization. `LineBreakRules`
 classifies module, header, import, and command sequences and catalogs command nodes as
@@ -427,10 +431,9 @@ Rule methods mean:
   after the segment's physical start. Conditionals, delimited structures, tuples, arrays,
   and binding right-hand sides use this so contents remain one full level past an
   off-column head.
-- `breakPoints`: logical child boundaries. Rules must not read renderer state. A
-  condition on an individual point may defer its activation to the renderer; this lets a
-  rule describe the structural base of a commented child without inspecting comment
-  text or source spacing.
+- `breakPoints`: logical child boundaries. Rules must not read renderer state, token
+  text, comments, or source spacing. Syntax regrouping introduces a logical child when
+  the raw parser shape does not expose the boundary a rule needs.
 
 The default rule is deliberately shape-only. It distinguishes missing children, empty
 leaves, nonempty leaves, empty nodes, and nonempty nodes. A nonempty leaf between two
@@ -605,14 +608,14 @@ Rules and regroupings should preserve these cross-syntax relationships:
   application argument that starts with a delimiter followed by a line comment retains
   its argument break so the delimiter and comment do not migrate onto the preceding
   application line.
-- A comment line at an ordinary or conditionally activated rule breakpoint makes that
+- An intrinsically multiline comment at an ordinary rule breakpoint makes that
   renderer boundary structural. This is independent of syntax kind: the renderer
-  activates `interveningCommentLine` points from the source trivia and applies the
-  rule's indentation to both the intervening comment and the following token.
-  Conditional points never provide a new width-driven wrapping choice, and
-  syntax-specific rules do not inspect comment trivia to make themselves mandatory. A
-  trailing line comment remains attached to preceding code while their complete line
-  fits.
+  applies the rule's indentation to both the intervening comment and the following
+  token. Line comments force the token after the comment onto a new line, but remain
+  attached to preceding code while that complete line fits. Block comments force a
+  break only when their own text contains a newline; a one-line block comment may flow
+  inline, with its internal text preserved and only surrounding horizontal trivia
+  normalized. Syntax-specific rules do not inspect comment text or source spacing.
 
 This separation lets rules say "this boundary may follow source layout" without letting
 source indentation leak into renderer state.
