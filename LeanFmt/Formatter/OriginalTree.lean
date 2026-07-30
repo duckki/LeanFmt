@@ -330,6 +330,13 @@ private def isProofLayoutIsland (tree : SyntaxTree.Tree) : Bool :=
       containsProofTree tree
   | _ => false
 
+private def proofLayoutRebasesFromFirstToken : SyntaxTree.Tree → Bool
+  | .node (.raw `Lean.Parser.Term.structInst) _
+  | .node (.raw `Lean.Parser.Term.anonymousCtor) _
+  | .node (.raw `«term{_}») _
+  | .node (.raw `Lean.Parser.Command.whereStructInst) _ => true
+  | _ => false
+
 private def isProofLemmaCommand (tree : SyntaxTree.Tree) : Bool :=
   match tree with
   | .node (.raw `lemma) _ =>
@@ -457,7 +464,11 @@ def LayoutIslandKind.retainsRelativeLayout : LayoutIslandKind → Bool
   | _ => false
 
 def LayoutIslandKind.usesPendingIndent : LayoutIslandKind → Bool
-  | .proof | .proofLemma | .proofWidgetsJsx | .quotation | .syntaxComment => true
+  | .proof
+  | .proofLemma
+  | .proofWidgetsJsx
+  | .quotation
+  | .syntaxComment => true
   | _ => false
 
 def LayoutIslandKind.preservesFollowingCommentIndent : LayoutIslandKind → Bool
@@ -634,7 +645,10 @@ private def emitRebased? (request : EmissionRequest) (tree : SyntaxTree.Tree)
     match inlineContinuationColumns?,
           request.rebaseSourceTextTargetColumn? with
     | some continuationColumns, some targetColumn =>
-        if proof then
+        if proof
+            || (proofLayout
+                && originalLeadingHasLineStructure
+                && proofLayoutRebasesFromFirstToken tree) then
           some (sourceColumn, targetColumn)
         else
           some continuationColumns

@@ -6766,6 +6766,30 @@ def assertAnonymousConstructorBreakBalanced (env : Lean.Environment) : IO Unit :
       "anonymous-constructor-inline-proof.lean" { lineWidth := 98 }
   assertEq "inline proof constructor breaks structurally"
     inlineProofExpected inlineProofFormatted
+  let movedProofLayoutSource :=
+    "def movedInlineProofLayout :=\n"
+    ++ "  Fork.IsLimit.mk' _ fun s =>\n"
+    ++ "    ⟨{  toFun := fun x => ⟨s x, by exact proof⟩\n"
+    ++ "        monotone' := fun _ _ h => s.monotone h\n"
+    ++ "        map_limit' := fun x => s.continuous x\n"
+    ++ "      }, by exact proof, fun hm => by\n"
+    ++ "      exact hm⟩\n"
+  let movedProofLayoutExpected :=
+    "def movedInlineProofLayout :=\n"
+    ++ "  Fork.IsLimit.mk' _\n"
+    ++ "    fun s =>\n"
+    ++ "      ⟨{  toFun := fun x => ⟨s x, by exact proof⟩\n"
+    ++ "          monotone' := fun _ _ h => s.monotone h\n"
+    ++ "          map_limit' := fun x => s.continuous x\n"
+    ++ "        }, by exact proof, fun hm => by\n"
+    ++ "        exact hm⟩\n"
+  let movedProofLayoutResult ←
+    Formatter.formatSourceWithEnvDetailed env movedProofLayoutSource
+      "moved-inline-proof-layout.lean" { lineWidth := 60 }
+  assertTrue "moved inline proof layout does not fall back"
+    (!movedProofLayoutResult.fellBack)
+  assertEq "moved inline proof layout rebases continuation"
+    movedProofLayoutExpected movedProofLayoutResult.formatted
 
 def assertExportBreaksLongList (env : Lean.Environment) : IO Unit := do
   let source :=
