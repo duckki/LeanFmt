@@ -510,7 +510,7 @@ private def emitRebased? (request : EmissionRequest) (tree : SyntaxTree.Tree)
   let inlineMultilineLayoutIsland :=
     retainsInlineRelativeLayout
     && hasLineBreakTrivia
-    && !originalLeadingHasLineStructure
+    && (!originalLeadingHasLineStructure || proofLayout)
     && !detachedInlineProofBody
   let inlineContinuationColumns? :=
     if !inlineMultilineLayoutIsland then
@@ -525,7 +525,10 @@ private def emitRebased? (request : EmissionRequest) (tree : SyntaxTree.Tree)
             if proof then
               (request.segmentIndentation + 1) * indentationSpaces
             else if proofLayout then
-              sourceIndent
+              if originalLeadingHasLineStructure then
+                shiftColumnByAnchor sourceColumn leadingColumn sourceIndent
+              else
+                sourceIndent
             else if usesPendingIndent then
               leadingColumn
             else
@@ -540,7 +543,7 @@ private def emitRebased? (request : EmissionRequest) (tree : SyntaxTree.Tree)
   let inlineContinuationColumns? :=
     match inlineContinuationColumns? with
     | some (sourceIndent, targetIndent) =>
-        if quotation then
+        if proofLayout || quotation then
           some
             (
               sourceIndent,

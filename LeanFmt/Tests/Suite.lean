@@ -2243,6 +2243,38 @@ def assertAttachedProofLambdaKeepsFittingLayout (env : Lean.Environment) : IO Un
   assertTrue "fitting attached proof lambda does not fall back" (!result.fellBack)
   assertEq "fitting attached proof lambda retains its layout" source result.formatted
 
+def assertMovedProofLayoutKeepsFittingContinuation (env : Lean.Environment)
+    : IO Unit := do
+  let proofTerm := "proofTerm" ++ String.ofList (List.replicate 81 'x')
+  let source :=
+    "theorem movedProofLayoutFit (f : Nat → Nat) : SomeVeryLongResultTypeNameForProofLayout := fun ε ε0 ↦\n"
+    ++ "  (someApplication ε0).imp fun i H j ij ↦ by\n"
+    ++ "    exact "
+    ++ proofTerm
+    ++ "\n"
+    ++ "\n"
+    ++ "theorem movedProofLayoutShort (f : Nat → Nat) : SomeVeryLongResultTypeNameForProofLayout := fun ε ε0 ↦\n"
+    ++ "  (someApplication ε0).imp fun i H j ij ↦ by\n"
+    ++ "    exact shortProof\n"
+  let expected :=
+    "theorem movedProofLayoutFit (f : Nat → Nat) : SomeVeryLongResultTypeNameForProofLayout :=\n"
+    ++ "  fun ε ε0 ↦\n"
+    ++ "    (someApplication ε0).imp fun i H j ij ↦ by\n"
+    ++ "    exact "
+    ++ proofTerm
+    ++ "\n"
+    ++ "\n"
+    ++ "theorem movedProofLayoutShort (f : Nat → Nat) : SomeVeryLongResultTypeNameForProofLayout :=\n"
+    ++ "  fun ε ε0 ↦\n"
+    ++ "    (someApplication ε0).imp fun i H j ij ↦ by\n"
+    ++ "      exact shortProof\n"
+  let result ←
+    Formatter.formatSourceWithEnvDetailed env source
+      "moved-proof-layout-fitting-continuation.lean" { lineWidth := 100 }
+  assertTrue "moved proof-layout continuation does not fall back" (!result.fellBack)
+  assertEq "only overflowing moved proof-layout continuation retains its source indent"
+    expected result.formatted
+
 def assertMovedProofBodiesKeepRelativeIndentation (env : Lean.Environment) : IO Unit := do
   let outdentedSource :=
     "theorem originalProofIslandOutdentsFromNestedValue : True :=\n"
@@ -9094,6 +9126,7 @@ def runBasicFormattingTests (env : Lean.Environment) : IO Unit := do
   assertWhereFinallyKeepsHeaderAndProofBody env
   assertProofBodyUntouched env
   assertAttachedProofLambdaKeepsFittingLayout env
+  assertMovedProofLayoutKeepsFittingContinuation env
   assertMovedProofBodiesKeepRelativeIndentation env
   assertMovedChildrenUseLogicalLayoutBases env
   assertMovedInlineProofBodiesRemainParseable env
