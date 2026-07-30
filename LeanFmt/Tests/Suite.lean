@@ -3465,6 +3465,29 @@ def assertCalcLayoutIslandAfterNestedInfix (env : Lean.Environment) : IO Unit :=
       "calc-layout-island-after-nested-infix-formatted.lean"
   assertEq "calc after nested infix is idempotent" result.formatted formattedAgain
 
+def assertMovedInlineCalcKeepsContinuationLayout (env : Lean.Environment) : IO Unit := do
+  let source :=
+    "def movedInlineCalcKeepsContinuationLayout : Nat :=\n"
+    ++ "  longApplicationNameWithEnoughCharactersToBreakBeforeLambda firstArgument fun f v ↦ calc\n"
+    ++ "    left = middle := by\n"
+    ++ "      refine proof\n"
+    ++ "    _ = right := by exact proof\n"
+  let expected :=
+    "def movedInlineCalcKeepsContinuationLayout : Nat :=\n"
+    ++ "  longApplicationNameWithEnoughCharactersToBreakBeforeLambda firstArgument\n"
+    ++ "    fun f v ↦\n"
+    ++ "      calc\n"
+    ++ "        left = middle := by\n"
+    ++ "          refine proof\n"
+    ++ "        _ = right := by exact proof\n"
+  let result ←
+    Formatter.formatSourceWithEnvDetailed env source
+      "moved-inline-calc-continuation.lean" { lineWidth := 100 }
+  assertTrue "moved inline calc does not fall back" (!result.fellBack)
+  assertEq "moved inline calc keeps its continuation layout" expected result.formatted
+  assertTrue "moved inline calc preserves code"
+    (← codePreservedIgnoringWhitespace env source result.formatted)
+
 def assertHaveTermFormatting (env : Lean.Environment) : IO Unit := do
   let source :=
     "theorem haveTermLayoutWithLongHeaderName (h : VeryLongHypothesisNameForLayoutTesting) : VeryLongTargetNameForLayoutTesting :=\n"
@@ -9164,6 +9187,7 @@ def runBasicFormattingTests (env : Lean.Environment) : IO Unit := do
   assertProofValuesRemainLayoutIslands env
   assertOriginalLayoutValueHonorsDeclarationBreak env
   assertCalcLayoutIslandAfterNestedInfix env
+  assertMovedInlineCalcKeepsContinuationLayout env
   assertHaveTermFormatting env
   assertHaveProofAfterInfixPreservesLayout env
   assertAbsoluteValueDelimitersStayAttached env

@@ -420,6 +420,10 @@ def LayoutIslandKind.isProofLayout : LayoutIslandKind → Bool
   | .proofLayout => true
   | _ => false
 
+def LayoutIslandKind.isCalc : LayoutIslandKind → Bool
+  | .calc => true
+  | _ => false
+
 def LayoutIslandKind.retainsRelativeLayout : LayoutIslandKind → Bool
   | .proof | .proofWidgetsJsx | .quotation => true
   | _ => false
@@ -477,6 +481,7 @@ private def emitRebased? (request : EmissionRequest) (tree : SyntaxTree.Tree)
   let lastToken ← SyntaxTree.Tree.lastToken? tree
   let proof := classification?.any LayoutIslandKind.isProof
   let proofLayout := classification?.any LayoutIslandKind.isProofLayout
+  let calcLayout := classification?.any LayoutIslandKind.isCalc
   let quotation := classification?.any LayoutIslandKind.isQuotation
   let usesPendingIndent :=
     (request.respectPendingIndent
@@ -498,7 +503,7 @@ private def emitRebased? (request : EmissionRequest) (tree : SyntaxTree.Tree)
     SyntaxTree.sourceText request.source firstToken.span.start lastToken.span.stop
   let sourceColumn := request.sourceMap.columnAt firstToken.span.start
   let retainsRelativeLayout := classification?.any LayoutIslandKind.retainsRelativeLayout
-  let retainsInlineRelativeLayout := retainsRelativeLayout || proofLayout
+  let retainsInlineRelativeLayout := retainsRelativeLayout || proofLayout || calcLayout
   let hasLineBreakTrivia := retainsInlineRelativeLayout && treeHasLineBreakTrivia tree
   let originalLeadingHasLineStructure := SpaceRules.hasLineStructure originalLeading
   let detachedInlineProofBody :=
@@ -529,6 +534,8 @@ private def emitRebased? (request : EmissionRequest) (tree : SyntaxTree.Tree)
                 shiftColumnByAnchor sourceColumn leadingColumn sourceIndent
               else
                 sourceIndent
+            else if calcLayout then
+              (request.segmentIndentation + 1) * indentationSpaces
             else if usesPendingIndent then
               leadingColumn
             else
@@ -543,7 +550,7 @@ private def emitRebased? (request : EmissionRequest) (tree : SyntaxTree.Tree)
   let inlineContinuationColumns? :=
     match inlineContinuationColumns? with
     | some (sourceIndent, targetIndent) =>
-        if proofLayout || quotation then
+        if proofLayout || calcLayout || quotation then
           some
             (
               sourceIndent,
