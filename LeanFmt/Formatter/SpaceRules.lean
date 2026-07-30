@@ -351,7 +351,11 @@ def preservesTightDotSpacing (left _right : SyntaxTree.Token) : Bool :=
   || (left.lexeme.endsWith "." && left.lexeme != ".." && dotPrefixCanAttach left.lexeme)
 
 def preservesTightPostfixSpacing (right : SyntaxTree.Token) : Bool :=
-  right.lexeme == "(" || right.lexeme == "[" || right.lexeme == "?" || right.lexeme == "%"
+  right.lexeme == "("
+  || right.lexeme == "["
+  || right.lexeme == "?"
+  || right.lexeme == "%"
+  || right.lexeme == "!"
 
 def preservesTightInterpolationSpacing (left right : SyntaxTree.Token) : Bool :=
   left.lexeme == "s!"

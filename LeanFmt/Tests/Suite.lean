@@ -631,6 +631,12 @@ def assertCustomNotationBracketSpacing : IO Unit := do
   assertEq "source-adjacent superscript marker stays tight" ""
     (Formatter.SpaceRules.interTokenWhitespace "m⁻¹"
       (syntheticAtomTokenAt "m" 0 1) (syntheticAtomTokenAt "⁻¹" 1 4))
+  let postfixBangSegment :=
+    Formatter.LineBreakRules.Segment.ofTree
+    <| .node (.raw `null)
+        #[.leaf (syntheticAtomTokenAt "]" 0 1), .leaf (syntheticAtomTokenAt "!" 1 2)]
+  assertTrue "source-adjacent postfix bang rejects an intervening break"
+    (!Formatter.breakPointPreservesTightTokenBoundary postfixBangSegment { index := 1 })
   assertEq "source-spaced modifier notation keeps its boundary" " "
     (Formatter.SpaceRules.interTokenWhitespace "f ⁻¹ᵁ"
       (syntheticAtomTokenAt "f" 0 1) (syntheticAtomTokenAt "⁻¹ᵁ" 2 7))
