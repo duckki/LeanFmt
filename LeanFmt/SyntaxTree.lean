@@ -785,6 +785,22 @@ def regroupStructCtor (children : Array Tree) : Tree :=
             command
   | none => command
 
+def regroupCtor (children : Array Tree) : Tree :=
+  match children[2]? with
+  | some modifiers =>
+      match splitLeadingAnnotations? modifiers with
+      | some (annotations, remainingModifiers) =>
+          let command :=
+            .node (.raw `Lean.Parser.Command.ctor)
+            <| ((children.set! 0 .missing).set! 1 .missing).set! 2 .missing
+          .node (.raw `Lean.Parser.Command.ctor)
+          <| childrenRange children 0 2
+              ++ #[annotatedDeclarationTree annotations remainingModifiers command]
+      | none =>
+          .node (.raw `Lean.Parser.Command.ctor) children
+  | none =>
+      .node (.raw `Lean.Parser.Command.ctor) children
+
 def regroupStructureWhereChildren (children : Array Tree) : Array Tree :=
   match children[4]? with
   | some (Tree.node (.raw `null) whereChildren) =>
@@ -1130,6 +1146,8 @@ def regroupRawNode (kind : SyntaxNodeKind) (children : Array Tree) : Tree :=
     .node (.raw kind) (regroupDeclarationIdentifierChildren children)
   else if kind == `Lean.Parser.Command.structCtor then
     regroupStructCtor children
+  else if kind == `Lean.Parser.Command.ctor then
+    regroupCtor children
   else if kind == `Lean.Parser.Command.structure then
     .node (.raw kind) (regroupStructureWhereChildren children)
   else if kind == `Lean.Parser.Term.basicFun then

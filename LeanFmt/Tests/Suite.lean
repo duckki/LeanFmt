@@ -6348,6 +6348,21 @@ def assertClassInductiveAlternativesStaySeparated (env : Lean.Environment) : IO 
     Formatter.formatSourceWithEnv env source "class-inductive-alternatives.lean"
   assertEq "class inductive alternatives stay separated" source formatted
 
+def assertInductiveConstructorAnnotationsFollowAlternativeMarker (env : Lean.Environment)
+    : IO Unit := do
+  let source :=
+    "/-- An LRAT step is either an addition or a deletion step. -/\n"
+    ++ "inductive LRATStep\n"
+    ++ "  | /-- An addition step, with the clause ID, the clause literal list, and the proof trace -/\n"
+    ++ "    add (id : Nat) (lits : Array Int) (proof : Array Int) : LRATStep\n"
+    ++ "  | @[deprecated \"use add\"] oldAdd (id : Nat) : LRATStep\n"
+  let result ←
+    Formatter.formatSourceWithEnvDetailed env source
+      "inductive-constructor-annotations.lean" { lineWidth := 100 }
+  assertTrue "constructor annotations format without fallback" (!result.fellBack)
+  assertEq "constructor annotations remain after the alternative marker"
+    source result.formatted
+
 def assertLongInductiveAlternativesStaySeparated (env : Lean.Environment) : IO Unit := do
   let source :=
     "inductive SourceLocalClosure : Prop\n"
@@ -9444,6 +9459,7 @@ def runControlFlowTests (env : Lean.Environment) : IO Unit := do
 def runCollectionAndDeclarationTests (env : Lean.Environment) : IO Unit := do
   assertInductiveConstructorIndentation env
   assertClassInductiveAlternativesStaySeparated env
+  assertInductiveConstructorAnnotationsFollowAlternativeMarker env
   assertLongInductiveAlternativesStaySeparated env
   assertConstructorBinderContinuesFromUnbrokenPrefix env
   assertStructureFieldsBreakMandatory env
