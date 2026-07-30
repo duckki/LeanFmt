@@ -1801,11 +1801,7 @@ mutual
           fun breakPoint =>
             commentForcesBreakAt state.source segment breakPoint.index
             || sourceBrokenCommentedDelimiterAt state.source segment breakPoint.index
-      if rule.preferChildLayouts state.context segment && !hasRetainedSourceBreak then
-        match renderPreferredChildLayout? state segment breakPoints with
-        | some childLayout => childLayout
-        | none => renderAfterFlatFailure state segment rule breakPoints isFlow
-      else if probe.acceptedForRule isFlow breakPoints && !hasRetainedSourceBreak then
+      if probe.acceptedForRule isFlow breakPoints && !hasRetainedSourceBreak then
         state.commitLayoutProbe probe
       else
         renderAfterFlatFailure state segment rule breakPoints isFlow
@@ -1837,33 +1833,6 @@ mutual
               if renderedCandidateFits state candidate then candidate else fallback ()
           | none => fallback ()
 
-  partial def renderPreferredChildLayout?
-      (state : RenderState) (segment : LineBreakRules.Segment)
-      (breakPoints : List LineBreakRules.BreakPoint)
-      : Option RenderState :=
-    let childLayout := renderChildren state segment
-    let prefixStaysFlat :=
-      match breakPoints.head? with
-      | some breakPoint =>
-          let prefixStop := min segment.stop breakPoint.index
-          let prefixSegment := segment.slice segment.start prefixStop
-          let prefixRendered := renderSegmentRange state segment segment.start prefixStop
-          let prefixStaysFlat :=
-            !renderedSegmentIsMultiline state prefixRendered prefixSegment
-          match segment.child? breakPoint.index with
-          | some child =>
-              let childRendered :=
-                renderNestedSegment prefixRendered segment breakPoint.index child
-                  (some segment.stop)
-              prefixStaysFlat
-              && !renderedTreeIsMultiline prefixRendered childRendered child
-          | none => prefixStaysFlat
-      | none => true
-    if prefixStaysFlat && renderedCandidateFits state childLayout then
-      some childLayout
-    else
-      none
-
   partial def renderUsingExistingBreaks
       (state : RenderState) (segment : LineBreakRules.Segment)
       (rule : LineBreakRules.LineBreakRule)
@@ -1871,16 +1840,8 @@ mutual
       : RenderState :=
     let sourceBreaks := sourceBreaksAllowedByBreakPointsInState state segment breakPoints
     let hasSourceBreaks := !sourceBreaks.isEmpty
-    let preferredBreakHasSource :=
-      breakPoints.head?.any
-        fun breakPoint =>
-          sourceBreaks.any fun sourceBreak => sourceBreak.index == breakPoint.index
     if !isFlow && hasSourceBreaks then
       renderBalancedSegment state segment rule breakPoints
-    else if rule.preferChildLayouts state.context segment && !preferredBreakHasSource then
-      match renderPreferredChildLayout? state segment breakPoints with
-      | some childLayout => childLayout
-      | none => renderAfterFlatFailure state segment rule breakPoints isFlow
     else
       match tryRenderSegmentWithSourceBreaks? state segment rule breakPoints with
       | some rendered => rendered

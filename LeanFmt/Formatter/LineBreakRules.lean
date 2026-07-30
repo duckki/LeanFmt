@@ -191,7 +191,6 @@ structure LineBreakRule where
   atomic : Bool := false
   formatOriginalChildLeadingBoundary : RuleContext → Segment → Nat → Bool :=
     fun _ _ _ => false
-  preferChildLayouts : RuleContext → Segment → Bool := fun _ _ => false
   useExistingBreaks : RuleContext → Segment → Bool := fun _ _ => false
   mandatory : RuleContext → Segment → Bool := fun _ _ => false
   flow : RuleContext → Segment → Bool := fun _ _ => false
@@ -2121,8 +2120,6 @@ def structureRule : LineBreakRule :=
 def structureHeaderRule : LineBreakRule :=
   {
     name := "structureHeader"
-    preferChildLayouts :=
-      fun _ segment => (breakBeforeLexeme? segment "extends" 2).isSome
     useExistingBreaks := fun _ _ => true
     flow := fun context segment => !(structureHeaderBreaks context segment).isEmpty
     inheritBase := fun _ _ => true

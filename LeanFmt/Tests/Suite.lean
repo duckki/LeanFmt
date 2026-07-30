@@ -6603,6 +6603,20 @@ def assertStructureExtendsBreaksBeforeWhereFields (env : Lean.Environment) : IO 
       "structure-extends-parent-application.lean" { lineWidth := 100 }
   assertEq "structure breaks before extends instead of inside the parent application"
     parentApplicationExpected parentApplicationFormatted
+
+  let multipleParentApplicationsSource :=
+    "class HomClass (F : Type) (M N : outParam Type) [MulOne M] [MulOne N]\n"
+    ++ "  [FunLike F M N] : Prop\n"
+    ++ "  extends MulHomClass F M N, OneHomClass F M N\n"
+  let multipleParentApplicationsExpected :=
+    "class HomClass (F : Type) (M N : outParam Type) [MulOne M] [MulOne N] [FunLike F M N] : Prop\n"
+    ++ "    extends MulHomClass F M N, OneHomClass F M N\n"
+  let multipleParentApplicationsFormatted ←
+    Formatter.formatSourceWithEnv env multipleParentApplicationsSource
+      "structure-extends-multiple-parent-applications.lean" { lineWidth := 100 }
+  assertEq "structure breaks before extends instead of inside parent applications"
+    multipleParentApplicationsExpected multipleParentApplicationsFormatted
+
   let multipleParentsFormattedAgain ←
     Formatter.formatSourceWithEnv env multipleParentsResult.formatted
       "structure-multiple-parents-formatted-again.lean" { lineWidth := 100 }

@@ -815,6 +815,14 @@ def regroupCtor (children : Array Tree) : Tree :=
       .node (.raw `Lean.Parser.Command.ctor) children
 
 def regroupStructure (children : Array Tree) : Tree :=
+  let trailingDeriving :=
+    match children[5]? with
+    | some clause =>
+        if clause.firstToken?.isSome then
+          #[.node .structureDeriving #[clause]]
+        else
+          #[]
+    | none => #[]
   match children[4]? with
   | some (Tree.node (.raw `null) whereChildren) =>
       match whereChildren[0]? with
@@ -839,14 +847,6 @@ def regroupStructure (children : Array Tree) : Tree :=
             | some fields =>
                 if fields.firstToken?.isSome then #[fields] else #[]
             | none => #[]
-          let trailingDeriving :=
-            match children[5]? with
-            | some clause =>
-                if clause.firstToken?.isSome then
-                  #[.node .structureDeriving #[clause]]
-                else
-                  #[]
-            | none => #[]
           .node (.raw `Lean.Parser.Command.structure)
           <| #[header]
               ++ constructor
@@ -854,7 +854,11 @@ def regroupStructure (children : Array Tree) : Tree :=
               ++ childrenRange whereChildren 3 whereChildren.size
               ++ trailingDeriving
               ++ childrenRange children 6 children.size
-      | none => .node (.raw `Lean.Parser.Command.structure) children
+      | none =>
+          .node (.raw `Lean.Parser.Command.structure)
+          <| #[.node .structureHeader (childrenRange children 0 4)]
+              ++ trailingDeriving
+              ++ childrenRange children 6 children.size
   | _ => .node (.raw `Lean.Parser.Command.structure) children
 
 def regroupDeclarationValueCommand (kind : SyntaxNodeKind) (children : Array Tree)
