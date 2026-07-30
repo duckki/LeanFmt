@@ -637,10 +637,13 @@ def flattenSimpleDeclarationValueChildren? (children : Array Tree)
           ++ childrenRange children (valueIndex + 1) children.size
   | _ => none
 
+def regroupFlattenedDefinitionChildren (children : Array Tree) : Array Tree :=
+  (regroupDefinitionTrailingWhereDecls? children).getD children
+
 def regroupDefinitionChildren (children : Array Tree) : Option (Array Tree) :=
   match flattenSimpleDeclarationValueChildren? children with
   | some flattened =>
-      some <| (regroupDefinitionTrailingWhereDecls? flattened).getD flattened
+      some <| regroupFlattenedDefinitionChildren flattened
   | none => regroupDefinitionTrailingWhereDecls? children
 
 def splitEquationTrailingClauses? : Tree → Option (Tree × Array Tree)
@@ -1100,67 +1103,8 @@ partial def flattenDelimitedCollectionChildren (children : Array Tree) : Array T
       | _ => children
   | none => children
 
-def regroupRawNode (kind : SyntaxNodeKind) (children : Array Tree) : Tree :=
-  if kind == `null then
-    (regroupDerivingClause? children).getD <| .node (.raw kind) children
-  else if isIfThenElseKind kind then
-    regroupIfThenElseChain kind children
-  else if kind == `Lean.Parser.Term.app && children.size == 2 then
-    match children[0]?, children[1]? with
-    | some head, some argumentContainer =>
-        let headAndArgs :=
-          match head with
-          | .node .application headChildren => headChildren
-          | _ => #[head]
-        .node .application
-          (headAndArgs ++ appendApplicationArgumentChildren argumentContainer)
-    | _, _ =>
-        .node (.raw kind) children
-  else if kind == `Lean.Parser.Term.pipeProj && 3 < children.size then
-    match children[0]?, children[1]?, children[2]? with
-    | some receiver, some operator, some head =>
-        .node (.raw kind)
-          #[
-            receiver,
-            operator,
-            .node .application (#[head] ++ appendApplicationArgumentContainers children 3)
-          ]
-    | _, _, _ => .node (.raw kind) children
-  else if kind == `Lake.DSL.packageCommand || kind == `Lake.DSL.leanLibCommand then
-    .node (.raw kind) (regroupLakeCommandChildren children)
-  else if kind == `Lake.DSL.requireDecl then
-    .node (.raw kind) (regroupLakeRequireChildren children)
-  else if kind == `Lean.Linter.«command_Register_linter_set_:=_» then
-    .node (.raw kind) (regroupRegisterLinterSetChildren children)
-  else if kind == `commandUnsuppress_compilationIn_ then
-    .node (.raw kind) (regroupCommandInWrapperChildren children)
-  else if kind == `Lean.Parser.Term.binderTactic then
-    .node (.infixChain kind) (regroupBinderTacticChildren children)
-  else if isBinaryInfixRawNode kind children then
-    match children[0]?, children[1]?, children[2]? with
-    | some left, some operator, some right =>
-        let parts := appendInfixParts kind #[] left
-        let parts := parts.push operator
-        let parts := appendInfixParts kind parts right
-        .node (.infixChain kind) parts
-    | _, _, _ =>
-        .node (.raw kind) children
-  else if kind == `Lean.Parser.Command.classAbbrev then
-    .node .definition children
-  else if kind == `Lean.Parser.Command.definition
-          || kind == `Lean.Parser.Command.abbrev then
-    let children := regroupEquationTrailingClauseChildren children
-    match regroupDefinitionChildren children with
-    | some definitionChildren => .node .definition definitionChildren
-    | none => .node (.raw kind) children
-  else if declarationValueCommandKind kind then
-    regroupDeclarationValueCommand kind children
-  else if (flattenSimpleDeclarationValueChildren? children).isSome then
-    let children := regroupEquationTrailingClauseChildren children
-    match regroupDefinitionChildren children with
-    | some definitionChildren => .node .definition definitionChildren
-    | none => .node (.raw kind) children
-  else if kind == `Lean.Parser.Command.deriving then
+def regroupOtherRawNode (kind : SyntaxNodeKind) (children : Array Tree) : Tree :=
+  if kind == `Lean.Parser.Command.deriving then
     .node (.raw kind) (regroupDerivingCommandChildren children)
   else if kind == `Lean.Parser.Command.declaration then
     match regroupDeclarationChildren children with
@@ -1272,6 +1216,67 @@ def regroupRawNode (kind : SyntaxNodeKind) (children : Array Tree) : Tree :=
       | some (annotations, command) =>
           annotatedDeclarationTree annotations .missing command
       | none => tree
+
+def regroupRawNode (kind : SyntaxNodeKind) (children : Array Tree) : Tree :=
+  if kind == `null then
+    (regroupDerivingClause? children).getD <| .node (.raw kind) children
+  else if isIfThenElseKind kind then
+    regroupIfThenElseChain kind children
+  else if kind == `Lean.Parser.Term.app && children.size == 2 then
+    match children[0]?, children[1]? with
+    | some head, some argumentContainer =>
+        let headAndArgs :=
+          match head with
+          | .node .application headChildren => headChildren
+          | _ => #[head]
+        .node .application
+          (headAndArgs ++ appendApplicationArgumentChildren argumentContainer)
+    | _, _ =>
+        .node (.raw kind) children
+  else if kind == `Lean.Parser.Term.pipeProj && 3 < children.size then
+    match children[0]?, children[1]?, children[2]? with
+    | some receiver, some operator, some head =>
+        .node (.raw kind)
+          #[
+            receiver,
+            operator,
+            .node .application (#[head] ++ appendApplicationArgumentContainers children 3)
+          ]
+    | _, _, _ => .node (.raw kind) children
+  else if kind == `Lake.DSL.packageCommand || kind == `Lake.DSL.leanLibCommand then
+    .node (.raw kind) (regroupLakeCommandChildren children)
+  else if kind == `Lake.DSL.requireDecl then
+    .node (.raw kind) (regroupLakeRequireChildren children)
+  else if kind == `Lean.Linter.«command_Register_linter_set_:=_» then
+    .node (.raw kind) (regroupRegisterLinterSetChildren children)
+  else if kind == `commandUnsuppress_compilationIn_ then
+    .node (.raw kind) (regroupCommandInWrapperChildren children)
+  else if kind == `Lean.Parser.Term.binderTactic then
+    .node (.infixChain kind) (regroupBinderTacticChildren children)
+  else if isBinaryInfixRawNode kind children then
+    match children[0]?, children[1]?, children[2]? with
+    | some left, some operator, some right =>
+        let parts := appendInfixParts kind #[] left
+        let parts := parts.push operator
+        let parts := appendInfixParts kind parts right
+        .node (.infixChain kind) parts
+    | _, _, _ =>
+        .node (.raw kind) children
+  else if kind == `Lean.Parser.Command.classAbbrev then
+    .node .definition children
+  else if kind == `Lean.Parser.Command.definition
+          || kind == `Lean.Parser.Command.abbrev then
+    let children := regroupEquationTrailingClauseChildren children
+    match regroupDefinitionChildren children with
+    | some definitionChildren => .node .definition definitionChildren
+    | none => .node (.raw kind) children
+  else if declarationValueCommandKind kind then
+    regroupDeclarationValueCommand kind children
+  else
+    match flattenSimpleDeclarationValueChildren? children with
+    | some flattened =>
+        .node .definition <| regroupFlattenedDefinitionChildren flattened
+    | none => regroupOtherRawNode kind children
 
 partial def regroupTree : Tree → Tree
   | .missing => .missing
