@@ -440,7 +440,7 @@ def LayoutIslandKind.prefersParentRelativeColumn : LayoutIslandKind → Bool
   | _ => false
 
 def LayoutIslandKind.hasUnbreakableLineLayout : LayoutIslandKind → Bool
-  | .proofWidgetsJsx => true
+  | .proofLayout | .proofWidgetsJsx => true
   | _ => false
 
 def LayoutIslandKind.isProof : LayoutIslandKind → Bool

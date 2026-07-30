@@ -969,10 +969,13 @@ report only newly introduced shapes; unchanged pre-existing overflow remains ava
 through direct `overflowOccurrences` analysis without being attributed to the formatter.
 The standalone analysis keeps layout-island and isolated-token exemptions, while the
 source-versus-formatted comparison temporarily removes those movable exemptions. This
-reports a proof, quotation, or isolated token that fit in source but was shifted past the
-limit, without reporting the same pre-existing source overflow. For an isolated token,
-the comparison maps its token index back to the source and retains the exemption only
-when that token's original physical line already overflowed; this covers an unbreakable
+reports a movable proof, quotation, or isolated token that fit in source but was shifted
+past the limit, without reporting the same pre-existing source overflow. Compound
+proof-layout islands remain exempt: their surrounding syntax and proof are emitted as
+one indivisible source-layout unit, so no internal rule boundary is available to resolve
+an overflow introduced by a required structural move. For an isolated token, the
+comparison maps its token index back to the source and retains the exemption only when
+that token's original physical line already overflowed; this covers an unbreakable
 declaration name split away from an already-long command prefix.
 
 The CLI reports each exception at its file, continues processing later files, and

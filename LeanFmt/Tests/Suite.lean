@@ -7545,6 +7545,38 @@ def assertFormattingExceptionChecks (env : Lean.Environment) : IO Unit := do
         match exception with
         | .lineOverflow _ => true
         | _ => false)
+  let fittingProofLayout :=
+    "def movedProofLayout (n : Nat) :=\n"
+    ++ "  Nat.recOn n default fun n Y =>\n"
+    ++ "    { metric := by infer_instance\n"
+    ++ "      embed :=\n"
+    ++ "        toGlueR Y.isom (isometry_optimalGHInjl (X n) (X (n + 1))) ∘ optimalGHInjr (X n) (X (n + 1))\n"
+    ++ "      isom := by infer_instance }\n"
+  let movedProofLayout :=
+    "def movedProofLayout (n : Nat) :=\n"
+    ++ "  Nat.recOn n default\n"
+    ++ "    fun n Y =>\n"
+    ++ "      { metric := by infer_instance\n"
+    ++ "        embed :=\n"
+    ++ "          toGlueR Y.isom (isometry_optimalGHInjl (X n) (X (n + 1))) ∘ optimalGHInjr (X n) (X (n + 1))\n"
+    ++ "        isom := by infer_instance }\n"
+  let fittingProofLayoutModule ←
+    SyntaxTree.parseModuleStringWithEnv env fittingProofLayout
+      "fitting-proof-layout-overflow-source.lean"
+  let movedProofLayoutModule ←
+    SyntaxTree.parseModuleStringWithEnv env movedProofLayout
+      "moved-proof-layout-overflow.lean"
+  assertTrue "proof-layout source line fits before structural movement"
+    (Formatter.linesFit fittingProofLayout 100)
+  assertTrue "structurally moved proof layout demonstrates an unbreakable overflow"
+    (!Formatter.linesFit movedProofLayout 100)
+  assertTrue "moved compound proof layout does not report actionable overflow"
+    (!(Formatter.Diagnostics.formattingExceptions
+        fittingProofLayoutModule movedProofLayoutModule { lineWidth := 100 }).any
+        fun exception =>
+          match exception with
+          | .lineOverflow _ => true
+          | _ => false)
   let jsxPayload := String.ofList (List.replicate 85 'x')
   let jsxText := "<div>" ++ jsxPayload ++ "</div>"
   let sourceJsxTree :=
