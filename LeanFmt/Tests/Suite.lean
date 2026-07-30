@@ -1565,6 +1565,35 @@ def assertDoLetElseBreaks (env : Lean.Environment) : IO Unit := do
       "multi-statement-do-let-fallback-formatted.lean"
   assertEq "multi-statement do-let fallback is idempotent"
     multiStatementFallbackResult.formatted multiStatementFallbackAgain
+  let commentedFallbackSource :=
+    "partial def matchFoldl (lit x y : Name) (smatcher : Matcher) (sinit : Matcher) :\n"
+    ++ "    Matcher := fun s => do\n"
+    ++ "  s.withVar lit do\n"
+    ++ "    let some s ← try some <$> smatcher s catch _ => pure none\n"
+    ++ "      | -- We put this here rather than using a big try block.\n"
+    ++ "        -- The fallback remains nested after the surrounding body moves.\n"
+    ++ "        sinit s\n"
+    ++ "    let s := s.pushFold lit\n"
+    ++ "    matchFoldl lit x y smatcher sinit s\n"
+  let commentedFallbackResult ←
+    Formatter.formatSourceWithEnvDetailed env commentedFallbackSource
+      "commented-do-let-fallback.lean"
+  assertTrue "commented do-let fallback does not fall back"
+    (!commentedFallbackResult.fellBack)
+  assertTrue "commented do-let fallback preserves code"
+    (← codePreservedIgnoringWhitespace env commentedFallbackSource
+        commentedFallbackResult.formatted)
+  assertTextContains "commented do-let fallback indents its body beneath the pipe"
+    commentedFallbackResult.formatted
+    ("        | -- We put this here rather than using a big try block.\n"
+      ++ "          -- The fallback remains nested after the surrounding body moves.\n"
+      ++ "          sinit s\n"
+      ++ "        let s := s.pushFold lit\n")
+  let commentedFallbackAgain ←
+    Formatter.formatSourceWithEnv env commentedFallbackResult.formatted
+      "commented-do-let-fallback-formatted.lean"
+  assertEq "commented do-let fallback is idempotent"
+    commentedFallbackResult.formatted commentedFallbackAgain
   let longChainedFallbackSource :=
     "def extractCatInstance (instQuiv instCS : Expr) : MetaM (Expr × Expr) := do\n"
     ++ "  let (``Quiver.Hom, #[_, instQuiv, _, _]) := instQuiv.getAppFnArgs | failure\n"

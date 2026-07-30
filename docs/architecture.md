@@ -351,6 +351,7 @@ structure LineBreakRule where
   startAlignment : RuleContext -> Segment -> StartAlignment := fun _ _ => .none
   roundUpBaseIndentation : Bool := false
   breakPoints : RuleContext -> Segment -> List BreakPoint := fun _ _ => []
+  commentBreakPoints : RuleContext -> Segment -> List BreakPoint := fun _ _ => []
 ```
 
 A `BreakPoint` index means "break before child at this index." `indentLevels` is a
@@ -426,6 +427,10 @@ Rule methods mean:
   and binding right-hand sides use this so contents remain one full level past an
   off-column head.
 - `breakPoints`: logical child boundaries. Rules must not read renderer state.
+- `commentBreakPoints`: indentation-only boundaries that become active when an
+  intervening source comment already requires a physical line break. They do not
+  participate in ordinary fit-driven wrapping. This lets a rule describe the structural
+  base of a commented child without inspecting comment text or source spacing.
 
 The default rule is deliberately shape-only. It distinguishes missing children, empty
 leaves, nonempty leaves, empty nodes, and nonempty nodes. A nonempty leaf between two
@@ -600,11 +605,13 @@ Rules and regroupings should preserve these cross-syntax relationships:
   application argument that starts with a delimiter followed by a line comment retains
   its argument break so the delimiter and comment do not migrate onto the preceding
   application line.
-- A comment line at a rule breakpoint makes that renderer boundary structural. This is
-  independent of syntax kind: the renderer applies the rule's ordinary breakpoint
-  indentation to both the intervening comment and the following token. Syntax-specific
-  rules do not inspect comment trivia to make themselves mandatory. A trailing line
-  comment remains attached to preceding code while their complete line fits.
+- A comment line at an ordinary or comment-only rule breakpoint makes that renderer
+  boundary structural. This is independent of syntax kind: the renderer activates
+  comment-only points from the source trivia and applies the rule's indentation to both
+  the intervening comment and the following token. Comment-only points never provide a
+  new width-driven wrapping choice, and syntax-specific rules do not inspect comment
+  trivia to make themselves mandatory. A trailing line comment remains attached to
+  preceding code while their complete line fits.
 
 This separation lets rules say "this boundary may follow source layout" without letting
 source indentation leak into renderer state.

@@ -1270,6 +1270,23 @@ def interveningCommentLineBreakAt
       && SpaceRules.hasLineStructure (SpaceRules.interTokenWhitespace source left right)
   | none => false
 
+def activeCommentBreakPoints
+    (source : String) (context : LineBreakRules.RuleContext)
+    (segment : LineBreakRules.Segment) (rule : LineBreakRules.LineBreakRule)
+    : List LineBreakRules.BreakPoint :=
+  normalizeBreakPoints segment (rule.commentBreakPoints context segment)
+  |>.filter
+      fun breakPoint =>
+        interveningCommentLineBreakAt source segment breakPoint.index
+
+def activeRuleBreakPoints
+    (source : String) (context : LineBreakRules.RuleContext)
+    (segment : LineBreakRules.Segment) (rule : LineBreakRules.LineBreakRule)
+    (breakPoints : List LineBreakRules.BreakPoint)
+    : List LineBreakRules.BreakPoint :=
+  normalizeBreakPoints segment
+    (breakPoints ++ activeCommentBreakPoints source context segment rule)
+
 def childStartsWithCommentedDelimiter
     (source : String) (segment : LineBreakRules.Segment) (index : Nat)
     : Bool :=
@@ -1321,7 +1338,9 @@ def segmentHasAllowedSourceBreaks
     (segment : LineBreakRules.Segment)
     : Bool :=
   let rule := LineBreakRules.formattingRuleFor segment.parent
-  let breakPoints := ruleBreakPoints context segment rule
+  let breakPoints :=
+    activeRuleBreakPoints source context segment rule
+      (ruleBreakPoints context segment rule)
   rule.useExistingBreaks context segment
   && !(sourceBreaksAllowedByBreakPoints source segment breakPoints).isEmpty
 
@@ -1558,8 +1577,8 @@ def breakPointIndent
 def sourceBreaksForRule?
     (state : RenderState) (segment : LineBreakRules.Segment)
     (rule : LineBreakRules.LineBreakRule)
+    (points : List LineBreakRules.BreakPoint)
     : Option (List SourceBreak) :=
-  let points := ruleBreakPoints state.context segment rule
   let sourceBreaks := sourceBreaksAllowedByBreakPointsInState state segment points
   if sourceBreaks.isEmpty then
     none
@@ -1797,6 +1816,8 @@ mutual
       (rule : LineBreakRules.LineBreakRule)
       (breakPoints : List LineBreakRules.BreakPoint)
       : RenderState :=
+    let breakPoints :=
+      activeRuleBreakPoints state.source state.context segment rule breakPoints
     let isFlow := rule.flow state.context segment
     let useExistingBreaks := rule.useExistingBreaks state.context segment
     if rule.atomic then
@@ -1842,7 +1863,7 @@ mutual
     if !isFlow then
       fallback ()
     else
-      match sourceBreaksForRule? state segment rule with
+      match sourceBreaksForRule? state segment rule breakPoints with
       | none => fallback ()
       | some sourceBreaks =>
           match renderFlowSegmentWithSourceBreaks? state segment sourceBreaks
@@ -1896,7 +1917,7 @@ mutual
       | some childLayout => childLayout
       | none => renderAfterFlatFailure state segment rule breakPoints isFlow
     else
-      match tryRenderSegmentWithSourceBreaks? state segment rule with
+      match tryRenderSegmentWithSourceBreaks? state segment rule breakPoints with
       | some rendered => rendered
       | none =>
           let probe := measureLayout state segment false
@@ -2236,8 +2257,9 @@ mutual
   partial def tryRenderSegmentWithSourceBreaks?
       (state : RenderState) (segment : LineBreakRules.Segment)
       (rule : LineBreakRules.LineBreakRule)
+      (breakPoints : List LineBreakRules.BreakPoint)
       : Option RenderState :=
-    match sourceBreaksForRule? state segment rule with
+    match sourceBreaksForRule? state segment rule breakPoints with
     | none =>
         none
     | some breaks =>

@@ -208,6 +208,7 @@ structure LineBreakRule where
   startAlignment : RuleContext → Segment → StartAlignment := fun _ _ => .none
   roundUpBaseIndentation : Bool := false
   breakPoints : RuleContext → Segment → List BreakPoint := fun _ _ => []
+  commentBreakPoints : RuleContext → Segment → List BreakPoint := fun _ _ => []
 
 def boundaryBreak? (segment : Segment) (index indentLevels : Nat) : Option BreakPoint :=
   if segment.start < index && index < segment.stop then
@@ -1783,6 +1784,23 @@ def doLetArrowFallbackTailBreaks (context : RuleContext) (segment : Segment)
   else
     []
 
+def doLetArrowFallbackTailCommentBreaks (context : RuleContext) (segment : Segment)
+    : List BreakPoint :=
+  if parentIsDoLetArrowDecl context then
+    match (nonemptyChildIndexes segment).dropWhile
+            (fun index => !childStartsWithLexeme segment index "|") with
+    | _pipeIndex :: fallbackIndex :: _ =>
+        match segment.child? fallbackIndex with
+        | some fallback =>
+            if 1 < directDoSequenceItemCount fallback then
+              []
+            else
+              [boundaryBreak? segment fallbackIndex 1].filterMap id
+        | _ => []
+    | _ => []
+  else
+    []
+
 def doLetElseContinuationBreak? (segment : Segment) : Option BreakPoint := do
   let pipeIndex ←
     segment.indexes.find? fun index => childStartsWithLexeme segment index "|"
@@ -1800,6 +1818,16 @@ def doLetElseFallbackBreak? (segment : Segment) : Option BreakPoint := do
     boundaryBreak? segment fallbackIndex 1
   else
     none
+
+def doLetElseFallbackCommentBreak? (segment : Segment) : Option BreakPoint := do
+  let pipeIndex ←
+    segment.indexes.find? fun index => childStartsWithLexeme segment index "|"
+  let fallbackIndex ← (nonemptyChildIndexes segment).find? fun index => pipeIndex < index
+  let fallback ← segment.child? fallbackIndex
+  if 1 < directDoSequenceItemCount fallback then
+    none
+  else
+    boundaryBreak? segment fallbackIndex 1
 
 def doLetElseBreaks (_context : RuleContext) (segment : Segment) : List BreakPoint :=
   [
@@ -1890,6 +1918,8 @@ def doLetElseRule : LineBreakRule :=
     flow := fun _ _ => true
     inheritBase := fun _ _ => true
     breakPoints := doLetElseBreaks
+    commentBreakPoints :=
+      fun _ segment => [doLetElseFallbackCommentBreak? segment].filterMap id
   }
 
 def doLetExprRule : LineBreakRule :=
@@ -2726,6 +2756,7 @@ def nullRule : LineBreakRule :=
         || !(infixAlternativeBreaks context segment).isEmpty
     inheritBase := nullInheritBase
     breakPoints := nullBreaks
+    commentBreakPoints := doLetArrowFallbackTailCommentBreaks
   }
 
 def arrayRule : LineBreakRule :=
