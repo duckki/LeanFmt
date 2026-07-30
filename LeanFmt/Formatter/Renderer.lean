@@ -1274,18 +1274,25 @@ def activeCommentBreakPoints
     (source : String) (context : LineBreakRules.RuleContext)
     (segment : LineBreakRules.Segment) (rule : LineBreakRules.LineBreakRule)
     : List LineBreakRules.BreakPoint :=
-  normalizeBreakPoints segment (rule.commentBreakPoints context segment)
-  |>.filter
-      fun breakPoint =>
-        interveningCommentLineBreakAt source segment breakPoint.index
+  let candidates := rule.commentBreakPoints context segment
+  if candidates.isEmpty then
+    []
+  else
+    normalizeBreakPoints segment candidates
+    |>.filter
+        fun breakPoint =>
+          interveningCommentLineBreakAt source segment breakPoint.index
 
 def activeRuleBreakPoints
     (source : String) (context : LineBreakRules.RuleContext)
     (segment : LineBreakRules.Segment) (rule : LineBreakRules.LineBreakRule)
     (breakPoints : List LineBreakRules.BreakPoint)
     : List LineBreakRules.BreakPoint :=
-  normalizeBreakPoints segment
-    (breakPoints ++ activeCommentBreakPoints source context segment rule)
+  let commentBreakPoints := activeCommentBreakPoints source context segment rule
+  if commentBreakPoints.isEmpty then
+    breakPoints
+  else
+    normalizeBreakPoints segment (breakPoints ++ commentBreakPoints)
 
 def childStartsWithCommentedDelimiter
     (source : String) (segment : LineBreakRules.Segment) (index : Nat)
