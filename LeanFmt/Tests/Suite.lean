@@ -2441,6 +2441,58 @@ def assertMovedInlineProofBodiesRemainParseable (env : Lean.Environment) : IO Un
   assertEq "inline multiline declaration proof is idempotent"
     declarationResult.formatted declarationAgain
 
+def assertMovedProofLayoutIslandKeepsContinuationIndentation (env : Lean.Environment)
+    : IO Unit := do
+  let source :=
+    "def anonymousCtorProofAfterMovedLambda :=\n"
+    ++ "  longApplicationNameWithEnoughCharactersToForceItsArgumentsOntoSeparateLines\n"
+    ++ "    (fun value => ⟨value, by\n"
+    ++ "      exact True.intro⟩)\n"
+  let expected :=
+    "def anonymousCtorProofAfterMovedLambda :=\n"
+    ++ "  longApplicationNameWithEnoughCharactersToForceItsArgumentsOntoSeparateLines\n"
+    ++ "    (fun value =>\n"
+    ++ "      ⟨value, by\n"
+    ++ "      exact True.intro⟩)\n"
+  let result ←
+    Formatter.formatSourceWithEnvDetailed env source
+      "moved-proof-layout-island.lean" { lineWidth := 100 }
+  assertTrue "moved proof-layout island does not fall back" (!result.fellBack)
+  assertEq "moved proof-layout island keeps its source continuation base"
+    expected result.formatted
+  assertTrue "moved proof-layout island preserves code"
+    (← codePreservedIgnoringWhitespace env source result.formatted)
+  let formattedAgain ←
+    Formatter.formatSourceWithEnv env result.formatted
+      "moved-proof-layout-island-formatted.lean" { lineWidth := 100 }
+  assertEq "moved proof-layout island is idempotent" result.formatted formattedAgain
+
+  let whereSource :=
+    "def proofLayoutBodyAfterSourceBrokenHeader :\n"
+    ++ "    VeryLongResultTypeNameWithEnoughCharactersToKeepTheDeclarationHeaderBroken where\n"
+    ++ "  first := by exact proof\n"
+    ++ "  second := value\n"
+  let whereExpected :=
+    "def proofLayoutBodyAfterSourceBrokenHeader\n"
+    ++ "    : VeryLongResultTypeNameWithEnoughCharactersToKeepTheDeclarationHeaderBroken where\n"
+    ++ "  first := by exact proof\n"
+    ++ "  second := value\n"
+  let whereResult ←
+    Formatter.formatSourceWithEnvDetailed env whereSource
+      "proof-layout-body-after-source-broken-header.lean" { lineWidth := 100 }
+  assertTrue "proof-layout body after source-broken header does not fall back"
+    (!whereResult.fellBack)
+  assertEq "proof-layout body keeps its declaration body base"
+    whereExpected whereResult.formatted
+  assertTrue "proof-layout body after source-broken header preserves code"
+    (← codePreservedIgnoringWhitespace env whereSource whereResult.formatted)
+  let whereFormattedAgain ←
+    Formatter.formatSourceWithEnv env whereResult.formatted
+      "proof-layout-body-after-source-broken-header-formatted.lean"
+      { lineWidth := 100 }
+  assertEq "proof-layout body after source-broken header is idempotent"
+    whereResult.formatted whereFormattedAgain
+
 def assertDetachedInlineProofBodyKeepsInternalIndentation (env : Lean.Environment)
     : IO Unit := do
   let source :=
@@ -9045,6 +9097,7 @@ def runBasicFormattingTests (env : Lean.Environment) : IO Unit := do
   assertMovedProofBodiesKeepRelativeIndentation env
   assertMovedChildrenUseLogicalLayoutBases env
   assertMovedInlineProofBodiesRemainParseable env
+  assertMovedProofLayoutIslandKeepsContinuationIndentation env
   assertDetachedInlineProofBodyKeepsInternalIndentation env
   assertShowProofAfterMovedLambdaIsIdempotent env
   assertShowProofTermUntouched env

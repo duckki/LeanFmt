@@ -412,12 +412,16 @@ def LayoutIslandKind.isProof : LayoutIslandKind → Bool
   | .proof => true
   | _ => false
 
-def LayoutIslandKind.isProofWidgetsJsx : LayoutIslandKind → Bool
-  | .proofWidgetsJsx => true
-  | _ => false
-
 def LayoutIslandKind.isQuotation : LayoutIslandKind → Bool
   | .quotation => true
+  | _ => false
+
+def LayoutIslandKind.isProofLayout : LayoutIslandKind → Bool
+  | .proofLayout => true
+  | _ => false
+
+def LayoutIslandKind.retainsRelativeLayout : LayoutIslandKind → Bool
+  | .proof | .proofWidgetsJsx | .quotation => true
   | _ => false
 
 def LayoutIslandKind.usesPendingIndent : LayoutIslandKind → Bool
@@ -472,7 +476,7 @@ private def emitRebased? (request : EmissionRequest) (tree : SyntaxTree.Tree)
   let firstToken ← SyntaxTree.Tree.firstToken? tree
   let lastToken ← SyntaxTree.Tree.lastToken? tree
   let proof := classification?.any LayoutIslandKind.isProof
-  let proofWidgetsJsx := classification?.any LayoutIslandKind.isProofWidgetsJsx
+  let proofLayout := classification?.any LayoutIslandKind.isProofLayout
   let quotation := classification?.any LayoutIslandKind.isQuotation
   let usesPendingIndent :=
     (request.respectPendingIndent
@@ -493,8 +497,9 @@ private def emitRebased? (request : EmissionRequest) (tree : SyntaxTree.Tree)
   let sourceText :=
     SyntaxTree.sourceText request.source firstToken.span.start lastToken.span.stop
   let sourceColumn := request.sourceMap.columnAt firstToken.span.start
-  let retainsRelativeLayout := proof || proofWidgetsJsx || quotation
-  let hasLineBreakTrivia := retainsRelativeLayout && treeHasLineBreakTrivia tree
+  let retainsRelativeLayout := classification?.any LayoutIslandKind.retainsRelativeLayout
+  let retainsInlineRelativeLayout := retainsRelativeLayout || proofLayout
+  let hasLineBreakTrivia := retainsInlineRelativeLayout && treeHasLineBreakTrivia tree
   let originalLeadingHasLineStructure := SpaceRules.hasLineStructure originalLeading
   let detachedInlineProofBody :=
     proof
@@ -503,7 +508,7 @@ private def emitRebased? (request : EmissionRequest) (tree : SyntaxTree.Tree)
     && !originalLeadingHasLineStructure
     && SpaceRules.hasLineStructure leading
   let inlineMultilineLayoutIsland :=
-    retainsRelativeLayout
+    retainsInlineRelativeLayout
     && hasLineBreakTrivia
     && !originalLeadingHasLineStructure
     && !detachedInlineProofBody
@@ -519,6 +524,8 @@ private def emitRebased? (request : EmissionRequest) (tree : SyntaxTree.Tree)
           let structuralIndent :=
             if proof then
               (request.segmentIndentation + 1) * indentationSpaces
+            else if proofLayout then
+              sourceIndent
             else if usesPendingIndent then
               leadingColumn
             else
