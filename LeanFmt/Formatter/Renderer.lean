@@ -1244,33 +1244,23 @@ def interveningCommentLineBreakAt
       SpaceRules.commentForcesLineBreak originalTrivia
   | none => false
 
-def breakPointConditionHolds
-    (source : String) (segment : LineBreakRules.Segment)
-    (breakPoint : LineBreakRules.BreakPoint)
-    : Bool :=
-  match breakPoint.condition with
-  | .always => true
-  | .interveningCommentLine =>
-      interveningCommentLineBreakAt source segment breakPoint.index
-
 def normalizeBreakPoints
-    (source : String) (segment : LineBreakRules.Segment)
+    (segment : LineBreakRules.Segment)
     (breakPoints : List LineBreakRules.BreakPoint)
     : List LineBreakRules.BreakPoint :=
   (breakPoints.filter
     fun breakPoint =>
       segment.start <= breakPoint.index
       && breakPoint.index < segment.stop
-      && breakPointConditionHolds source segment breakPoint
       && breakPointPreservesTightTokenBoundary segment breakPoint)
   |>.mergeSort fun left right => left.index < right.index
 
 def ruleBreakPoints
-    (source : String) (context : LineBreakRules.RuleContext)
+    (context : LineBreakRules.RuleContext)
     (segment : LineBreakRules.Segment)
     (rule : LineBreakRules.LineBreakRule)
     : List LineBreakRules.BreakPoint :=
-  normalizeBreakPoints source segment (rule.breakPoints context segment)
+  normalizeBreakPoints segment (rule.breakPoints context segment)
 
 def sourceBreaksAllowedByBreakPoints
     (source : String) (segment : LineBreakRules.Segment)
@@ -1331,7 +1321,7 @@ def segmentHasAllowedSourceBreaks
     (segment : LineBreakRules.Segment)
     : Bool :=
   let rule := LineBreakRules.formattingRuleFor segment.parent
-  let breakPoints := ruleBreakPoints source context segment rule
+  let breakPoints := ruleBreakPoints context segment rule
   rule.useExistingBreaks context segment
   && !(sourceBreaksAllowedByBreakPoints source segment breakPoints).isEmpty
 
@@ -1728,7 +1718,7 @@ mutual
       | some prepared => prepared
       | none =>
           let rule := LineBreakRules.formattingRuleFor segment.parent
-          (rule, ruleBreakPoints state.source state.context segment rule)
+          (rule, ruleBreakPoints state.context segment rule)
     let tailIndentationStop? :=
       match segment.parent with
       | .node _ children =>
@@ -1933,7 +1923,7 @@ mutual
       if emitOriginal then
         []
       else
-        ruleBreakPoints state.source childContext childSegment childRule
+        ruleBreakPoints childContext childSegment childRule
     let inheritsBase := childRule.inheritBase childContext childSegment
     let startAlignment := childRule.startAlignment childContext childSegment
     let suffixStop := suffixStop?.getD segment.stop

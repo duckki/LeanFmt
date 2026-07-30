@@ -25,15 +25,9 @@ structure RuleContext where
   ancestors : List Frame := []
 deriving Repr
 
-inductive BreakCondition where
-  | always
-  | interveningCommentLine
-deriving BEq, Repr
-
 structure BreakPoint where
   index : Nat
   indentLevels : Nat := 0
-  condition : BreakCondition := .always
 deriving BEq, Repr
 
 inductive StartAlignment where
@@ -226,9 +220,6 @@ def leadingBreak? (segment : Segment) (index indentLevels : Nat) : Option BreakP
     some { index, indentLevels }
   else
     none
-
-def onInterveningCommentLine (breakPoint : BreakPoint) : BreakPoint :=
-  { breakPoint with condition := .interveningCommentLine }
 
 def childBoundaryBreaks (segment : Segment) (indentLevels : Nat) : List BreakPoint :=
   match segment.children? with
@@ -1735,30 +1726,6 @@ def letIdDeclBreaks (context : RuleContext) (segment : Segment) : List BreakPoin
 def letPatternDeclBreaks (_context : RuleContext) (segment : Segment) : List BreakPoint :=
   [breakAfterLexeme? segment ":=" 1].filterMap id
 
-def doLetArrowDeclBreaks (_context : RuleContext) (segment : Segment) : List BreakPoint :=
-  let valueBreak :=
-    match segment.indexes.find? fun index => childStartsWithLexeme segment index "←" with
-    | some assignmentIndex =>
-        match (nonemptyChildIndexes segment).find?
-                fun index => assignmentIndex < index with
-        | some rhsIndex => boundaryBreak? segment rhsIndex 1
-        | none => none
-    | none => none
-  [valueBreak, breakBeforeLexeme? segment "|" 0].filterMap id
-
-def doIdDeclBreaks (context : RuleContext) (segment : Segment) : List BreakPoint :=
-  doLetArrowDeclBreaks context segment
-
-def doPatternDeclBreaks (context : RuleContext) (segment : Segment) : List BreakPoint :=
-  doLetArrowDeclBreaks context segment
-
-def parentIsDoLetArrowDecl (context : RuleContext) : Bool :=
-  match context.ancestors with
-  | parent :: _ =>
-      parent.rawKind? == some `Lean.Parser.Term.doIdDecl
-      || parent.rawKind? == some `Lean.Parser.Term.doPatDecl
-  | _ => false
-
 partial def directDoSequenceItemCount : SyntaxTree.Tree → Nat
   | .node (.raw `Lean.Parser.Term.doSeqItem) _ => 1
   | .node (.raw kind) children =>
@@ -1769,62 +1736,94 @@ partial def directDoSequenceItemCount : SyntaxTree.Tree → Nat
   | .node _ _ => 0
   | .missing | .leaf _ => 0
 
--- Lean's `let pattern ← action | fallback` parser stores the fallback and the
--- following `do` continuation in one wrapper.  Multiple fallback statements and
--- the boundary before continuation commands are semantic layout and must not
--- flatten.
-def doLetArrowFallbackTailBreaks (context : RuleContext) (segment : Segment)
-    : List BreakPoint :=
-  if parentIsDoLetArrowDecl context then
-    match (nonemptyChildIndexes segment).dropWhile
-            (fun index => !childStartsWithLexeme segment index "|") with
-    | _pipeIndex :: fallbackIndex :: tail =>
-        let fallbackBreak :=
-          match segment.child? fallbackIndex with
-          | some fallback =>
-              if 1 < directDoSequenceItemCount fallback then
-                boundaryBreak? segment fallbackIndex 1
-              else
-                (boundaryBreak? segment fallbackIndex 1).map onInterveningCommentLine
-          | _ => none
-        let continuationBreak :=
-          match tail with
-          | continuationIndex :: _ => boundaryBreak? segment continuationIndex 0
-          | _ => none
-        [fallbackBreak, continuationBreak].filterMap id
-    | _ => []
-  else
-    []
+def childIsNodeKind (segment : Segment) (index : Nat) (kind : SyntaxTree.NodeKind)
+    : Bool :=
+  match segment.child? index with
+  | some (.node childKind _) => childKind == kind
+  | _ => false
 
-def doLetElseContinuationBreak? (segment : Segment) : Option BreakPoint := do
-  let pipeIndex ←
-    segment.indexes.find? fun index => childStartsWithLexeme segment index "|"
-  let fallbackIndex ← (nonemptyChildIndexes segment).find? fun index => pipeIndex < index
-  let continuationIndex ←
-    (nonemptyChildIndexes segment).find? fun index => fallbackIndex < index
-  boundaryBreak? segment continuationIndex 0
+def doFallbackClauseIndex? (segment : Segment) : Option Nat :=
+  segment.indexes.find? fun index => childIsNodeKind segment index .doFallbackClause
 
-def doLetElseFallbackBreak? (segment : Segment) : Option BreakPoint := do
-  let pipeIndex ←
-    segment.indexes.find? fun index => childStartsWithLexeme segment index "|"
-  let fallbackIndex ← (nonemptyChildIndexes segment).find? fun index => pipeIndex < index
-  let fallback ← segment.child? fallbackIndex
-  if 1 < directDoSequenceItemCount fallback then
-    boundaryBreak? segment fallbackIndex 1
-  else
-    (boundaryBreak? segment fallbackIndex 1).map onInterveningCommentLine
+def doFallbackClauseBodyRequiresBreak (segment : Segment) (index : Nat) : Bool :=
+  match segment.child? index with
+  | some (.node .doFallbackClause children) =>
+      children[1]?.any fun fallback => 1 < directDoSequenceItemCount fallback
+  | _ => false
+
+def doFallbackBodyRequiresBreak (segment : Segment) : Bool :=
+  doFallbackClauseIndex? segment
+  |>.any fun index => doFallbackClauseBodyRequiresBreak segment index
+
+def doFallbackBreaks (segment : Segment) : List BreakPoint :=
+  match doFallbackClauseIndex? segment with
+  | some clauseIndex =>
+      let clauseBreak :=
+        if doFallbackClauseBodyRequiresBreak segment clauseIndex then
+          []
+        else
+          [boundaryBreak? segment clauseIndex 0].filterMap id
+      let continuationBreaks :=
+        segment.indexes.filterMap
+          fun index =>
+            if childIsNodeKind segment index .doFallbackContinuation then
+              boundaryBreak? segment index 0
+            else
+              none
+      clauseBreak ++ continuationBreaks
+  | none => []
+
+def doLetArrowDeclBreaks (_context : RuleContext) (segment : Segment) : List BreakPoint :=
+  let valueBreak :=
+    if doFallbackBodyRequiresBreak segment then
+      none
+    else
+      match segment.indexes.find?
+              fun index => childStartsWithLexeme segment index "←" with
+      | some assignmentIndex =>
+          match (nonemptyChildIndexes segment).find?
+                  fun index => assignmentIndex < index with
+          | some rhsIndex => boundaryBreak? segment rhsIndex 1
+          | none => none
+      | none => none
+  [valueBreak].filterMap id ++ doFallbackBreaks segment
+
+def doIdDeclBreaks (context : RuleContext) (segment : Segment) : List BreakPoint :=
+  doLetArrowDeclBreaks context segment
+
+def doPatternDeclBreaks (context : RuleContext) (segment : Segment) : List BreakPoint :=
+  doLetArrowDeclBreaks context segment
 
 def doLetElseBreaks (_context : RuleContext) (segment : Segment) : List BreakPoint :=
-  [
-    breakAfterLexeme? segment ":=" 1,
-    breakBeforeLexeme? segment "|" 0,
-    doLetElseFallbackBreak? segment,
-    doLetElseContinuationBreak? segment
-  ].filterMap
-    id
+  let valueBreak :=
+    if doFallbackBodyRequiresBreak segment then
+      none
+    else
+      breakAfterLexeme? segment ":=" 1
+  [valueBreak].filterMap id ++ doFallbackBreaks segment
 
 def doLetExprBreaks (context : RuleContext) (segment : Segment) : List BreakPoint :=
   doLetElseBreaks context segment
+
+def doFallbackClauseBreaks (_context : RuleContext) (segment : Segment)
+    : List BreakPoint :=
+  match nonemptyChildIndexes segment with
+  | _pipeIndex :: fallbackIndex :: _ =>
+      [boundaryBreak? segment fallbackIndex 1].filterMap id
+  | _ => []
+
+def doFallbackClauseMandatory (_context : RuleContext) (segment : Segment) : Bool :=
+  match (nonemptyChildIndexes segment).drop 1 with
+  | fallbackIndex :: _ =>
+      segment.child? fallbackIndex
+      |>.any
+          fun fallback =>
+            1 < directDoSequenceItemCount fallback
+  | _ => false
+
+def doFallbackContinuationBreaks (_context : RuleContext) (segment : Segment)
+    : List BreakPoint :=
+  [leadingBreak? segment segment.start 0].filterMap id
 
 /-! ### Binding and `do` rule values -/
 
@@ -1898,8 +1897,6 @@ def byTacticRule : LineBreakRule :=
 def doLetElseRule : LineBreakRule :=
   {
     name := "doLetElse"
-    useExistingBreaks :=
-      fun _ segment => (doLetElseContinuationBreak? segment).isSome
     flow := fun _ _ => true
     inheritBase := fun _ _ => true
     breakPoints := doLetElseBreaks
@@ -1913,6 +1910,23 @@ def doLetExprRule : LineBreakRule :=
     breakPoints := doLetExprBreaks
   }
 
+def doFallbackClauseRule : LineBreakRule :=
+  {
+    name := "doFallbackClause"
+    mandatory := doFallbackClauseMandatory
+    flow := fun _ _ => true
+    inheritBase := fun _ _ => true
+    breakPoints := doFallbackClauseBreaks
+  }
+
+def doFallbackContinuationRule : LineBreakRule :=
+  {
+    name := "doFallbackContinuation"
+    mandatory := fun _ _ => true
+    inheritBase := fun _ _ => true
+    breakPoints := doFallbackContinuationBreaks
+  }
+
 def doSeqIndentRule : LineBreakRule :=
   {
     name := "doSeqIndent"
@@ -1922,6 +1936,7 @@ def doSeqIndentRule : LineBreakRule :=
 def doIdDeclRule : LineBreakRule :=
   {
     name := "doIdDecl"
+    flow := fun _ _ => true
     inheritBase := fun _ _ => true
     breakPoints := doIdDeclBreaks
   }
@@ -1929,6 +1944,7 @@ def doIdDeclRule : LineBreakRule :=
 def doPatternDeclRule : LineBreakRule :=
   {
     name := "doPatternDecl"
+    flow := fun _ _ => true
     inheritBase := fun _ _ => true
     breakPoints := doPatternDeclBreaks
   }
@@ -2686,7 +2702,6 @@ def nullBreaks (context : RuleContext) (segment : Segment) : List BreakPoint :=
   ++ assertNotExistsIdentifierBreaks context segment
   ++ exportItemBreaks context segment
   ++ doSeqItemBreaks context segment
-  ++ doLetArrowFallbackTailBreaks context segment
   ++ infixAlternativeBreaks context segment
   ++ doElseBreaks context segment
   ++ doElseIfBreaks context segment
@@ -2704,8 +2719,6 @@ def nullBreaksMandatory (context : RuleContext) (segment : Segment) : Bool :=
   || structInstFieldsMandatory context segment
   || !(inductiveAlternativeBreaks context segment).isEmpty
   || !(doSeqItemBreaks context segment).isEmpty
-  || ((doLetArrowFallbackTailBreaks context segment).any
-        fun breakPoint => breakPoint.condition == .always)
   || !(doElseBreaks context segment).isEmpty
   || !(doElseIfBreaks context segment).isEmpty
   || !(doElseIfChainBreaks context segment).isEmpty
@@ -3822,6 +3835,8 @@ def ruleFor : SyntaxTree.Tree → Option LineBreakRule
   | .node .matchPatterns _ => some matchPatternsRule
   | .node .matchDiscriminants _ => some matchDiscriminantsRule
   | .node .doForHeader _ => some doForHeaderRule
+  | .node .doFallbackClause _ => some doFallbackClauseRule
+  | .node .doFallbackContinuation _ => some doFallbackContinuationRule
   | .node .structureUpdate _ => some structureUpdateRule
   | .node (.raw `Lean.Parser.Command.optDeclSig) _ => some signatureRule
   | .node (.raw `Lean.Parser.Command.declSig) _ => some signatureRule

@@ -841,6 +841,19 @@ def assertGroupedInfixChain (env : Lean.Environment) : IO Unit := do
       <| IO.userError
           s!"expected infix chain to contain three operands and two operators, got {repr other}"
 
+def assertDoFallbackRegrouping (env : Lean.Environment) : IO Unit := do
+  let source :=
+    "def fallback (candidate : Option Nat) : Option Nat := do\n"
+    ++ "  let some value := candidate | none\n"
+    ++ "  return value\n"
+  let moduleTree ←
+    SyntaxTree.parseModuleStringWithEnv env source "do-fallback-regrouping.lean"
+  assertTrue "do fallback clause has an explicit syntax-tree node"
+    (moduleTree.tree.containsNodeKind .doFallbackClause)
+  assertTrue "do fallback continuation has an explicit syntax-tree node"
+    (moduleTree.tree.containsNodeKind .doFallbackContinuation)
+  assertEq "do fallback regrouping is lossless" source moduleTree.reconstruct
+
 def assertDefinitionLikeCommandsRegroup : IO Unit := do
   let declarationValue :=
     SyntaxTree.Tree.node (.raw `Lean.Parser.Command.declValSimple)
@@ -9306,6 +9319,7 @@ def runSyntaxTreeTests (env : Lean.Environment) : IO Unit := do
   assertOverlappingEmptySyntaxTokensRemoved env
   assertGroupedApplication env
   assertGroupedInfixChain env
+  assertDoFallbackRegrouping env
   assertDefinitionLikeCommandsRegroup
   assertDelimitedCollectionsFlattenOnlySeparatedItems
 

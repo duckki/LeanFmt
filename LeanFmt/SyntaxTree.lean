@@ -67,6 +67,8 @@ inductive NodeKind where
   | matchDiscriminants
   | matchPatterns
   | doForHeader
+  | doFallbackClause
+  | doFallbackContinuation
   | structureUpdate
   | ifThenElseClause
   | ifThenElseChain
@@ -87,6 +89,8 @@ def nodeKindName : NodeKind → String
   | .matchDiscriminants => "LeanFmt.SyntaxTree.NodeKind.matchDiscriminants"
   | .matchPatterns => "LeanFmt.SyntaxTree.NodeKind.matchPatterns"
   | .doForHeader => "LeanFmt.SyntaxTree.NodeKind.doForHeader"
+  | .doFallbackClause => "LeanFmt.SyntaxTree.NodeKind.doFallbackClause"
+  | .doFallbackContinuation => "LeanFmt.SyntaxTree.NodeKind.doFallbackContinuation"
   | .structureUpdate => "LeanFmt.SyntaxTree.NodeKind.structureUpdate"
   | .ifThenElseClause => "LeanFmt.SyntaxTree.NodeKind.ifThenElseClause"
   | .ifThenElseChain => "LeanFmt.SyntaxTree.NodeKind.ifThenElseChain"
@@ -870,6 +874,35 @@ def regroupRegisterLinterSetChildren (children : Array Tree) : Array Tree :=
       childrenRange children 0 4 ++ items ++ childrenRange children 5 children.size
   | _ => children
 
+def regroupDoFallbackChildren? (children : Array Tree) : Option (Array Tree) := do
+  let pipeIndex ←
+    children.findIdx?
+      fun child => child.firstToken?.map (fun token => token.lexeme) == some "|"
+  let fallbackIndex ←
+    (List.range' (pipeIndex + 1) (children.size - pipeIndex - 1)).find?
+      fun index => children[index]?.any fun child => child.firstToken?.isSome
+  let pipe ← children[pipeIndex]?
+  let fallback ← children[fallbackIndex]?
+  let clause := .node .doFallbackClause #[pipe, fallback]
+  let continuationChildren := childrenRange children (fallbackIndex + 1) children.size
+  let continuation :=
+    if continuationChildren.isEmpty then
+      #[]
+    else
+      #[.node .doFallbackContinuation continuationChildren]
+  some <| childrenRange children 0 pipeIndex ++ #[clause] ++ continuation
+
+def regroupDoDeclarationFallbackChildren (children : Array Tree) : Array Tree :=
+  children.foldl
+    (fun regrouped child =>
+      match child with
+      | .node (.raw `null) fallbackChildren =>
+          match regroupDoFallbackChildren? fallbackChildren with
+          | some grouped => regrouped ++ grouped
+          | none => regrouped.push child
+      | _ => regrouped.push child)
+    #[]
+
 def isIfThenElseKind (kind : SyntaxNodeKind) : Bool :=
   kind == `termIfThenElse || kind == `boolIfThenElse
 
@@ -1132,6 +1165,12 @@ def regroupRawNode (kind : SyntaxNodeKind) (children : Array Tree) : Tree :=
   else if kind == `Lean.Parser.Command.declaration then
     match regroupDeclarationChildren children with
     | some declarationChildren => .node (.raw kind) declarationChildren
+    | none => .node (.raw kind) children
+  else if kind == `Lean.Parser.Term.doIdDecl || kind == `Lean.Parser.Term.doPatDecl then
+    .node (.raw kind) (regroupDoDeclarationFallbackChildren children)
+  else if kind == `Lean.Parser.Term.doLetElse || kind == `Lean.Parser.Term.doLetExpr then
+    match regroupDoFallbackChildren? children with
+    | some grouped => .node (.raw kind) grouped
     | none => .node (.raw kind) children
   else if kind == `Lean.Parser.Term.structInst then
     .node (.raw kind) (regroupStructInstChildren children)
