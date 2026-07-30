@@ -1235,30 +1235,6 @@ def breakPointPreservesTightTokenBoundary
             && SpaceRules.preservesTightPostfixSpacing right)
   | none => true
 
-def normalizeBreakPoints
-    (segment : LineBreakRules.Segment) (breakPoints : List LineBreakRules.BreakPoint)
-    : List LineBreakRules.BreakPoint :=
-  (breakPoints.filter
-    fun breakPoint =>
-      segment.start <= breakPoint.index
-      && breakPoint.index < segment.stop
-      && breakPointPreservesTightTokenBoundary segment breakPoint)
-  |>.mergeSort fun left right => left.index < right.index
-
-def ruleBreakPoints
-    (context : LineBreakRules.RuleContext) (segment : LineBreakRules.Segment)
-    (rule : LineBreakRules.LineBreakRule)
-    : List LineBreakRules.BreakPoint :=
-  normalizeBreakPoints segment (rule.breakPoints context segment)
-
-def sourceBreaksAllowedByBreakPoints
-    (source : String) (segment : LineBreakRules.Segment)
-    (breakPoints : List LineBreakRules.BreakPoint)
-    : List SourceBreak :=
-  (sourceBreaksInSegment source segment).filter
-    fun sourceBreak =>
-      breakPoints.any fun breakPoint => breakPoint.index == sourceBreak.index
-
 def interveningCommentLineBreakAt
     (source : String) (segment : LineBreakRules.Segment) (index : Nat)
     : Bool :=
@@ -1270,29 +1246,41 @@ def interveningCommentLineBreakAt
       && SpaceRules.hasLineStructure (SpaceRules.interTokenWhitespace source left right)
   | none => false
 
-def activeCommentBreakPoints
-    (source : String) (context : LineBreakRules.RuleContext)
-    (segment : LineBreakRules.Segment) (rule : LineBreakRules.LineBreakRule)
-    : List LineBreakRules.BreakPoint :=
-  let candidates := rule.commentBreakPoints context segment
-  if candidates.isEmpty then
-    []
-  else
-    normalizeBreakPoints segment candidates
-    |>.filter
-        fun breakPoint =>
-          interveningCommentLineBreakAt source segment breakPoint.index
+def breakPointConditionHolds
+    (source : String) (segment : LineBreakRules.Segment)
+    (breakPoint : LineBreakRules.BreakPoint)
+    : Bool :=
+  match breakPoint.condition with
+  | .always => true
+  | .interveningCommentLine =>
+      interveningCommentLineBreakAt source segment breakPoint.index
 
-def activeRuleBreakPoints
-    (source : String) (context : LineBreakRules.RuleContext)
-    (segment : LineBreakRules.Segment) (rule : LineBreakRules.LineBreakRule)
+def normalizeBreakPoints
+    (source : String) (segment : LineBreakRules.Segment)
     (breakPoints : List LineBreakRules.BreakPoint)
     : List LineBreakRules.BreakPoint :=
-  let commentBreakPoints := activeCommentBreakPoints source context segment rule
-  if commentBreakPoints.isEmpty then
-    breakPoints
-  else
-    normalizeBreakPoints segment (breakPoints ++ commentBreakPoints)
+  (breakPoints.filter
+    fun breakPoint =>
+      segment.start <= breakPoint.index
+      && breakPoint.index < segment.stop
+      && breakPointConditionHolds source segment breakPoint
+      && breakPointPreservesTightTokenBoundary segment breakPoint)
+  |>.mergeSort fun left right => left.index < right.index
+
+def ruleBreakPoints
+    (source : String) (context : LineBreakRules.RuleContext)
+    (segment : LineBreakRules.Segment)
+    (rule : LineBreakRules.LineBreakRule)
+    : List LineBreakRules.BreakPoint :=
+  normalizeBreakPoints source segment (rule.breakPoints context segment)
+
+def sourceBreaksAllowedByBreakPoints
+    (source : String) (segment : LineBreakRules.Segment)
+    (breakPoints : List LineBreakRules.BreakPoint)
+    : List SourceBreak :=
+  (sourceBreaksInSegment source segment).filter
+    fun sourceBreak =>
+      breakPoints.any fun breakPoint => breakPoint.index == sourceBreak.index
 
 def childStartsWithCommentedDelimiter
     (source : String) (segment : LineBreakRules.Segment) (index : Nat)
@@ -1345,9 +1333,7 @@ def segmentHasAllowedSourceBreaks
     (segment : LineBreakRules.Segment)
     : Bool :=
   let rule := LineBreakRules.formattingRuleFor segment.parent
-  let breakPoints :=
-    activeRuleBreakPoints source context segment rule
-      (ruleBreakPoints context segment rule)
+  let breakPoints := ruleBreakPoints source context segment rule
   rule.useExistingBreaks context segment
   && !(sourceBreaksAllowedByBreakPoints source segment breakPoints).isEmpty
 
@@ -1744,7 +1730,7 @@ mutual
       | some prepared => prepared
       | none =>
           let rule := LineBreakRules.formattingRuleFor segment.parent
-          (rule, ruleBreakPoints state.context segment rule)
+          (rule, ruleBreakPoints state.source state.context segment rule)
     let tailIndentationStop? :=
       match segment.parent with
       | .node _ children =>
@@ -1823,8 +1809,6 @@ mutual
       (rule : LineBreakRules.LineBreakRule)
       (breakPoints : List LineBreakRules.BreakPoint)
       : RenderState :=
-    let breakPoints :=
-      activeRuleBreakPoints state.source state.context segment rule breakPoints
     let isFlow := rule.flow state.context segment
     let useExistingBreaks := rule.useExistingBreaks state.context segment
     if rule.atomic then
@@ -1948,7 +1932,10 @@ mutual
     let childSegment := LineBreakRules.Segment.ofTree child
     let childRule := LineBreakRules.formattingRuleFor child
     let childBreakPoints :=
-      if emitOriginal then [] else ruleBreakPoints childContext childSegment childRule
+      if emitOriginal then
+        []
+      else
+        ruleBreakPoints state.source childContext childSegment childRule
     let inheritsBase := childRule.inheritBase childContext childSegment
     let startAlignment := childRule.startAlignment childContext childSegment
     let suffixStop := suffixStop?.getD segment.stop
