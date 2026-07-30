@@ -2522,6 +2522,28 @@ def assertMovedProofLayoutIslandKeepsContinuationIndentation (env : Lean.Environ
   assertEq "later proof-lambda application is idempotent"
     laterLambdaResult.formatted laterLambdaAgain
 
+  let shiftedNestedSource :=
+    "def shiftedNestedProofApplication := fun s =>\n"
+    ++ "  outer s\n"
+    ++ "  (fun l => value l) fun l₁ l₂ h =>\n"
+    ++ "    Function.hfunext (propext h.nodup_iff) fun h₁ h₂ _he =>\n"
+    ++ "      Function.hfunext rfl fun x y hxy =>\n"
+    ++ "        Function.hfunext (propext (by rw [eq_of_heq hxy]; simpa [eq_of_heq hxy] using h.mem_iff))\n"
+    ++ "  fun hm => equal\n"
+    ++ "    (by rw [heq_iff_eq] at hxy; simpa using result)\n"
+  let shiftedNestedResult ←
+    Formatter.formatSourceWithEnvDetailed env shiftedNestedSource
+      "shifted-nested-proof-application.lean" { lineWidth := 100 }
+  assertTrue "shifted nested proof application does not fall back"
+    (!shiftedNestedResult.fellBack)
+  assertTrue "shifted nested proof application stays within width"
+    (Formatter.linesFit shiftedNestedResult.formatted 100)
+  let shiftedNestedAgain ←
+    Formatter.formatSourceWithEnv env shiftedNestedResult.formatted
+      "shifted-nested-proof-application-formatted.lean" { lineWidth := 100 }
+  assertEq "shifted nested proof application is idempotent"
+    shiftedNestedResult.formatted shiftedNestedAgain
+
   let whereSource :=
     "def proofLayoutBodyAfterSourceBrokenHeader :\n"
     ++ "    VeryLongResultTypeNameWithEnoughCharactersToKeepTheDeclarationHeaderBroken where\n"
@@ -8926,6 +8948,22 @@ def assertApplicationFitCountsFromSuffix (env : Lean.Environment) : IO Unit := d
     (Formatter.linesFit formatted 100)
   assertTextContains "show application breaks before overflowing final argument"
     formatted "\n        x from"
+  let protectedProofSource :=
+    "def protectedProofApplication :=\n"
+    ++ "  fun first =>\n"
+    ++ "    fun second =>\n"
+    ++ "      Function.hfunext (propext (by rw [eq_of_heq hxy]; simpa [eq_of_heq hxy] using h.mem_iff))\n"
+  let protectedProofExpected :=
+    "def protectedProofApplication :=\n"
+    ++ "  fun first =>\n"
+    ++ "    fun second =>\n"
+    ++ "      Function.hfunext\n"
+    ++ "        (propext (by rw [eq_of_heq hxy]; simpa [eq_of_heq hxy] using h.mem_iff))\n"
+  let protectedProofFormatted ←
+    Formatter.formatSourceWithEnv env protectedProofSource
+      "application-protected-proof-fit.lean" { lineWidth := 90 }
+  assertEq "application fit includes a protected proof argument"
+    protectedProofExpected protectedProofFormatted
 
 def assertParserStateUpdatesAfterSyntaxCommands (env : Lean.Environment) : IO Unit := do
   let source :=

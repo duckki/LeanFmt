@@ -306,7 +306,11 @@ private def isProofLayoutIsland (tree : SyntaxTree.Tree) : Bool :=
           : List SyntaxTree.Tree → Bool
         | [] => false
         | argument :: rest =>
-            (isProofLambdaTree argument && previous.any containsProofTree)
+            (isProofLambdaTree argument
+              && previous.any
+                  fun previousArgument =>
+                    containsProofTree previousArgument
+                    && treeHasInternalLineBreakTrivia previousArgument)
             || laterArgumentHasProofLambda (argument :: previous) rest
       match children.toList.drop 1 with
       | [] => false
