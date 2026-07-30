@@ -3766,6 +3766,7 @@ def ruleFor : SyntaxTree.Tree → Option LineBreakRule
   | .node (.raw `TopCat.Presheaf.attrSheaf_restrict_1) _ => some defaultRule
   | .node (.raw `aliasIn) _ => some defaultRule
   | .node (.raw `Mathlib.Tactic.TermCongr.termCongr) _ => some defaultRule
+  | .node (.raw `Mathlib.Tactic.dsimpPercent) _ => some defaultRule
   | .node (.raw `Mathlib.Meta.FunProp.funPropTacStx) _ => some defaultRule
   | .node (.raw `Lean.Parser.Command.registerTryTactic) _ => some defaultRule
   | .node (.raw `Mathlib.PPWithUniv.ppWithUnivAttr) _ => some defaultRule

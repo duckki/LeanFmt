@@ -203,6 +203,7 @@ private def isLayoutSensitiveCommand : SyntaxTree.Tree → Bool
   | _ => false
 
 private def isMathlibTacticSyntaxTree : SyntaxTree.Tree → Bool
+  | .node (.raw `Mathlib.Tactic.dsimpPercent) _ => false
   | .node kind _ =>
       (SyntaxTree.nodeKindName kind).startsWith "Mathlib.Tactic."
   | _ => false

@@ -8307,6 +8307,7 @@ def assertMathlibLowRiskSyntaxKindsHaveRules : IO Unit := do
       `Mathlib.Tactic.GCongr.gcongrAttr,
       `Mathlib.Tactic.Monotonicity.Attr.mono,
       `Mathlib.Tactic.TermCongr.termCongr,
+      `Mathlib.Tactic.dsimpPercent,
       `Mathlib.PPWithUniv.ppWithUnivAttr,
       `Mathlib.Elab.FastInstance.fastInstance,
       `Mathlib.ProxyType.proxy_equiv,
@@ -8641,6 +8642,29 @@ def assertMathlibLowRiskSyntaxKindsHaveRules : IO Unit := do
     (Formatter.OriginalTree.shouldEmit tacticTree)
   assertTrue "mathlib tactic syntax is skipped by missing-rule reporting"
     (Formatter.Diagnostics.missingRuleOccurrences "" none tacticTree).isEmpty
+  let dsimpPercentTree :=
+    SyntaxTree.Tree.node (.raw `Mathlib.Tactic.dsimpPercent)
+      #[
+        .leaf (syntheticAtomToken "dsimp%"),
+        .node (.raw `Lean.Parser.Tactic.optConfig) #[],
+        .missing,
+        .missing,
+        .missing,
+        .node (.infixChain `«term_=_»)
+          #[
+            .leaf (syntheticAtomToken "left"),
+            .leaf (syntheticAtomToken "="),
+            .leaf (syntheticAtomToken "right")
+          ]
+      ]
+  assertTrue "dsimp-percent terms use structural formatting"
+    (!Formatter.OriginalTree.shouldEmit dsimpPercentTree)
+  match Formatter.LineBreakRules.ruleFor dsimpPercentTree with
+  | some rule =>
+      let segment := Formatter.LineBreakRules.Segment.ofTree dsimpPercentTree
+      assertTrue "dsimp-percent terms can break before their wrapped term"
+        (rule.breakPoints {} segment == [{ index := 5, indentLevels := 1 }])
+  | none => throw <| IO.userError "dsimp-percent term has no formatting rule"
   let qqTermTree := SyntaxTree.Tree.node (.raw `Qq.«termQ(__)») #[]
   assertTrue "Qq term quotation keeps original formatting"
     (Formatter.OriginalTree.shouldEmit qqTermTree)
