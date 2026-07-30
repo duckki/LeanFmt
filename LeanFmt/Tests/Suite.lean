@@ -355,6 +355,32 @@ def assertIndentedCommentTriviaDoesNotPadBlankLines : IO Unit := do
   let overflowingTrivia := "\n    " ++ comment ++ "xx\n    "
   assertTrue "existing comment overflow is not disguised by deindentation"
     (Formatter.SpaceRules.commentIndentForWidth overflowingTrivia 12 100 == 12)
+  assertTrue "line comments force the following line break"
+    (Formatter.SpaceRules.commentForcesLineBreak " -- explanation\n  ")
+  assertTrue "multiline block comments force a line break"
+    (Formatter.SpaceRules.commentForcesLineBreak " /- first\nsecond -/ ")
+  assertTrue "nested multiline block comments force a line break"
+    (Formatter.SpaceRules.commentForcesLineBreak
+      " /- outer /- nested\ncomment -/ end -/ ")
+  assertTrue "single-line block comments can fit inline"
+    (!Formatter.SpaceRules.commentForcesLineBreak
+      "\n  /- internal  spacing stays exact -/\n  ")
+  assertEq "inline block comments preserve contents and collapse exterior whitespace"
+    " /- internal  spacing stays exact -/ "
+    (Formatter.SpaceRules.inlineCommentTrivia
+      "\n  /- internal  spacing stays exact -/\n  ")
+
+def assertOnlyIntrinsicCommentLinesForceBreaks (env : Lean.Environment) : IO Unit := do
+  let source :=
+    "def addWithComment : Nat := 1\n" ++ "  /- internal  spacing stays exact -/ + 2\n"
+    ++ "\n" ++ "def addWithMultilineComment : Nat := 1 /- first\n" ++ "  second -/ + 2\n"
+  let expected :=
+    "def addWithComment : Nat := 1 /- internal  spacing stays exact -/ + 2\n"
+    ++ "\n" ++ "def addWithMultilineComment : Nat := 1 /- first\n" ++ "  second -/ + 2\n"
+  let formatted ← Formatter.formatSourceWithEnv env source "intrinsic-comment-breaks.lean"
+  assertEq "only intrinsic comment lines force renderer breaks" expected formatted
+  assertTrue "inline and multiline comment formatting preserves code"
+    (← codePreservedIgnoringWhitespace env source formatted)
 
 def assertMovedStandaloneCommentsKeepSiblingIndent (env : Lean.Environment)
     : IO Unit := do
@@ -9289,6 +9315,7 @@ def runBasicFormattingTests (env : Lean.Environment) : IO Unit := do
   assertPostfixSuperscriptSpacingPreservesParse env
   assertBlockCommentInternalWhitespacePreservedByFormatting env
   assertIndentedCommentTriviaDoesNotPadBlankLines
+  assertOnlyIntrinsicCommentLinesForceBreaks env
   assertMovedStandaloneCommentsKeepSiblingIndent env
   assertAtomicTokenRetainsFittingSourceColumn env
   assertDoBodyRetainsSourceLayoutToAvoidOverflow env

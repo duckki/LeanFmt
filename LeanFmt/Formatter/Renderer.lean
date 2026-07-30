@@ -1241,9 +1241,7 @@ def interveningCommentLineBreakAt
   match tokenBoundaryAt? segment index with
   | some (left, right) =>
       let originalTrivia := SyntaxTree.sourceText source left.span.stop right.span.start
-      SpaceRules.hasCommentStart originalTrivia
-      && SpaceRules.hasLineStructure originalTrivia
-      && SpaceRules.hasLineStructure (SpaceRules.interTokenWhitespace source left right)
+      SpaceRules.commentForcesLineBreak originalTrivia
   | none => false
 
 def breakPointConditionHolds

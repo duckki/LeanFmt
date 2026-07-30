@@ -69,30 +69,52 @@ partial def takeBlockCommentTriviaAux (depth : Nat) (reversed : List Char)
 def pushNonemptyString (text : String) (pieces : List String) : List String :=
   if text.isEmpty then pieces else text :: pieces
 
-partial def cleanTriviaAux (outsideReversed : List Char) (piecesReversed : List String)
+def collapseWhitespaceTrivia (text : String) : String :=
+  if text.isEmpty then "" else " "
+
+partial def normalizeTriviaAux
+    (normalizeWhitespace : String → String)
+    (outsideReversed : List Char) (piecesReversed : List String)
     : List Char → List String
   | [] =>
       (pushNonemptyString
-        (cleanWhitespaceTrivia <| String.ofList outsideReversed.reverse)
+        (normalizeWhitespace <| String.ofList outsideReversed.reverse)
         piecesReversed).reverse
   | '-' :: '-' :: rest =>
-      let outside := cleanWhitespaceTrivia <| String.ofList outsideReversed.reverse
+      let outside := normalizeWhitespace <| String.ofList outsideReversed.reverse
       let (comment, rest) := takeLineCommentTriviaAux ['-', '-'] rest
       let piecesReversed :=
         pushNonemptyString (String.ofList comment)
         <| pushNonemptyString outside piecesReversed
-      cleanTriviaAux [] piecesReversed rest
+      normalizeTriviaAux normalizeWhitespace [] piecesReversed rest
   | '/' :: '-' :: rest =>
-      let outside := cleanWhitespaceTrivia <| String.ofList outsideReversed.reverse
+      let outside := normalizeWhitespace <| String.ofList outsideReversed.reverse
       let (comment, rest) := takeBlockCommentTriviaAux 1 ['-', '/'] rest
       let piecesReversed :=
         pushNonemptyString (String.ofList comment)
         <| pushNonemptyString outside piecesReversed
-      cleanTriviaAux [] piecesReversed rest
-  | char :: rest => cleanTriviaAux (char :: outsideReversed) piecesReversed rest
+      normalizeTriviaAux normalizeWhitespace [] piecesReversed rest
+  | char :: rest =>
+      normalizeTriviaAux normalizeWhitespace (char :: outsideReversed) piecesReversed rest
 
 def cleanTrivia (text : String) : String :=
-  String.join <| cleanTriviaAux [] [] (normalizeLineEndings text).toList
+  String.join
+  <| normalizeTriviaAux cleanWhitespaceTrivia [] [] (normalizeLineEndings text).toList
+
+def inlineCommentTrivia (text : String) : String :=
+  String.join
+  <| normalizeTriviaAux collapseWhitespaceTrivia [] [] (normalizeLineEndings text).toList
+
+partial def commentForcesLineBreakAux : List Char → Bool
+  | '-' :: '-' :: _ => true
+  | '/' :: '-' :: rest =>
+      let (comment, rest) := takeBlockCommentTriviaAux 1 ['-', '/'] rest
+      (String.ofList comment).contains '\n' || commentForcesLineBreakAux rest
+  | _ :: rest => commentForcesLineBreakAux rest
+  | [] => false
+
+def commentForcesLineBreak (text : String) : Bool :=
+  commentForcesLineBreakAux (normalizeLineEndings text).toList
 
 def stripLeadingHorizontalWhitespace (line : String) : String :=
   (line.dropWhile isHorizontalWhitespace).toString
@@ -358,7 +380,10 @@ def interTokenWhitespace
     : String :=
   let trivia := SyntaxTree.sourceText source left.span.stop right.span.start
   if hasCommentStart trivia then
-    cleanTrivia trivia
+    if preserveLines || commentForcesLineBreak trivia then
+      cleanTrivia trivia
+    else
+      inlineCommentTrivia trivia
   else if (isCommentLexeme left.lexeme || isCommentLexeme right.lexeme)
           && hasLineStructure trivia then
     cleanTrivia trivia
