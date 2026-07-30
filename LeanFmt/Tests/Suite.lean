@@ -2463,6 +2463,34 @@ def assertDetachedInlineProofBodyKeepsInternalIndentation (env : Lean.Environmen
       "detached-inline-proof-body-formatted.lean" { lineWidth := 100 }
   assertEq "detached inline proof body is idempotent" formatted formattedAgain
 
+def assertShowProofAfterMovedLambdaIsIdempotent (env : Lean.Environment) : IO Unit := do
+  let source :=
+    "theorem showProofAfterMovedLambda : True :=\n"
+    ++ "  longApplicationNameWithEnoughCharactersToForceItsArgumentsOntoSeparateLines\n"
+    ++ "    firstArgumentWithEnoughCharactersToForceAnotherLine\n"
+    ++ "    fun {x y} hxy =>\n"
+    ++ "    show True by\n"
+    ++ "      exact True.intro\n"
+  let expected :=
+    "theorem showProofAfterMovedLambda : True :=\n"
+    ++ "  longApplicationNameWithEnoughCharactersToForceItsArgumentsOntoSeparateLines\n"
+    ++ "    firstArgumentWithEnoughCharactersToForceAnotherLine\n"
+    ++ "    fun {x y} hxy =>\n"
+    ++ "      show True by\n"
+    ++ "        exact True.intro\n"
+  let result ←
+    Formatter.formatSourceWithEnvDetailed env source
+      "show-proof-after-moved-lambda.lean" { lineWidth := 100 }
+  assertTrue "show proof after moved lambda does not fall back" (!result.fellBack)
+  assertEq "show proof after moved lambda uses its formatted boundary"
+    expected result.formatted
+  assertTrue "show proof after moved lambda preserves code"
+    (← codePreservedIgnoringWhitespace env source result.formatted)
+  let formattedAgain ←
+    Formatter.formatSourceWithEnv env result.formatted
+      "show-proof-after-moved-lambda-formatted.lean" { lineWidth := 100 }
+  assertEq "show proof after moved lambda is idempotent" result.formatted formattedAgain
+
 def assertShowProofTermUntouched (env : Lean.Environment) : IO Unit := do
   let source := "#check (show True by\n" ++ "  trivial)\n"
   let formatted ← Formatter.formatSourceWithEnv env source "show-proof-term.lean"
@@ -9018,6 +9046,7 @@ def runBasicFormattingTests (env : Lean.Environment) : IO Unit := do
   assertMovedChildrenUseLogicalLayoutBases env
   assertMovedInlineProofBodiesRemainParseable env
   assertDetachedInlineProofBodyKeepsInternalIndentation env
+  assertShowProofAfterMovedLambdaIsIdempotent env
   assertShowProofTermUntouched env
   assertTheoremTermProofBodyUntouched env
   assertTheoremEquationProofBodyUntouched env

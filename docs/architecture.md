@@ -746,9 +746,11 @@ that result and passes it into emission instead of repeating the protected-tree 
 Its renderer-facing API returns the planned text, final token, and the one
 comment-boundary flag needed by subsequent ordinary rendering; it does not own or mutate
 renderer state. When the renderer reaches a recognized proof or attribute node, it
-applies that plan. A protected
-subtree that begins on a new source line inherits the source-to-output layout-base
-translation established by its enclosing formatted segment. The output-side anchor is
+applies that plan. If the renderer has already formatted the boundary before an island,
+that boundary's output column is final; original-tree emission rebases only the island's
+source slice and must not apply the source-to-output shift to the boundary again.
+A protected subtree that begins on a new source line inherits the source-to-output
+layout-base translation established by its enclosing formatted segment. The output-side anchor is
 the column where that segment actually starts, including when a child that began a source
 line now follows a formatted prefix such as `:`. Every protected line moves by the same
 delta. A proof island normally cannot move left of its structural proof indentation,

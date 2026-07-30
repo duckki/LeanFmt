@@ -578,9 +578,12 @@ private def emitRebased? (request : EmissionRequest) (tree : SyntaxTree.Tree)
   let leading :=
     match targetColumn? with
     | some targetColumn =>
-        rebaseTextIndent
-          (if usesPendingIndent then leadingColumn else sourceColumn)
-          targetColumn leading
+        let sourceColumn :=
+          if request.formattedLeadingWhitespace?.isSome || usesPendingIndent then
+            leadingColumn
+          else
+            sourceColumn
+        rebaseTextIndent sourceColumn targetColumn leading
     | none => leading
   let sourceTextRebase? :=
     match inlineContinuationColumns?,
