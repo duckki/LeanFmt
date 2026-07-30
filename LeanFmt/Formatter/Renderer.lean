@@ -1965,6 +1965,8 @@ mutual
           else
             none
     let parentRelativeOriginalColumn? := sourceLayoutStart?.map (·.2)
+    let formatLeadingBoundary :=
+      formatOriginalChildLeadingBoundary state.context segment index
     let state :=
       match state.pendingIndent?, firstToken? with
       | some desiredIndent, some firstToken =>
@@ -2074,14 +2076,21 @@ mutual
         childState.extendTailIndentation childSegment anchorIndentation
       else
         childState
+    let emitOriginalAt
+        (respectPendingIndent : Bool)
+        (targetColumn? : Option Nat)
+        (classification? : Option OriginalTree.LayoutIslandKind)
+        : RenderState :=
+      childState.emitOriginalTree child
+        (formatLeadingBoundary := formatLeadingBoundary)
+        (respectPendingIndent := respectPendingIndent)
+        (rebaseSourceTextTargetColumn? := targetColumn?)
+        (classification? := classification?)
     let rendered :=
       if emitOriginal then
-        childState.emitOriginalTree child
-          (formatLeadingBoundary :=
-            formatOriginalChildLeadingBoundary state.context segment index)
-          (respectPendingIndent :=
-            !startsOnNewSourceLine || state.pendingCommandBoundary?.isSome)
-          (classification? := originalClassification?)
+        emitOriginalAt
+          (!startsOnNewSourceLine || state.pendingCommandBoundary?.isSome)
+          none originalClassification?
       else
         renderSegment childState childSegment (some (childRule, childBreakPoints))
     let rendered :=
@@ -2112,17 +2121,13 @@ mutual
         | none => rendered
         | some targetColumn =>
             let original :=
-              childState.emitOriginalTree child
-                (formatLeadingBoundary :=
-                  formatOriginalChildLeadingBoundary state.context segment index)
-                (respectPendingIndent := true)
-                (rebaseSourceTextTargetColumn? := some targetColumn)
-                (classification? := originalClassification?)
+              emitOriginalAt true (some targetColumn) originalClassification?
             preferCandidateWithFewerOverflows childState rendered original
+    let introducedAtomicOverflow :=
+      rendered.introducedAtomicOverflowCount != childState.introducedAtomicOverflowCount
     let rendered :=
       if emitOriginal
-          || rendered.introducedAtomicOverflowCount
-              == childState.introducedAtomicOverflowCount
+          || !introducedAtomicOverflow
           || !LineBreakRules.canRetainParentRelativeOriginalLayoutForOverflow
                 childContext child then
         rendered
@@ -2130,17 +2135,11 @@ mutual
         match parentRelativeOriginalColumn? with
         | none => rendered
         | some targetColumn =>
-            let original :=
-              childState.emitOriginalTree child
-                (formatLeadingBoundary :=
-                  formatOriginalChildLeadingBoundary state.context segment index)
-                (respectPendingIndent := true)
-                (rebaseSourceTextTargetColumn? := some targetColumn)
+            let original := emitOriginalAt true (some targetColumn) none
             preferCandidateWithFewerOverflows childState rendered original
     let rendered :=
       if emitOriginal
-          || rendered.introducedAtomicOverflowCount
-              == childState.introducedAtomicOverflowCount
+          || !introducedAtomicOverflow
           || !LineBreakRules.canRetainOriginalLayoutForOverflow childContext child then
         rendered
       else
@@ -2152,12 +2151,7 @@ mutual
         if targetColumn? == parentRelativeOriginalColumn? then
           rendered
         else
-          let original :=
-            childState.emitOriginalTree child
-              (formatLeadingBoundary :=
-                formatOriginalChildLeadingBoundary state.context segment index)
-              (respectPendingIndent := true)
-              (rebaseSourceTextTargetColumn? := targetColumn?)
+          let original := emitOriginalAt true targetColumn? none
           preferCandidateWithFewerOverflows childState rendered original
     scope.restore rendered
 
