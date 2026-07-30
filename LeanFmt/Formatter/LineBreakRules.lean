@@ -122,12 +122,6 @@ def RuleContext.parentIsSingletonArrayItemWrapper (context : RuleContext) : Bool
       && grandparent.childIndex == 1
   | _ => false
 
-def RuleContext.parentIsStructureWhereWrapper (context : RuleContext) : Bool :=
-  match context.ancestors with
-  | parent :: _ =>
-      parent.rawKind? == some `Lean.Parser.Command.structure && parent.childIndex == 4
-  | _ => false
-
 def RuleContext.parentIsCommandBinderList (context : RuleContext) : Bool :=
   match context.ancestors with
   | parent :: _ =>
@@ -165,7 +159,6 @@ def defaultInheritBase (context : RuleContext) (segment : Segment) : Bool :=
   || (segment.rawKind? == some `null && context.parentIsStructureFieldDefaultValue)
   || (segment.rawKind? == some `Lean.Parser.Term.binderDefault
       && context.parentWrapsStructureFieldDefaultValue)
-  || (segment.rawKind? == some `null && context.parentIsStructureWhereWrapper)
   || (segment.rawKind? == some `null
       && context.parentRawKind? == some `Lean.Parser.Term.doReturn)
 
@@ -203,7 +196,6 @@ structure LineBreakRule where
   mandatory : RuleContext → Segment → Bool := fun _ _ => false
   flow : RuleContext → Segment → Bool := fun _ _ => false
   inheritBase : RuleContext → Segment → Bool := defaultInheritBase
-  preserveBaseAfterBreak : RuleContext → Segment → Bool := fun _ _ => false
   liftsTailIndentation : RuleContext → Segment → Bool := fun _ _ => false
   startAlignment : RuleContext → Segment → StartAlignment := fun _ _ => .none
   roundUpBaseIndentation : Bool := false
@@ -954,43 +946,22 @@ def declarationModifierBreaks (_context : RuleContext) (segment : Segment)
   | _ :: rest =>
       rest.filterMap fun index => boundaryBreak? segment index 0
 
-def structureBreaks (context : RuleContext) (segment : Segment) : List BreakPoint :=
-  let annotationBreaks := leadingAnnotationBreaks context segment
-  let extendsBreak :=
-    match breakBeforeLexeme? segment "extends" 2 with
-    | some breakPoint => [breakPoint]
-    | none => []
-  let fieldsBreak :=
-    match firstChildRawKind? segment `Lean.Parser.Command.structFields with
-    | some index =>
-        match boundaryBreak? segment index 1 with
-        | some breakPoint => [breakPoint]
-        | none => []
-    | none => []
-  annotationBreaks ++ extendsBreak ++ fieldsBreak ++ derivingBreaks context segment
+def structureHeaderBreaks (_context : RuleContext) (segment : Segment)
+    : List BreakPoint :=
+  [breakBeforeLexeme? segment "extends" 2].filterMap id
 
 def structFieldsBreaks (_context : RuleContext) (segment : Segment) : List BreakPoint :=
   match leadingBreak? segment segment.start 1 with
   | some breakPoint => [breakPoint]
   | none => []
 
-def structureWhereFieldBreaks (context : RuleContext) (segment : Segment)
+def structureConstructorBreaks (_context : RuleContext) (segment : Segment)
     : List BreakPoint :=
-  if context.parentIsStructureWhereWrapper then
-    let hasConstructor :=
-      treeContainsRawKind `Lean.Parser.Command.structCtor segment.parent
-    let firstBreak :=
-      [breakAfterLexeme? segment "where" (if hasConstructor then 1 else 0)].filterMap id
-    let fieldsBreak :=
-      if hasConstructor then
-        match firstChildRawKind? segment `Lean.Parser.Command.structFields with
-        | some index => [boundaryBreak? segment index 0].filterMap id
-        | none => []
-      else
-        []
-    firstBreak ++ fieldsBreak
-  else
-    []
+  [leadingBreak? segment segment.start 1].filterMap id
+
+def structureDerivingBreaks (_context : RuleContext) (segment : Segment)
+    : List BreakPoint :=
+  [leadingBreak? segment segment.start 0].filterMap id
 
 def structureFieldBreaks (context : RuleContext) (segment : Segment) : List BreakPoint :=
   if parentIsRawKind context `Lean.Parser.Command.structFields then
@@ -2138,13 +2109,6 @@ def unifConstraintsRule : LineBreakRule :=
 def structureRule : LineBreakRule :=
   {
     name := "structure"
-    preferChildLayouts :=
-      fun context segment =>
-        (breakBeforeLexeme? segment "extends" 2).isSome
-        && (derivingBreaks context segment).isEmpty
-    useExistingBreaks := fun _ _ => true
-    flow := fun context segment => !(structureBreaks context segment).isEmpty
-    preserveBaseAfterBreak := fun _ _ => true
     inheritBase :=
       fun context _ =>
         match context.ancestors with
@@ -2152,7 +2116,35 @@ def structureRule : LineBreakRule :=
             (List.range parent.childIndex).any
               fun index => parent.segment.parentChild? index |>.any treeHasContent
         | [] => false
-    breakPoints := structureBreaks
+  }
+
+def structureHeaderRule : LineBreakRule :=
+  {
+    name := "structureHeader"
+    preferChildLayouts :=
+      fun _ segment => (breakBeforeLexeme? segment "extends" 2).isSome
+    useExistingBreaks := fun _ _ => true
+    flow := fun context segment => !(structureHeaderBreaks context segment).isEmpty
+    inheritBase := fun _ _ => true
+    breakPoints := structureHeaderBreaks
+  }
+
+def structureConstructorRule : LineBreakRule :=
+  {
+    name := "structureConstructor"
+    mandatory :=
+      fun context segment => !(structureConstructorBreaks context segment).isEmpty
+    inheritBase := fun _ _ => true
+    breakPoints := structureConstructorBreaks
+  }
+
+def structureDerivingRule : LineBreakRule :=
+  {
+    name := "structureDeriving"
+    mandatory :=
+      fun context segment => !(structureDerivingBreaks context segment).isEmpty
+    inheritBase := fun _ _ => true
+    breakPoints := structureDerivingBreaks
   }
 
 def exportRule : LineBreakRule :=
@@ -2688,7 +2680,6 @@ def simpsProjectionRuleBreaks (context : RuleContext) (segment : Segment)
 
 def nullBreaks (context : RuleContext) (segment : Segment) : List BreakPoint :=
   structureFieldBreaks context segment
-  ++ structureWhereFieldBreaks context segment
   ++ structureParentBreaks context segment
   ++ structInstFieldBreaks context segment
   ++ inductiveAlternativeBreaks context segment
@@ -2715,7 +2706,6 @@ def nullBreaks (context : RuleContext) (segment : Segment) : List BreakPoint :=
 
 def nullBreaksMandatory (context : RuleContext) (segment : Segment) : Bool :=
   !(structureFieldBreaks context segment).isEmpty
-  || !(structureWhereFieldBreaks context segment).isEmpty
   || structInstFieldsMandatory context segment
   || !(inductiveAlternativeBreaks context segment).isEmpty
   || !(doSeqItemBreaks context segment).isEmpty
@@ -3820,6 +3810,9 @@ def ruleFor : SyntaxTree.Tree → Option LineBreakRule
   | .node (.raw `Lean.Parser.Command.declaration) _ => some declarationRule
   | .node .annotatedDeclaration _ => some annotatedDeclarationRule
   | .node (.raw `Lean.Parser.Command.structure) _ => some structureRule
+  | .node .structureHeader _ => some structureHeaderRule
+  | .node .structureConstructor _ => some structureConstructorRule
+  | .node .structureDeriving _ => some structureDerivingRule
   | .node (.raw `Lean.Parser.Command.export) _ => some exportRule
   | .node .definition _ => some definitionRule
   | .node (.raw `Lean.Parser.Command.definition) _ => some rawDefinitionRule

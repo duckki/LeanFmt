@@ -186,6 +186,9 @@ inductive NodeKind where
   | definition
   | annotatedDeclaration
   | signatureParameters
+  | structureHeader
+  | structureConstructor
+  | structureDeriving
   | matchDiscriminants
   | matchPatterns
   | doForHeader
@@ -234,6 +237,7 @@ Current logical regroupings are:
 | `.definition` | Definitions, abbreviations, class abbreviations, and extensible declaration commands using Lean's `declValSimple` parser need one node containing header, assignment marker, body, and suffixes. | A raw `declValSimple` wrapper is spliced wherever it occurs among the command's children, leaving `:=` immediately before the value/body. |
 | `.annotatedDeclaration` | Every command form that accepts declaration annotations forms one flow, whether it is built in, introduced by a syntax extension, nested under a command wrapper, recursive under `where`, or a named structure constructor. Source breaks are preserved; otherwise the command remains after its annotations only when the complete command fits on one physical line. The wrapper also establishes the command-line base inherited by modifier and declaration children. | Child `0` contains only the leading annotations. Any remaining modifiers and the command follow as separate children in source order. An annotation embedded in an extensible command node is extracted without changing that command's remaining child indexes. Optional wrappers around a recursive declaration's attributes are removed. Structure-constructor modifiers are separated from the constructor command so both inherit the structure field base. An inductive constructor keeps its `|` prefix outside the wrapper so annotations that follow it retain source token order. |
 | `.signatureParameters` | Parameter sequences need flow behavior at binder boundaries without forcing rules to inspect raw `null` wrappers. | Direct binder/parameter children from declaration signatures, function binders, `termination_by` parameter lambdas, and `unif_hint` commands. In a termination lambda, the final parameter and `=>` share one child so the arrow stays attached while preceding parameters flow at two indentation levels. |
+| `.structureHeader`, `.structureConstructor`, and `.structureDeriving` | A structure header may wrap before `extends`, but that continuation must not become the base inherited by constructors, fields, or `deriving`. Separate render scopes let each part own its break and indentation without renderer state exceptions. | The raw structure has a `.structureHeader` first child ending in `where`, followed by an optional `.structureConstructor`, the raw `structFields` node directly, and an optional `.structureDeriving`. The constructor and deriving wrappers contain their original regrouped syntax. |
 | `.matchDiscriminants` | Multiple match scrutinees need peer flow boundaries after commas, aligned under the first scrutinee, rather than generic nested parser wrapping. | Children of the discriminant sequence immediately before `with`, preserving alternating discriminants and commas. |
 | `.matchPatterns` | Multiple patterns in one alternative need peer/balanced wrapping rather than raw nested `null` behavior. | Pattern children from the `matchAlt` pattern wrapper, with a redundant single `null` wrapper removed. |
 | `.doForHeader` | A `for` binder and its collection need separate LHS and `in` layout without teaching the renderer about `do` syntax. | The `for` keyword and declaration children before the loop body. |
@@ -350,7 +354,6 @@ structure LineBreakRule where
   mandatory : RuleContext -> Segment -> Bool := fun _ _ => false
   flow : RuleContext -> Segment -> Bool := fun _ _ => false
   inheritBase : RuleContext -> Segment -> Bool := defaultInheritBase
-  preserveBaseAfterBreak : RuleContext -> Segment -> Bool := fun _ _ => false
   liftsTailIndentation : RuleContext -> Segment -> Bool := fun _ _ => false
   startAlignment : RuleContext -> Segment -> StartAlignment := fun _ _ => .none
   roundUpBaseIndentation : Bool := false
@@ -412,9 +415,6 @@ Rule methods mean:
   `extends ... where` clause to break.
 - `inheritBase`: this segment uses the surrounding base indentation instead of its
   rendered start column.
-- `preserveBaseAfterBreak`: a rule break schedules its continuation indentation
-  without redefining the surrounding base inherited by later children. Structure
-  headers use this so a broken `extends` clause cannot shift the `where` body.
 - `liftsTailIndentation`: while rendering every child except the final child, establish
   the indentation of the following rule boundary as that child's tail indentation.
   Infix-like and flow rules lift continuations one level beyond that tail. Rules never

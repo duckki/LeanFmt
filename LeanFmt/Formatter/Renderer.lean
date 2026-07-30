@@ -597,23 +597,11 @@ def breakIndent (baseColumn baseIndentation : Nat)
   else
     (baseIndentation + breakPoint.indentLevels) * indentationSpaces
 
-def RenderState.withBreakIndent (state : RenderState) (indent : Nat) (preserveBase : Bool)
-    : RenderState :=
-  if preserveBase then
-    {
-      state with
-        pendingIndent? := some indent
-        pendingCommandBoundary? := none
-        tailIndentation? := none
-    }
-  else
-    state.withPendingIndent indent
-
 def RenderState.withRuleBreakIndent
     (state : RenderState) (baseColumn baseIndentation : Nat)
-    (breakPoint : LineBreakRules.BreakPoint) (preserveBase : Bool)
+    (breakPoint : LineBreakRules.BreakPoint)
     : RenderState :=
-  state.withBreakIndent (breakIndent baseColumn baseIndentation breakPoint) preserveBase
+  state.withPendingIndent (breakIndent baseColumn baseIndentation breakPoint)
 
 def outputIntroducedLineBreak (before after : RenderState) : Bool :=
   before.outputLineBreakCount < after.outputLineBreakCount
@@ -1642,7 +1630,6 @@ def FlowRenderContext.withBreak
     ruleBreakBase flow.entryState flow.segment flow.rule
       entryBaseColumn entryIndentation breakPoint
   state.withRuleBreakIndent base.column base.indentation breakPoint
-    (flow.rule.preserveBaseAfterBreak state.context flow.segment)
 
 def FlowRenderContext.stateForForcedNestedChild?
     (flow : FlowRenderContext) (state : RenderState) (index : Nat)
@@ -1845,8 +1832,7 @@ mutual
       match sourceBreaksForRule? state segment rule breakPoints with
       | none => fallback ()
       | some sourceBreaks =>
-          match renderFlowSegmentWithSourceBreaks? state segment sourceBreaks
-                  (rule.preserveBaseAfterBreak state.context segment) with
+          match renderFlowSegmentWithSourceBreaks? state segment sourceBreaks with
           | some candidate =>
               if renderedCandidateFits state candidate then candidate else fallback ()
           | none => fallback ()
@@ -2181,7 +2167,6 @@ mutual
 
   partial def renderSegmentWithSourceBreaks
       (state : RenderState) (segment : LineBreakRules.Segment) (breaks : List SourceBreak)
-      (preserveBase : Bool)
       : RenderState :=
     let layout : SourceBreakLayout := { segment, breaks }
     let rec loop (state : RenderState) (index : Nat) : RenderState :=
@@ -2192,7 +2177,7 @@ mutual
             let state :=
               match layout.breakAt? index with
               | some sourceBreak =>
-                  state.withBreakIndent sourceBreak.indent preserveBase
+                  state.withPendingIndent sourceBreak.indent
               | none => state
             loop
               (renderNestedSegment state segment index child
@@ -2204,7 +2189,6 @@ mutual
 
   partial def renderFlowSegmentWithSourceBreaks?
       (state : RenderState) (segment : LineBreakRules.Segment) (breaks : List SourceBreak)
-      (preserveBase : Bool)
       : Option RenderState :=
     let layout : SourceBreakLayout := { segment, breaks }
     let rec loop (state : RenderState) (index : Nat) : Option RenderState :=
@@ -2215,7 +2199,7 @@ mutual
             let state :=
               match layout.breakAt? index with
               | some sourceBreak =>
-                  state.withBreakIndent sourceBreak.indent preserveBase
+                  state.withPendingIndent sourceBreak.indent
               | none => state
             let before := state
             let rendered :=
@@ -2239,9 +2223,7 @@ mutual
     | none =>
         none
     | some breaks =>
-        let candidate :=
-          renderSegmentWithSourceBreaks state segment breaks
-            (rule.preserveBaseAfterBreak state.context segment)
+        let candidate := renderSegmentWithSourceBreaks state segment breaks
         if renderedCandidateFits state candidate then
           some candidate
         else
@@ -2352,7 +2334,6 @@ mutual
         let base :=
           ruleBreakBase rendered segment rule entryBaseColumn entryIndentation breakPoint
         rendered.withRuleBreakIndent base.column base.indentation breakPoint
-          (rule.preserveBaseAfterBreak rendered.context segment)
       let rec renderOrdinaryPieces (state : RenderState) (start : Nat) (firstPiece : Bool)
           : List LineBreakRules.BreakPoint → RenderState
         | [] => renderPiece state start segment.stop firstPiece true

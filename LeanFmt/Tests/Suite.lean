@@ -17,6 +17,17 @@ def assertTrue (label : String) (value : Bool) : IO Unit := do
   unless value do
     throw <| IO.userError s!"assertion failed: {label}"
 
+partial def findTreeNode? (target : SyntaxTree.NodeKind)
+    : SyntaxTree.Tree → Option SyntaxTree.Tree
+  | tree@(.node kind children) =>
+      if kind == target then
+        some tree
+      else
+        children.foldl
+          (fun found child => found.orElse fun _ => findTreeNode? target child)
+          none
+  | _ => none
+
 def textContains (text needle : String) : Bool :=
   match text.splitOn needle with
   | [_] => false
@@ -2221,8 +2232,7 @@ def assertParenthesizedStructureDefaultUsesFieldBase (env : Lean.Environment)
     ++ "  inheritedField {a} u ha :=\n"
     ++ "    (by exact veryLongProofTermNameWithEnoughCharactersForBreakingAndMoreCharactersToExceedLineWidth)\n"
   let expected :=
-    "structure Child\n"
-    ++ "    extends Parent where\n"
+    "structure Child extends Parent where\n"
     ++ "  inheritedField {a} u ha :=\n"
     ++ "    (by\n"
     ++ "      exact veryLongProofTermNameWithEnoughCharactersForBreakingAndMoreCharactersToExceedLineWidth)\n"
@@ -6474,6 +6484,46 @@ def assertStructureFieldsBreakMandatory (env : Lean.Environment) : IO Unit := do
   let formatted ← Formatter.formatSourceWithEnv env source "structure-fields-break.lean"
   assertEq "structure fields break mandatory" expected formatted
 
+def assertStructureHeaderAndBodyRegrouped (env : Lean.Environment) : IO Unit := do
+  let source :=
+    "structure Child extends Parent where\n"
+    ++ "  mk' ::\n"
+    ++ "  field : Nat\n"
+    ++ "deriving Repr\n"
+  let moduleTree ←
+    SyntaxTree.parseModuleStringWithEnv env source "structure-header-body-tree.lean"
+  let structureTree ←
+    match findTreeNode? (.raw `Lean.Parser.Command.structure) moduleTree.tree with
+    | some structureTree => pure structureTree
+    | none => throw <| IO.userError "structure command was not found"
+  match structureTree with
+  | .node _ children =>
+      assertTrue "structure header is a direct child"
+        (children[0]?.any
+          fun child =>
+            match child with
+            | .node .structureHeader _ => true
+            | _ => false)
+      assertTrue "structure constructor is a direct child"
+        (children.any
+          fun child =>
+            match child with
+            | .node .structureConstructor _ => true
+            | _ => false)
+      assertTrue "structure fields are a direct child"
+        (children.any
+          fun child =>
+            match child with
+            | .node (.raw `Lean.Parser.Command.structFields) _ => true
+            | _ => false)
+      assertTrue "structure deriving clause is a direct child"
+        (children.any
+          fun child =>
+            match child with
+            | .node .structureDeriving _ => true
+            | _ => false)
+  | _ => throw <| IO.userError "structure command was not a syntax-tree node"
+
 def assertStructureFieldTypeBreakIndentation (env : Lean.Environment) : IO Unit := do
   let source :=
     "structure ResolverFixture (ObjectRef : Type := PUnit) where\n"
@@ -9565,6 +9615,7 @@ def runCollectionAndDeclarationTests (env : Lean.Environment) : IO Unit := do
   assertLongInductiveAlternativesStaySeparated env
   assertConstructorBinderContinuesFromUnbrokenPrefix env
   assertStructureFieldsBreakMandatory env
+  assertStructureHeaderAndBodyRegrouped env
   assertStructureFieldTypeBreakIndentation env
   assertStructureExtendsBreaksBeforeWhereFields env
   assertShortStructureExtendsHeaderStaysFlat env

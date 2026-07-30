@@ -64,6 +64,9 @@ inductive NodeKind where
   | definition
   | annotatedDeclaration
   | signatureParameters
+  | structureHeader
+  | structureConstructor
+  | structureDeriving
   | matchDiscriminants
   | matchPatterns
   | doForHeader
@@ -86,6 +89,9 @@ def nodeKindName : NodeKind → String
   | .definition => "LeanFmt.SyntaxTree.NodeKind.definition"
   | .annotatedDeclaration => "LeanFmt.SyntaxTree.NodeKind.annotatedDeclaration"
   | .signatureParameters => "LeanFmt.SyntaxTree.NodeKind.signatureParameters"
+  | .structureHeader => "LeanFmt.SyntaxTree.NodeKind.structureHeader"
+  | .structureConstructor => "LeanFmt.SyntaxTree.NodeKind.structureConstructor"
+  | .structureDeriving => "LeanFmt.SyntaxTree.NodeKind.structureDeriving"
   | .matchDiscriminants => "LeanFmt.SyntaxTree.NodeKind.matchDiscriminants"
   | .matchPatterns => "LeanFmt.SyntaxTree.NodeKind.matchPatterns"
   | .doForHeader => "LeanFmt.SyntaxTree.NodeKind.doForHeader"
@@ -808,18 +814,48 @@ def regroupCtor (children : Array Tree) : Tree :=
   | none =>
       .node (.raw `Lean.Parser.Command.ctor) children
 
-def regroupStructureWhereChildren (children : Array Tree) : Array Tree :=
+def regroupStructure (children : Array Tree) : Tree :=
   match children[4]? with
   | some (Tree.node (.raw `null) whereChildren) =>
-      match whereChildren[1]? with
-      | some (Tree.node (.raw `null) declarations) =>
-          children.set! 4
-          <| Tree.node (.raw `null)
-          <| childrenRange whereChildren 0 1
-              ++ declarations
-              ++ childrenRange whereChildren 2 whereChildren.size
-      | _ => children
-  | _ => children
+      match whereChildren[0]? with
+      | some whereKeyword =>
+          let header :=
+            .node .structureHeader (childrenRange children 0 4 ++ #[whereKeyword])
+          let constructor :=
+            match whereChildren[1]? with
+            | some (Tree.node (.raw `null) declarations) =>
+                if declarations.any fun child => child.firstToken?.isSome then
+                  #[.node .structureConstructor declarations]
+                else
+                  #[]
+            | some declaration =>
+                if declaration.firstToken?.isSome then
+                  #[.node .structureConstructor #[declaration]]
+                else
+                  #[]
+            | none => #[]
+          let fields :=
+            match whereChildren[2]? with
+            | some fields =>
+                if fields.firstToken?.isSome then #[fields] else #[]
+            | none => #[]
+          let trailingDeriving :=
+            match children[5]? with
+            | some clause =>
+                if clause.firstToken?.isSome then
+                  #[.node .structureDeriving #[clause]]
+                else
+                  #[]
+            | none => #[]
+          .node (.raw `Lean.Parser.Command.structure)
+          <| #[header]
+              ++ constructor
+              ++ fields
+              ++ childrenRange whereChildren 3 whereChildren.size
+              ++ trailingDeriving
+              ++ childrenRange children 6 children.size
+      | none => .node (.raw `Lean.Parser.Command.structure) children
+  | _ => .node (.raw `Lean.Parser.Command.structure) children
 
 def regroupDeclarationValueCommand (kind : SyntaxNodeKind) (children : Array Tree)
     : Tree :=
@@ -1132,7 +1168,7 @@ def regroupOtherRawNode (kind : SyntaxNodeKind) (children : Array Tree) : Tree :
   else if kind == `Lean.Parser.Command.ctor then
     regroupCtor children
   else if kind == `Lean.Parser.Command.structure then
-    .node (.raw kind) (regroupStructureWhereChildren children)
+    regroupStructure children
   else if kind == `Lean.Parser.Term.basicFun then
     match children[0]? with
     | some parameters =>
