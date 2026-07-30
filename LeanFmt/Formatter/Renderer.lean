@@ -2082,6 +2082,15 @@ mutual
       else
         renderSegment childState childSegment (some (childRule, childBreakPoints))
     let rendered :=
+      if emitOriginal
+          && OriginalTree.canUseStructuralOverflowFallback child
+          && 0 < renderedOverflowCount childState rendered then
+        let structural :=
+          renderSegment childState childSegment (some (childRule, childBreakPoints))
+        preferCandidateWithFewerOverflows childState rendered structural
+      else
+        rendered
+    let rendered :=
       if childRule.atomic && atomicTreeIntroducedOverflow childState rendered child then
         {
           rendered with

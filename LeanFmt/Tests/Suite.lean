@@ -6730,6 +6730,9 @@ def assertAnonymousConstructorBreakBalanced (env : Lean.Environment) : IO Unit :
   | some rule =>
       assertEq "anonymous constructor uses dedicated rule" "anonymousCtor" rule.name
   | none => throw <| IO.userError "anonymous constructor has no rule"
+  assertTrue "anonymous constructor original layout may fall back structurally"
+    (Formatter.OriginalTree.canUseStructuralOverflowFallback
+      <| SyntaxTree.Tree.node (.raw `Lean.Parser.Term.anonymousCtor) #[])
   let setoidSource :=
     "def stronglyConnectedSetoid : Setoid V :=\n"
     ++ "  ⟨fun a b => (Nonempty (Path a b)) ∧ (Nonempty (Path b a)), fun _ => ⟨⟨Path.nil⟩, ⟨Path.nil⟩⟩, fun ⟨hab, hba⟩ => ⟨hba, hab⟩, fun ⟨hab, hba⟩ ⟨hbc, hcb⟩ => ⟨⟨hab.some.comp hbc.some⟩, ⟨hcb.some.comp hba.some⟩⟩⟩\n"
