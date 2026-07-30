@@ -1251,6 +1251,17 @@ def assertAttributesFlowBeforeDeclarations (env : Lean.Environment) : IO Unit :=
   assertEq "multiline declarations keep attributes on separate lines"
     multilineExpected multilineFormatted
 
+  let wrappedNotationSource :=
+    "set_option linter.unusedTactic false in\n"
+    ++ "@[inherit_doc List.nil]\n"
+    ++ "notation3 (prettyPrint := false) \"c[\" (l\", \"* => foldr (h t => List.cons h t) List.nil) \"]\" =>\n"
+    ++ "  l\n"
+  let wrappedNotationFormatted ←
+    Formatter.formatSourceWithEnv env wrappedNotationSource
+      "wrapped-annotated-notation.lean" { lineWidth := 100 }
+  assertEq "wrapped custom commands preserve annotation breaks"
+    wrappedNotationSource wrappedNotationFormatted
+
   let inlineMultilineSource :=
     "@[simp] theorem inlineAnnotatedMultilineTheorem : True := by\n" ++ "  trivial\n"
   let inlineMultilineExpected :=

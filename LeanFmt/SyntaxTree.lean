@@ -728,13 +728,26 @@ def splitLeadingAnnotations? : Tree → Option (Tree × Tree)
 
 def splitDeclarationAnnotations? : Tree → Option (Tree × Tree)
   | .node kind children => do
-      let modifierIndex ←
-        children.findIdx?
-          fun child =>
-            rawKind? child == some `Lean.Parser.Command.declModifiers
-      let modifiers ← children[modifierIndex]?
-      let (annotations, remainingModifiers) ← splitLeadingAnnotations? modifiers
-      some (annotations, .node kind (children.set! modifierIndex remainingModifiers))
+      match children.findIdx?
+              fun child =>
+                rawKind? child == some `Lean.Parser.Command.declModifiers with
+      | some modifierIndex => do
+          let modifiers ← children[modifierIndex]?
+          let (annotations, remainingModifiers) ← splitLeadingAnnotations? modifiers
+          some (annotations, .node kind (children.set! modifierIndex remainingModifiers))
+      | none => do
+          if kind == .raw `null then
+            none
+          let annotationIndex ←
+            children.findIdx?
+              fun child =>
+                child.firstToken?.map (fun token => token.lexeme) == some "@["
+                && child.lastToken?.map (fun token => token.lexeme) == some "]"
+          if (previousContentIndex? children annotationIndex).isSome then
+            none
+          else
+            let annotations ← children[annotationIndex]?
+            some (annotations, .node kind (children.set! annotationIndex .missing))
   | _ => none
 
 def splitDirectCommandDocComment? : Tree → Option (Tree × Tree)
@@ -1190,8 +1203,18 @@ def regroupRawNode (kind : SyntaxNodeKind) (children : Array Tree) : Tree :=
     .node (.raw kind) (regroupWhereFinallyChildren children)
   else if kind == `Lean.Parser.Term.whereDecls then
     .node (.raw kind) (regroupWhereDeclsChildren children)
-  else
+  else if kind == `Lean.Parser.Command.declModifiers then
     .node (.raw kind) children
+  else
+    let tree := .node (.raw kind) children
+    if tree.firstToken?.map (fun token => token.lexeme) == some "@["
+        && tree.lastToken?.map (fun token => token.lexeme) == some "]" then
+      tree
+    else
+      match splitDeclarationAnnotations? tree with
+      | some (annotations, command) =>
+          annotatedDeclarationTree annotations .missing command
+      | none => tree
 
 partial def regroupTree : Tree → Tree
   | .missing => .missing
