@@ -4988,6 +4988,22 @@ def assertLineFitCountsTrailingComment (env : Lean.Environment) : IO Unit := do
   let formattedAgain ←
     Formatter.formatSourceWithEnv env formatted "line-fit-trailing-comment.lean"
   assertEq "trailing-comment fit is idempotent" formatted formattedAgain
+  let standaloneBlockSource :=
+    "def standaloneCommentAfterLet := do\n"
+    ++ "  let value :=\n"
+    ++ "    someFunction shortArgument\n"
+    ++ "  /- This standalone block comment is long enough to make the preceding expression look too wide. -/\n"
+    ++ "  pure value\n"
+  let standaloneBlockExpected :=
+    "def standaloneCommentAfterLet := do\n"
+    ++ "  let value := someFunction shortArgument\n"
+    ++ "  /- This standalone block comment is long enough to make the preceding expression look too wide. -/\n"
+    ++ "  pure value\n"
+  let standaloneBlockFormatted ←
+    Formatter.formatSourceWithEnv env standaloneBlockSource
+      "line-fit-standalone-block-comment.lean" { lineWidth := 60 }
+  assertEq "standalone block comment does not contribute to the preceding line fit"
+    standaloneBlockExpected standaloneBlockFormatted
 
 def assertColumnIndentationIsConservative : IO Unit := do
   assertTrue "column 3 needs only one indentation level"

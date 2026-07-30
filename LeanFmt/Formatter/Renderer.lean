@@ -958,7 +958,7 @@ def SuffixState.appendCommentTriviaBeforeToken
     | some left =>
         SyntaxTree.sourceText state.whitespaceState.source left.span.stop token.span.start
     | none => token.leading.text
-  if SpaceRules.hasCommentStart trivia then
+  if SpaceRules.hasCommentStart trivia && !commentTriviaStartsOnNewLine trivia then
     (state.appendText (state.whitespaceState.defaultWhitespace token false)).1
   else
     state
