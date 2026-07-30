@@ -264,6 +264,9 @@ private partial def containsProofTree : SyntaxTree.Tree → Bool
   | tree@(.node _ children) =>
       isProofTree tree || children.any containsProofTree
 
+private def isProofLambdaTree (tree : SyntaxTree.Tree) : Bool :=
+  LineBreakRules.treeFirstLexeme? tree == some "fun" && containsProofTree tree
+
 private def isDefinitionContainingQuotation (tree : SyntaxTree.Tree) : Bool :=
   match tree with
   | .node .definition _ => containsQuotationOutsideProofTree tree
@@ -284,11 +287,16 @@ private def isQuotationLayoutIsland (tree : SyntaxTree.Tree) : Bool :=
 private def isProofLayoutIsland (tree : SyntaxTree.Tree) : Bool :=
   match tree with
   | .node .application children =>
-      match children[1]? with
-      | some argument =>
-          LineBreakRules.treeFirstLexeme? argument == some "fun"
-          && containsProofTree argument
-      | none => false
+      let rec laterArgumentHasProofLambda (previous : List SyntaxTree.Tree)
+          : List SyntaxTree.Tree → Bool
+        | [] => false
+        | argument :: rest =>
+            (isProofLambdaTree argument && previous.any containsProofTree)
+            || laterArgumentHasProofLambda (argument :: previous) rest
+      match children.toList.drop 1 with
+      | [] => false
+      | first :: rest =>
+          isProofLambdaTree first || laterArgumentHasProofLambda [first] rest
   | .node (.raw `Lean.Parser.Command.declValEqns) _ =>
       containsProofTree tree
   | .node (.raw `Lean.Parser.Term.structInst) _ =>

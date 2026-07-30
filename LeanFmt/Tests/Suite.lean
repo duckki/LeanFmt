@@ -2499,6 +2499,29 @@ def assertMovedProofLayoutIslandKeepsContinuationIndentation (env : Lean.Environ
       "moved-proof-layout-island-formatted.lean" { lineWidth := 100 }
   assertEq "moved proof-layout island is idempotent" result.formatted formattedAgain
 
+  let laterLambdaSource :=
+    "def laterProofLambda :=\n"
+    ++ "  build\n"
+    ++ "    ({ value := 0\n"
+    ++ "       proof := by\n"
+    ++ "         exact proof })\n"
+    ++ "  fun x =>\n"
+    ++ "    { value := x + x + x + x + x + x + x + x + x + x\n"
+    ++ "      proof := by\n"
+    ++ "        exact proof }\n"
+  let laterLambdaResult ←
+    Formatter.formatSourceWithEnvDetailed env laterLambdaSource
+      "later-proof-lambda-argument.lean" { lineWidth := 40 }
+  assertTrue "later proof-lambda application does not fall back"
+    (!laterLambdaResult.fellBack)
+  assertEq "later proof-lambda application retains its complete layout"
+    laterLambdaSource laterLambdaResult.formatted
+  let laterLambdaAgain ←
+    Formatter.formatSourceWithEnv env laterLambdaResult.formatted
+      "later-proof-lambda-argument-formatted.lean" { lineWidth := 40 }
+  assertEq "later proof-lambda application is idempotent"
+    laterLambdaResult.formatted laterLambdaAgain
+
   let whereSource :=
     "def proofLayoutBodyAfterSourceBrokenHeader :\n"
     ++ "    VeryLongResultTypeNameWithEnoughCharactersToKeepTheDeclarationHeaderBroken where\n"
