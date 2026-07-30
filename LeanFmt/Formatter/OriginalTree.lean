@@ -230,6 +230,21 @@ private partial def treeHasLineBreakTrivia : SyntaxTree.Tree → Bool
   | .leaf token => tokenHasLineBreakTrivia token
   | .node _ children => children.any treeHasLineBreakTrivia
 
+private def treeHasInternalLineBreakTrivia (tree : SyntaxTree.Tree) : Bool :=
+  match tree.tokens.toList with
+  | [] | [_] => false
+  | tokens =>
+      let internalLeadingHasLineBreak :=
+        tokens.drop 1
+        |>.any
+            fun token =>
+              SpaceRules.hasLineStructure token.leading.text
+      let internalTrailingHasLineBreak :=
+        tokens.dropLast.any
+          fun token =>
+            SpaceRules.hasLineStructure token.trailing.text
+      internalLeadingHasLineBreak || internalTrailingHasLineBreak
+
 private def isCustomBracedTermSyntaxKindName (kindName : String) : Bool :=
   kindName != "«term{_}»"
   && (kindName.startsWith "«term" || SpaceRules.containsSubstring kindName ".«term")
@@ -302,7 +317,7 @@ private def isProofLayoutIsland (tree : SyntaxTree.Tree) : Bool :=
   | .node (.raw `Lean.Parser.Term.structInst) _ =>
       containsProofTree tree
   | .node (.raw `Lean.Parser.Term.anonymousCtor) _ =>
-      containsProofTree tree
+      containsProofTree tree && treeHasInternalLineBreakTrivia tree
   | .node (.raw `«term{_}») _ =>
       containsProofTree tree
   | .node (.raw `Lean.Parser.Command.whereStructInst) _ =>

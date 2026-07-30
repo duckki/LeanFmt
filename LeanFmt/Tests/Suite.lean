@@ -6717,6 +6717,22 @@ def assertAnonymousConstructorBreakBalanced (env : Lean.Environment) : IO Unit :
       "anonymous-constructor-setoid-formatted.lean"
   assertTrue "mathlib-style anonymous constructor has no overflow"
     (Formatter.Diagnostics.overflowOccurrences moduleTree).isEmpty
+  let inlineProofSource :=
+    "def inlineProofConstructor :=\n"
+    ++ "  fun t ↦\n"
+    ++ "    ⟨P.map f.op t, by simp only [Set.mem_setOf_eq, ← comp_apply, ← Functor.map_comp, ← op_comp, w]⟩\n"
+  let inlineProofExpected :=
+    "def inlineProofConstructor :=\n"
+    ++ "  fun t ↦\n"
+    ++ "    ⟨\n"
+    ++ "      P.map f.op t,\n"
+    ++ "      by simp only [Set.mem_setOf_eq, ← comp_apply, ← Functor.map_comp, ← op_comp, w]\n"
+    ++ "    ⟩\n"
+  let inlineProofFormatted ←
+    Formatter.formatSourceWithEnv env inlineProofSource
+      "anonymous-constructor-inline-proof.lean" { lineWidth := 98 }
+  assertEq "inline proof constructor breaks structurally"
+    inlineProofExpected inlineProofFormatted
 
 def assertExportBreaksLongList (env : Lean.Environment) : IO Unit := do
   let source :=
