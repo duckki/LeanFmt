@@ -1404,15 +1404,16 @@ def regroupRawNode
           (headAndArgs ++ appendApplicationArgumentChildren argumentContainer)
     | _, _ =>
         .node (.raw kind) children
-  else if kind == `Lean.Parser.Term.pipeProj && 3 < children.size then
+  else if kind == `Lean.Parser.Term.pipeProj && 2 < children.size then
     match children[0]?, children[1]?, children[2]? with
     | some receiver, some operator, some head =>
-        .node (.raw kind)
-          #[
-            receiver,
-            operator,
+        let right :=
+          if children.size == 3 then
+            head
+          else
             .node .application (#[head] ++ appendApplicationArgumentContainers children 3)
-          ]
+        let parts := appendInfixParts infixPrecedences kind #[] receiver
+        .node (.infixChain kind) <| parts.push operator |>.push right
     | _, _, _ => .node (.raw kind) children
   else if kind == `Lake.DSL.packageCommand || kind == `Lake.DSL.leanLibCommand then
     .node (.raw kind) (regroupLakeCommandChildren children)

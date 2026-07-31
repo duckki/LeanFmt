@@ -839,6 +839,8 @@ lines in its chain:
 
 Consecutive operators with the same parser binding powers are formatted as one
 chain, even when their spellings differ, such as alternating `+` and `-`.
+Chained pipe projections use the same peer layout, with every `|>.member`
+continuation at one base.
 The same leading-operator layout applies inside an indented declaration body:
 
 ```lean

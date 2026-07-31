@@ -104,7 +104,8 @@ private def fittingTargetColumn
     targetColumn - min (targetColumn - sourceColumn) roundedReduction
 
 private def continuationIndent? (text : String) : Option Nat :=
-  (SpaceRules.normalizeLineEndings text).splitOn "\n" |>.drop 1
+  (SpaceRules.normalizeLineEndings text).splitOn "\n"
+  |>.drop 1
   |>.foldl
       (fun minimum? line =>
         let indentation := (leadingWhitespace line).length

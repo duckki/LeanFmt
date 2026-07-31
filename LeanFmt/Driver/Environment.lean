@@ -248,12 +248,12 @@ def exactImportHeaderGroups (files : List FilePath) : IO (List ImportHeaderGroup
     groups := addFileToImportGroup groups importSpec.key file
   pure
   <| (groups.reverse.filterMap
-            fun (key, files) =>
-              match files.reverse with
-              | [] => none
-              | _ => some { key, files := files.reverse })
-          |>.toArray
-        |>.qsort (fun left right => left.key < right.key)
+        fun (key, files) =>
+          match files.reverse with
+          | [] => none
+          | _ => some { key, files := files.reverse })
+      |>.toArray
+      |>.qsort (fun left right => left.key < right.key)
       |>.toList
 
 end LeanFmt.Driver

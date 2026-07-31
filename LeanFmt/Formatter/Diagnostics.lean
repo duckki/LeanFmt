@@ -584,7 +584,8 @@ def sourceCommentLineTexts (moduleTree : SyntaxTree.Module) : List String :=
   (preservationFragments moduleTree).flatMap
     fun
     | .comment text _ =>
-        (SpaceRules.normalizeLineEndings text).splitOn "\n" |>.map (·.trimAscii.toString)
+        (SpaceRules.normalizeLineEndings text).splitOn "\n"
+        |>.map (·.trimAscii.toString)
         |>.filter fun line => !line.isEmpty
     | _ => []
 

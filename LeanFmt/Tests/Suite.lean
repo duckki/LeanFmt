@@ -2135,6 +2135,20 @@ def assertPipeProjectionDoesNotBreakAfterDot (env : Lean.Environment) : IO Unit 
   let _ ←
     SyntaxTree.parseModuleStringWithEnv env formatted "pipe-projection-chain-dot.lean"
 
+def assertPipeProjectionChainUsesOneBase (env : Lean.Environment) : IO Unit := do
+  let source :=
+    "def pipeline := firstVeryLongPipelineValueName |>.transform secondVeryLongPipelineValueName |>.transform thirdVeryLongPipelineValueName |>.finish\n"
+  let expected :=
+    "def pipeline :=\n"
+    ++ "  firstVeryLongPipelineValueName\n"
+    ++ "  |>.transform secondVeryLongPipelineValueName\n"
+    ++ "  |>.transform thirdVeryLongPipelineValueName\n"
+    ++ "  |>.finish\n"
+  let formatted ←
+    Formatter.formatSourceWithEnv env source "pipe-projection-chain-base.lean"
+      { lineWidth := 50 }
+  assertEq "pipe projection chain uses one continuation base" expected formatted
+
 def assertMatchAltProofRhsKeepsByOnArrowLine (env : Lean.Environment) : IO Unit := do
   let source :=
     "theorem theoremEquationsAfterMatchReturn : x = y\n"
@@ -9086,7 +9100,7 @@ def assertMathlibLowRiskSyntaxKindsHaveRules : IO Unit := do
       #[.leaf (syntheticAtomToken "index"), extendedBinderTypeWrapper]
   let extendedBinderTypeContext :=
     ({} : Formatter.LineBreakRules.RuleContext)
-      |>.push (Formatter.LineBreakRules.Segment.ofTree extendedBinder) 1
+    |>.push (Formatter.LineBreakRules.Segment.ofTree extendedBinder) 1
     |>.push (Formatter.LineBreakRules.Segment.ofTree extendedBinderTypeWrapper) 0
   let extendedBinderTypeSegment :=
     Formatter.LineBreakRules.Segment.ofTree extendedBinderTypeGroup
@@ -9759,6 +9773,7 @@ def runBasicFormattingTests (env : Lean.Environment) : IO Unit := do
   assertLongPipeProjectionKeepsTightDot env
   assertPipeProjectionInDeclarationTypeIndentsContinuation env
   assertPipeProjectionDoesNotBreakAfterDot env
+  assertPipeProjectionChainUsesOneBase env
   assertMatchAltProofRhsKeepsByOnArrowLine env
   assertRecordBraceSpacing env
   assertDerivingStaysOnOwnLine env
