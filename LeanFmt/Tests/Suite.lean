@@ -8251,6 +8251,27 @@ def assertFormatterArchitecture : IO Unit := do
   let regroupedWrappedTheorem := SyntaxTree.regroupTree wrappedExtendedTheorem
   assertTrue "extended declarations nested under command wrappers regroup annotations"
     (regroupedWrappedTheorem.containsNodeKind .annotatedDeclaration)
+  let customModifiers :=
+    SyntaxTree.Tree.node (.raw `Lean.Parser.Command.declModifiers)
+      #[.node (.raw `Lean.Parser.Command.private) #[.leaf (syntheticAtomToken "private")]]
+  let customDeclaration :=
+    SyntaxTree.Tree.node (.raw `customDeclaration)
+      #[
+        customModifiers,
+        .leaf (syntheticAtomToken "custom_decl"),
+        .leaf (syntheticAtomToken "value"),
+        .leaf (syntheticAtomToken ":")
+      ]
+  let regroupedCustomDeclaration := SyntaxTree.regroupTree customDeclaration
+  assertTrue "extended declarations regroup leading modifiers with their command"
+    (regroupedCustomDeclaration.containsNodeKind .annotatedDeclaration)
+  let customDeclarationSegment :=
+    Formatter.LineBreakRules.Segment.ofTree regroupedCustomDeclaration
+  let customDeclarationRule :=
+    Formatter.LineBreakRules.formattingRuleFor regroupedCustomDeclaration
+  assertTrue "extended declaration modifiers stay with the command first line"
+    (customDeclarationRule.keepPrefixWithChildFirstLine
+      context customDeclarationSegment 1)
   let unsuppressWrapper :=
     SyntaxTree.Tree.node (.raw `commandUnsuppress_compilationIn_)
       #[

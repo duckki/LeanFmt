@@ -1830,7 +1830,8 @@ mutual
             commentForcesBreakAt state.source segment breakPoint.index
             || sourceBrokenCommentedDelimiterAt state.source segment breakPoint.index
       let keepsPrefixWithChildFirstLine :=
-        rule.keepPrefixWithChildFirstLine state.context segment
+        segment.indexes.any
+          fun index => rule.keepPrefixWithChildFirstLine state.context segment index
       if probe.acceptedForRule isFlow breakPoints
           && (!keepsPrefixWithChildFirstLine || probe.flat)
           && !hasRetainedSourceBreak then
@@ -1856,7 +1857,9 @@ mutual
     let fallback (_ : Unit) := renderRuleLayout state segment rule breakPoints isFlow
     if !isFlow then
       fallback ()
-    else if rule.keepPrefixWithChildFirstLine state.context segment then
+    else if segment.indexes.any
+              fun index =>
+                rule.keepPrefixWithChildFirstLine state.context segment index then
       fallback ()
     else
       match sourceBreaksForRule? state segment rule breakPoints with
@@ -2273,7 +2276,7 @@ mutual
             && childFirstLineFits
             && treeStartsWithSuffixBeforeForcedComment state.source child
           let keepPrefixWithChildFirstLine :=
-            flow.rule.keepPrefixWithChildFirstLine state.context flow.segment
+            flow.rule.keepPrefixWithChildFirstLine state.context flow.segment index
             && (childFirstLineFits
                 || flow.childSourceFirstLineFitsAfterPrefix state index child)
             && !commentForcesBreakAt state.source flow.segment index

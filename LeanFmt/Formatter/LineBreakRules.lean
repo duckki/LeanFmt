@@ -192,7 +192,7 @@ structure LineBreakRule where
   formatOriginalChildLeadingBoundary : RuleContext → Segment → Nat → Bool :=
     fun _ _ _ => false
   keepLeadingSuffixBeforeForcedComment : RuleContext → Segment → Bool := fun _ _ => false
-  keepPrefixWithChildFirstLine : RuleContext → Segment → Bool := fun _ _ => false
+  keepPrefixWithChildFirstLine : RuleContext → Segment → Nat → Bool := fun _ _ _ => false
   useExistingBreaks : RuleContext → Segment → Bool := fun _ _ => false
   mandatory : RuleContext → Segment → Bool := fun _ _ => false
   flow : RuleContext → Segment → Bool := fun _ _ => false
@@ -944,6 +944,18 @@ def leadingAnnotationBreaks (_context : RuleContext) (segment : Segment)
 
 def annotatedDeclarationBreaks : RuleContext → Segment → List BreakPoint :=
   leadingAnnotationBreaks
+
+def annotatedDeclarationKeepsModifierPrefix (segment : Segment) (index : Nat) : Bool :=
+  match (nonemptyChildIndexes segment).reverse.find?
+          fun candidate => candidate < index with
+  | some previousIndex =>
+      segment.child? previousIndex
+      |>.any
+          fun child =>
+            SyntaxTree.rawKind? child == some `Lean.Parser.Command.declModifiers
+            && !treeContainsLexeme "@[" child
+            && !SyntaxTree.isDocCommentContainer child
+  | none => false
 
 def declarationModifierBreaks (_context : RuleContext) (segment : Segment)
     : List BreakPoint :=
@@ -1890,7 +1902,7 @@ def doFallbackClauseRule : LineBreakRule :=
     name := "doFallbackClause"
     formatOriginalChildLeadingBoundary :=
       fun _ segment index => segment.start < index
-    keepPrefixWithChildFirstLine := fun _ _ => true
+    keepPrefixWithChildFirstLine := fun _ segment index => segment.start < index
     flow := fun _ _ => true
     inheritBase := fun _ _ => true
     breakPoints := doFallbackClauseBreaks
@@ -2072,6 +2084,8 @@ def inductiveBreaks (context : RuleContext) (segment : Segment) : List BreakPoin
 def annotatedDeclarationRule : LineBreakRule :=
   {
     name := "annotatedDeclaration"
+    keepPrefixWithChildFirstLine :=
+      fun _ segment index => annotatedDeclarationKeepsModifierPrefix segment index
     useExistingBreaks := fun _ _ => true
     flow := fun context segment => !(annotatedDeclarationBreaks context segment).isEmpty
     inheritBase :=

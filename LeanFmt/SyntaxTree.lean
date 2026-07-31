@@ -763,6 +763,28 @@ def splitDeclarationAnnotations? : Tree → Option (Tree × Tree)
             some (annotations, .node kind (children.set! annotationIndex .missing))
   | _ => none
 
+def splitLeadingDeclarationModifiers? : Tree → Option (Tree × Tree)
+  | .node kind children => do
+      let modifierIndex ←
+        children.findIdx?
+          fun child =>
+            rawKind? child == some `Lean.Parser.Command.declModifiers
+      if (previousContentIndex? children modifierIndex).isSome then
+        none
+      else
+        let modifiers ← children[modifierIndex]?
+        if modifiers.firstToken?.isSome then
+          some
+            (
+              modifiers,
+              .node kind
+                (childrenRange children 0 modifierIndex
+                  ++ childrenRange children (modifierIndex + 1) children.size)
+            )
+        else
+          none
+  | _ => none
+
 def splitDirectCommandDocComment? : Tree → Option (Tree × Tree)
   | .node kind children => do
       let annotationIndex ←
@@ -783,6 +805,12 @@ def annotatedDeclarationTree (annotations modifiers declaration : Tree) : Tree :
     else
       #[annotations, declaration]
   .node .annotatedDeclaration children
+
+def annotatedDeclarationTreeForCommand (annotations command : Tree) : Tree :=
+  match splitLeadingDeclarationModifiers? command with
+  | some (modifiers, command) =>
+      annotatedDeclarationTree annotations modifiers command
+  | none => annotatedDeclarationTree annotations .missing command
 
 def regroupStructCtor (children : Array Tree) : Tree :=
   let command := .node (.raw `Lean.Parser.Command.structCtor) (children.set! 0 .missing)
@@ -870,7 +898,7 @@ def regroupDeclarationValueCommand (kind : SyntaxNodeKind) (children : Array Tre
     | none => .node (.raw kind) children
   match splitDeclarationAnnotations? command with
   | some (annotations, command) =>
-      annotatedDeclarationTree annotations .missing command
+      annotatedDeclarationTreeForCommand annotations command
   | none => command
 
 def regroupDeclarationChildren (children : Array Tree) : Option (Array Tree) := do
@@ -1254,8 +1282,12 @@ def regroupOtherRawNode (kind : SyntaxNodeKind) (children : Array Tree) : Tree :
     else
       match splitDeclarationAnnotations? tree with
       | some (annotations, command) =>
-          annotatedDeclarationTree annotations .missing command
-      | none => tree
+          annotatedDeclarationTreeForCommand annotations command
+      | none =>
+          match splitLeadingDeclarationModifiers? tree with
+          | some (modifiers, command) =>
+              .node .annotatedDeclaration #[modifiers, command]
+          | none => tree
 
 def regroupRawNode (kind : SyntaxNodeKind) (children : Array Tree) : Tree :=
   if kind == `null then
@@ -1330,14 +1362,17 @@ partial def regroupTree : Tree → Tree
   | .node kind children => .node kind (children.map regroupTree)
 
 def regroupTopLevelCommandAnnotations (tree : Tree) : Tree :=
-  match splitDeclarationAnnotations? tree with
-  | some (annotations, command) =>
-      annotatedDeclarationTree annotations .missing command
-  | none =>
-      match splitDirectCommandDocComment? tree with
+  match tree with
+  | .node .annotatedDeclaration _ => tree
+  | _ =>
+      match splitDeclarationAnnotations? tree with
       | some (annotations, command) =>
-          annotatedDeclarationTree annotations .missing command
-      | none => tree
+          annotatedDeclarationTreeForCommand annotations command
+      | none =>
+          match splitDirectCommandDocComment? tree with
+          | some (annotations, command) =>
+              annotatedDeclarationTreeForCommand annotations command
+          | none => tree
 
 def regroupTopLevelAnnotations : Tree → Tree
   | .node (.raw `Lean.Parser.Module.module) children =>

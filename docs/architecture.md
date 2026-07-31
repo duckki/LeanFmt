@@ -235,7 +235,7 @@ Current logical regroupings are:
 | `.application` | Lean parser applications are nested per argument, but formatting wants one function-application segment. | Child `0` is the head, children `1...` are arguments in source order. Raw `null` argument containers are spliced. |
 | `.infixChain kind` | Same-kind infix peers should break as one balanced chain, and renderer indentation should not infer peer structure from nested raw nodes. | Odd-length array alternating operand, operator, operand. Operands are even indexes; operators are odd indexes. |
 | `.definition` | Definitions, abbreviations, class abbreviations, and extensible declaration commands using Lean's `declValSimple` parser need one node containing header, assignment marker, body, and suffixes. | A raw `declValSimple` wrapper is spliced wherever it occurs among the command's children, leaving `:=` immediately before the value/body. |
-| `.annotatedDeclaration` | Every command form that accepts declaration annotations forms one flow, whether it is built in, introduced by a syntax extension, nested under a command wrapper, recursive under `where`, or a named structure constructor. Source breaks are preserved; otherwise the command remains after its annotations only when the complete command fits on one physical line. The wrapper also establishes the command-line base inherited by modifier and declaration children. | Child `0` contains only the leading annotations. Any remaining modifiers and the command follow as separate children in source order. An annotation embedded in an extensible command node is extracted without changing that command's remaining child indexes. Optional wrappers around a recursive declaration's attributes are removed. Structure-constructor modifiers are separated from the constructor command so both inherit the structure field base. An inductive constructor keeps its `|` prefix outside the wrapper so annotations that follow it retain source token order. |
+| `.annotatedDeclaration` | Every command form that accepts declaration annotations forms one flow, whether it is built in, introduced by a syntax extension, nested under a command wrapper, recursive under `where`, or a named structure constructor. Source breaks are preserved; otherwise the command remains after its annotations only when the complete command fits on one physical line. The wrapper also establishes the command-line base inherited by modifier and declaration children. | Child `0` contains the leading annotations or, when no annotation is present, the leading declaration modifiers. Any remaining modifiers and the command follow as separate children in source order. An annotation embedded in an extensible command node is extracted without changing that command's remaining child indexes. A leading modifier container in an extensible command is removed from that command and placed before it, so the command starts at its keyword and both remain one flow. Optional wrappers around a recursive declaration's attributes are removed. Structure-constructor modifiers are separated from the constructor command so both inherit the structure field base. An inductive constructor keeps its `|` prefix outside the wrapper so annotations that follow it retain source token order. |
 | `.signatureParameters` | Parameter sequences need flow behavior at binder boundaries without forcing rules to inspect raw `null` wrappers. | Direct binder/parameter children from declaration signatures, function binders, `termination_by` parameter lambdas, and `unif_hint` commands. In a termination lambda, the final parameter and `=>` share one child so the arrow stays attached while preceding parameters flow at two indentation levels. |
 | `.structureHeader`, `.structureConstructor`, and `.structureDeriving` | A structure header may wrap before `extends`, but that continuation must not become the base inherited by constructors, fields, or `deriving`. Separate render scopes let each part own its break and indentation without renderer state exceptions. | The raw structure has a `.structureHeader` first child, ending in `where` when a body is present. It is followed by an optional `.structureConstructor`, the raw `structFields` node directly, and an optional `.structureDeriving`. Structures and classes that only extend parents still receive a header node. The constructor and deriving wrappers contain their original regrouped syntax. |
 | `.matchDiscriminants` | Multiple match scrutinees need peer flow boundaries after commas, aligned under the first scrutinee, rather than generic nested parser wrapping. | Children of the discriminant sequence immediately before `with`, preserving alternating discriminants and commas. |
@@ -352,7 +352,7 @@ structure LineBreakRule where
   keepLeadingSuffixBeforeForcedComment
     : RuleContext -> Segment -> Bool := fun _ _ => false
   keepPrefixWithChildFirstLine
-    : RuleContext -> Segment -> Bool := fun _ _ => false
+    : RuleContext -> Segment -> Nat -> Bool := fun _ _ _ => false
   useExistingBreaks : RuleContext -> Segment -> Bool := fun _ _ => false
   mandatory : RuleContext -> Segment -> Bool := fun _ _ => false
   flow : RuleContext -> Segment -> Bool := fun _ _ => false
@@ -411,13 +411,14 @@ Rule methods mean:
   on the preceding line instead of breaking both before and after it. Declaration
   signatures use this to keep `:` with their final binder without making rules inspect
   comment trivia.
-- `keepPrefixWithChildFirstLine`: when a flow child can format its first line beside the
-  already-rendered prefix, delegate wrapping to that child rather than taking the
-  boundary immediately before it. Such a rule requires a genuinely single-line flat
-  probe and does not reactivate the boundary merely because it existed in the source.
-  A comment at that boundary still activates the break, so its continuation indentation
-  is structural. Refutable `let` fallback clauses use this to keep `|` with the
-  fallback's first term.
+- `keepPrefixWithChildFirstLine`: at a selected child boundary, when the child can format
+  its first line beside the already-rendered prefix, delegate wrapping to that child
+  rather than taking the boundary immediately before it. Such a rule requires a
+  genuinely single-line flat probe and does not reactivate the boundary merely because
+  it existed in the source. A comment at that boundary still activates the break, so
+  its continuation indentation is structural. Refutable `let` fallback clauses use
+  this to keep `|` with the fallback's first term; annotated declarations use it only
+  between a modifier container and its extensible command.
 - `mandatory`: returned breaks are structural and are applied without a flat attempt.
 - `flow`: returned breaks are candidates; flat layout is tried first, then accepted
   source breaks, then computed wrapping. If the accepted source layout still overflows,
