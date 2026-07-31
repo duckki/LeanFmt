@@ -596,8 +596,10 @@ private def emitRebased? (request : EmissionRequest) (tree : SyntaxTree.Tree)
             else if proofLayout then
               if originalLeadingHasLineStructure then
                 shiftColumnByAnchor sourceColumn leadingColumn sourceIndent
-              else
+              else if proofLayoutRebasesFromFirstToken tree then
                 sourceIndent
+              else
+                request.currentIndent + indentationSpaces
             else if calcLayout then
               (request.segmentIndentation + 1) * indentationSpaces
             else if usesPendingIndent then

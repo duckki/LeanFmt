@@ -2684,6 +2684,43 @@ def assertMovedInlineProofBodiesRemainParseable (env : Lean.Environment) : IO Un
   assertEq "inline multiline declaration proof is idempotent"
     declarationResult.formatted declarationAgain
 
+def assertProofApplicationFollowsMovedInlineAnchor (env : Lean.Environment)
+    : IO Unit := do
+  let source :=
+    "def movedProofApplicationAfterInlineAnchor :=\n"
+    ++ "  ConstructorNameWithEnoughCharactersToForceTheStructureOntoMultipleLines {\n"
+    ++ "    homEquiv_unit := fun {X Y g} => hom_ext <| LinearMap.ext fun x => by\n"
+    ++ "      dsimp\n"
+    ++ "      rfl\n"
+    ++ "    homEquiv_counit := value\n"
+    ++ "  }\n"
+  let expected :=
+    "def movedProofApplicationAfterInlineAnchor :=\n"
+    ++ "  ConstructorNameWithEnoughCharactersToForceTheStructureOntoMultipleLines\n"
+    ++ "    {\n"
+    ++ "      homEquiv_unit :=\n"
+    ++ "        fun {X Y g} =>\n"
+    ++ "          hom_ext\n"
+    ++ "          <| LinearMap.ext fun x => by\n"
+    ++ "            dsimp\n"
+    ++ "            rfl\n"
+    ++ "      homEquiv_counit := value\n"
+    ++ "    }\n"
+  let result ←
+    Formatter.formatSourceWithEnvDetailed env source
+      "proof-application-after-moved-inline-anchor.lean" { lineWidth := 100 }
+  assertTrue "proof application after moved inline anchor does not fall back"
+    (!result.fellBack)
+  assertEq "proof application follows its moved inline anchor" expected result.formatted
+  assertTrue "proof application after moved inline anchor preserves code"
+    (← codePreservedIgnoringWhitespace env source result.formatted)
+  let formattedAgain ←
+    Formatter.formatSourceWithEnv env result.formatted
+      "proof-application-after-moved-inline-anchor-formatted.lean"
+      { lineWidth := 100 }
+  assertEq "proof application after moved inline anchor is idempotent"
+    result.formatted formattedAgain
+
 def assertMovedProofLayoutIslandKeepsContinuationIndentation (env : Lean.Environment)
     : IO Unit := do
   let source :=
@@ -9800,6 +9837,7 @@ def runBasicFormattingTests (env : Lean.Environment) : IO Unit := do
   assertMovedProofBodiesKeepRelativeIndentation env
   assertMovedChildrenUseLogicalLayoutBases env
   assertMovedInlineProofBodiesRemainParseable env
+  assertProofApplicationFollowsMovedInlineAnchor env
   assertMovedProofLayoutIslandKeepsContinuationIndentation env
   assertDetachedInlineProofBodyKeepsInternalIndentation env
   assertShowProofAfterMovedLambdaIsIdempotent env
