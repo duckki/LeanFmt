@@ -366,6 +366,73 @@ def rawKind? : Tree → Option SyntaxNodeKind
   | .node (.letExpression kind _) _ => some kind
   | _ => none
 
+abbrev InfixPrecedenceMap := NameMap (Nat × Nat)
+
+partial def parserDescrPrecedence? (kind : SyntaxNodeKind)
+    : ParserDescr → Option (Nat × Nat)
+  | .trailingNode nodeKind precedence leftPrecedence parser =>
+      if nodeKind == kind then
+        some (precedence, leftPrecedence)
+      else
+        parserDescrPrecedence? kind parser
+  | .node _ _ parser
+  | .unary _ parser =>
+      parserDescrPrecedence? kind parser
+  | .binary _ left right =>
+      parserDescrPrecedence? kind left <|> parserDescrPrecedence? kind right
+  | _ => none
+
+unsafe def parserPrecedenceUnsafe
+    (env : Environment) (options : Options) (kind : SyntaxNodeKind)
+    : Option (Nat × Nat) :=
+  match env.find? kind with
+  | some info =>
+      if info.type.isConstOf ``TrailingParserDescr then
+        match env.evalConst ParserDescr options kind with
+        | .ok parser => parserDescrPrecedence? kind parser
+        | .error _ => none
+      else
+        none
+  | none => none
+
+@[implemented_by parserPrecedenceUnsafe]
+opaque parserPrecedence
+  (env : Environment) (options : Options) (kind : SyntaxNodeKind) : Option (Nat × Nat)
+
+structure ParserPrecedenceFacts where
+  checkedKinds : NameSet := {}
+  infixPrecedences : InfixPrecedenceMap := {}
+
+def ParserPrecedenceFacts.record
+    (facts : ParserPrecedenceFacts)
+    (env : Environment) (options : Options) (kind : SyntaxNodeKind)
+    : ParserPrecedenceFacts :=
+  if facts.checkedKinds.contains kind then
+    facts
+  else
+    let infixPrecedences :=
+      match parserPrecedence env options kind with
+      | some precedence => facts.infixPrecedences.insert kind precedence
+      | none => facts.infixPrecedences
+    {
+      checkedKinds := facts.checkedKinds.insert kind
+      infixPrecedences
+    }
+
+partial def collectParserPrecedenceFacts
+    (env : Environment) (options : Options)
+    (stx : Syntax) (facts : ParserPrecedenceFacts := {})
+    : ParserPrecedenceFacts :=
+  match stx with
+  | .missing
+  | .atom ..
+  | .ident .. => facts
+  | .node _ kind children =>
+      children.foldl
+        (fun facts child =>
+          collectParserPrecedenceFacts env options child facts)
+        (facts.record env options kind)
+
 /-! ## Logical regrouping -/
 
 partial def directLeafAtom? : Tree → Bool
@@ -393,11 +460,23 @@ def appendApplicationArgumentChildren (argumentContainer : Tree) : Array Tree :=
   | .node (.raw `null) children => children
   | child => #[child]
 
-def appendInfixParts (kind : SyntaxNodeKind) (parts : Array Tree) (tree : Tree)
+def infixKindsSharePrecedence
+    (infixPrecedences : InfixPrecedenceMap)
+    (left right : SyntaxNodeKind)
+    : Bool :=
+  left == right
+  || match infixPrecedences.find? left, infixPrecedences.find? right with
+      | some leftPrecedence, some rightPrecedence =>
+          leftPrecedence == rightPrecedence
+      | _, _ => false
+
+def appendInfixParts
+    (infixPrecedences : InfixPrecedenceMap)
+    (kind : SyntaxNodeKind) (parts : Array Tree) (tree : Tree)
     : Array Tree :=
   match tree with
   | .node (.infixChain childKind) children =>
-      if childKind == kind then
+      if infixKindsSharePrecedence infixPrecedences kind childKind then
         parts ++ children
       else
         parts.push tree
@@ -1306,7 +1385,10 @@ def regroupOtherRawNode (kind : SyntaxNodeKind) (children : Array Tree) : Tree :
                   .node .annotatedDeclaration #[modifiers, command]
               | none => tree
 
-def regroupRawNode (kind : SyntaxNodeKind) (children : Array Tree) : Tree :=
+def regroupRawNode
+    (infixPrecedences : InfixPrecedenceMap)
+    (kind : SyntaxNodeKind) (children : Array Tree)
+    : Tree :=
   if kind == `null then
     (regroupDerivingClause? children).getD <| .node (.raw kind) children
   else if isIfThenElseKind kind then
@@ -1345,9 +1427,9 @@ def regroupRawNode (kind : SyntaxNodeKind) (children : Array Tree) : Tree :=
   else if isBinaryInfixRawNode kind children then
     match children[0]?, children[1]?, children[2]? with
     | some left, some operator, some right =>
-        let parts := appendInfixParts kind #[] left
+        let parts := appendInfixParts infixPrecedences kind #[] left
         let parts := parts.push operator
-        let parts := appendInfixParts kind parts right
+        let parts := appendInfixParts infixPrecedences kind parts right
         .node (.infixChain kind) parts
     | _, _, _ =>
         .node (.raw kind) children
@@ -1367,16 +1449,24 @@ def regroupRawNode (kind : SyntaxNodeKind) (children : Array Tree) : Tree :=
         .node .definition <| regroupFlattenedDefinitionChildren flattened
     | none => regroupOtherRawNode kind children
 
-partial def regroupTree : Tree → Tree
+partial def regroupTreeWithPrecedences (infixPrecedences : InfixPrecedenceMap)
+    : Tree → Tree
   | .missing => .missing
   | .leaf token => .leaf token
   | .node (.raw kind) children =>
       if isDelimitedCollectionKind kind then
-        let children := (flattenDelimitedCollectionChildren children).map regroupTree
+        let children :=
+          (flattenDelimitedCollectionChildren children).map
+            (regroupTreeWithPrecedences infixPrecedences)
         .node (.raw kind) <| flattenDelimitedCollectionChildren children
       else
-        regroupRawNode kind (children.map regroupTree)
-  | .node kind children => .node kind (children.map regroupTree)
+        regroupRawNode infixPrecedences kind
+          (children.map (regroupTreeWithPrecedences infixPrecedences))
+  | .node kind children =>
+      .node kind (children.map (regroupTreeWithPrecedences infixPrecedences))
+
+def regroupTree (tree : Tree) : Tree :=
+  regroupTreeWithPrecedences {} tree
 
 def regroupTopLevelCommandAnnotations (tree : Tree) : Tree :=
   match tree with
@@ -1435,10 +1525,11 @@ partial def annotateLetExpressions (facts : Array LetBodyParserFact) : Tree → 
 def extractTree
     (source : String) (stx : Syntax)
     (letBodyParserFacts : Array LetBodyParserFact := #[])
+    (infixPrecedences : InfixPrecedenceMap := {})
     : Tree :=
   regroupTopLevelAnnotations
   <| annotateLetExpressions letBodyParserFacts
-  <| regroupTree
+  <| regroupTreeWithPrecedences infixPrecedences
   <| removeOverlappingSourceTokens source
   <| extractRawTree source stx
 
@@ -1571,7 +1662,7 @@ partial def parseModuleCommandsQuiet
     (updateParserState : Bool)
     (commands : Array Syntax)
     (letBodyParserFacts : Array LetBodyParserFact)
-    : IO (Array Syntax × Array LetBodyParserFact) := do
+    : IO (Array Syntax × Array LetBodyParserFact × Elab.Command.State) := do
   let parserContext := parserModuleContext commandState
   let (command, state, messages) :=
     Parser.parseCommand inputContext parserContext state messages
@@ -1586,7 +1677,7 @@ partial def parseModuleCommandsQuiet
           else
             s!"failed to parse file:\n{details}"
     else
-      pure (commands, letBodyParserFacts)
+      pure (commands, letBodyParserFacts, commandState)
   else
     do
       let letBodyParserFacts :=
@@ -1603,6 +1694,7 @@ partial def parseModuleCommandsQuiet
 structure ParsedModuleSyntax where
   rawSyntax : Syntax
   letBodyParserFacts : Array LetBodyParserFact
+  infixPrecedences : InfixPrecedenceMap
 deriving Repr
 
 def parseModuleSyntaxWithEnvCoreDetailed
@@ -1611,7 +1703,7 @@ def parseModuleSyntaxWithEnvCoreDetailed
   let inputContext := Parser.mkInputContext source fileName
   let (header, state, messages) ← Parser.parseHeader inputContext
   let commandState := Elab.Command.mkState env
-  let (commands, letBodyParserFacts) ←
+  let (commands, letBodyParserFacts, commandState) ←
     try
       parseModuleCommandsQuiet inputContext state messages commandState
         updateParserState #[] #[]
@@ -1622,15 +1714,20 @@ def parseModuleSyntaxWithEnvCoreDetailed
           frontendState.commands.filter
             fun command =>
               !Parser.isTerminalCommand command
-        pure (commands, #[])
+        pure (commands, #[], frontendState.commandState)
       else
         throw parseError
+  let rawSyntax :=
+    (mkNode `Lean.Parser.Module.module #[header, mkListNode commands]).raw.updateLeading
+  let parserContext := parserModuleContext commandState
+  let infixPrecedences :=
+    (collectParserPrecedenceFacts parserContext.env parserContext.options
+      rawSyntax).infixPrecedences
   pure
     {
-      rawSyntax :=
-        (mkNode `Lean.Parser.Module.module
-          #[header, mkListNode commands]).raw.updateLeading
-      letBodyParserFacts
+      rawSyntax := rawSyntax
+      letBodyParserFacts := letBodyParserFacts
+      infixPrecedences := infixPrecedences
     }
 
 def parseModuleSyntaxWithEnvCore
@@ -1655,7 +1752,8 @@ def parseModuleStringWithEnv (env : Environment) (source fileName : String := "<
     : IO Module := do
   let parsed ←
     parseModuleSyntaxWithEnvCoreDetailed env source fileName (updateParserState := true)
-  let tree := extractTree source parsed.rawSyntax parsed.letBodyParserFacts
+  let tree :=
+    extractTree source parsed.rawSyntax parsed.letBodyParserFacts parsed.infixPrecedences
   pure { source, rawSyntax := parsed.rawSyntax, tree, tokens := tree.tokens }
 
 def parseModuleString (source fileName : String := "<input>") : IO Module := do

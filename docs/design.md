@@ -824,8 +824,9 @@ lines in its chain:
   + h argumentOne argumentTwo
 ```
 
-Consecutive operators of the same parser kind are formatted as one chain. The
-same leading-operator layout applies inside an indented declaration body:
+Consecutive operators with the same parser binding powers are formatted as one
+chain, even when their spellings differ, such as alternating `+` and `-`.
+The same leading-operator layout applies inside an indented declaration body:
 
 ```lean
 def equality : Prop :=

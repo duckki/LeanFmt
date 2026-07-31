@@ -858,6 +858,35 @@ def assertGroupedInfixChain (env : Lean.Environment) : IO Unit := do
       <| IO.userError
           s!"expected infix chain to contain three operands and two operators, got {repr other}"
 
+def assertGroupedEqualPrecedenceInfixChain (env : Lean.Environment) : IO Unit := do
+  let plusPrecedence := SyntaxTree.parserPrecedence env {} `«term_+_»
+  let minusPrecedence := SyntaxTree.parserPrecedence env {} `«term_-_»
+  let multiplyPrecedence := SyntaxTree.parserPrecedence env {} `«term_*_»
+  assertTrue "Lean parser assigns equal binding powers to addition and subtraction"
+    (plusPrecedence.isSome && plusPrecedence == minusPrecedence)
+  assertTrue "Lean parser distinguishes multiplication binding powers"
+    (plusPrecedence != multiplyPrecedence)
+  let source :=
+    "def alternatingInfix := firstVeryLongOperandName + secondVeryLongOperandName - thirdVeryLongOperandName + fourthVeryLongOperandName\n"
+  let moduleTree ←
+    SyntaxTree.parseModuleStringWithEnv env source "grouped-equal-precedence-infix.lean"
+  match moduleTree.tree.firstInfixChainChildCount? `«term_+_» with
+  | some 7 => pure ()
+  | other =>
+      throw
+      <| IO.userError
+          s!"expected equal-precedence infix operators to share one chain, got {repr other}"
+  let expected :=
+    "def alternatingInfix :=\n"
+    ++ "  firstVeryLongOperandName\n"
+    ++ "  + secondVeryLongOperandName\n"
+    ++ "  - thirdVeryLongOperandName\n"
+    ++ "  + fourthVeryLongOperandName\n"
+  let formatted ←
+    Formatter.formatSourceWithEnv env source "grouped-equal-precedence-infix.lean"
+      { lineWidth := 55 }
+  assertEq "equal-precedence infix continuations share one base" expected formatted
+
 def assertDoFallbackRegrouping (env : Lean.Environment) : IO Unit := do
   let source :=
     "def fallback (candidate : Option Nat) : Option Nat := do\n"
@@ -9617,6 +9646,7 @@ def runSyntaxTreeTests (env : Lean.Environment) : IO Unit := do
   assertOverlappingEmptySyntaxTokensRemoved env
   assertGroupedApplication env
   assertGroupedInfixChain env
+  assertGroupedEqualPrecedenceInfixChain env
   assertDoFallbackRegrouping env
   assertDefinitionLikeCommandsRegroup
   assertDelimitedCollectionsFlattenOnlySeparatedItems

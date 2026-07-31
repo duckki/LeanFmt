@@ -123,8 +123,9 @@ def hasIgnoredRegions (source : String) : Bool :=
 def buildModule
     (source : String) (rawSyntax : Syntax)
     (letBodyParserFacts : Array SyntaxTree.LetBodyParserFact := #[])
+    (infixPrecedences : SyntaxTree.InfixPrecedenceMap := {})
     : SyntaxTree.Module :=
-  let tree := SyntaxTree.extractTree source rawSyntax letBodyParserFacts
+  let tree := SyntaxTree.extractTree source rawSyntax letBodyParserFacts infixPrecedences
   { source, rawSyntax, tree, tokens := tree.tokens }
 
 def parseModuleWithEnv (env : Environment) (source fileName : String)
@@ -132,7 +133,8 @@ def parseModuleWithEnv (env : Environment) (source fileName : String)
   let parsed ←
     SyntaxTree.parseModuleSyntaxWithEnvCoreDetailed env source fileName
       (updateParserState := true)
-  pure <| buildModule source parsed.rawSyntax parsed.letBodyParserFacts
+  pure
+  <| buildModule source parsed.rawSyntax parsed.letBodyParserFacts parsed.infixPrecedences
 
 def formatPassWithEnv
     (env : Environment) (source fileName : String) (options : Options := {})
@@ -276,7 +278,7 @@ def formatSourceProfiledWithEnv
     timeIO
     <| pure
     <| Internal.buildModule normalizedSource parsedSyntax.rawSyntax
-        parsedSyntax.letBodyParserFacts
+        parsedSyntax.letBodyParserFacts parsedSyntax.infixPrecedences
   let (formatted, renderMs) ←
     timeIO <| do
       let firstPass ← formatModuleWithEnv env moduleTree options

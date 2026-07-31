@@ -401,7 +401,8 @@ def WhitespaceState.moveOverflowingTrailingLineComment
                 SyntaxTree.sourceText state.source left.span.stop token.span.start
               match (SpaceRules.normalizeLineEndings trivia).splitOn "\n" with
               | sourceFirstLine :: _ =>
-                  state.sourceMap.columnAt left.span.stop + sourceFirstLine.length
+                  state.sourceMap.columnAt left.span.stop
+                  + sourceFirstLine.length
                   - (SpaceRules.stripLeadingHorizontalWhitespace sourceFirstLine).length
               | [] => desiredIndent
         let maximumIndent := state.options.lineWidth - comment.length
@@ -662,7 +663,8 @@ def renderedTreeIsMultiline (before after : RenderState) (tree : SyntaxTree.Tree
     : Bool :=
   let prepared := before.preserveBlankBoundaryBefore tree
   let leadingBreakCount :=
-    prepared.outputLineBreakCount - before.outputLineBreakCount
+    prepared.outputLineBreakCount
+    - before.outputLineBreakCount
     + match SyntaxTree.Tree.firstToken? tree with
       | some token =>
           let whitespace := prepared.defaultWhitespace token

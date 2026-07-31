@@ -77,7 +77,10 @@ Formatting a file follows this pipeline:
    uses an environment that imports `Lean` with parser extensions enabled. While each
    command's parser scope is active, probe every layout-delimited `let` body with Lean's
    term parser at application-argument precedence and retain the result as a parser
-   fact. The CLI first tries the default environment, then loads an import-specific
+   fact. After parsing, read trailing-parser binding powers for the syntax kinds that
+   occurred in the module. These facts let logical infix regrouping follow imported
+   and locally declared operators without inspecting token text. The CLI first tries
+   the default environment, then loads an import-specific
    environment when project syntax requires it. For multi-file package formatting,
    files that use the default environment are balanced across worker processes using
    the machine's hardware concurrency. Imported files are grouped by exact normalized
@@ -233,7 +236,7 @@ Current logical regroupings are:
 | --- | --- | --- |
 | `.letExpression kind bodyCanStartApplicationArgument` | Layout-delimited `let` needs a parser-derived answer to whether its body could be consumed as one more right-hand-side application argument. The active parser scope supplies this fact, so imported and locally declared syntax extensions behave according to their precedence without appearing in a formatter keyword list. | The original raw `let`, `letI`, or `letrec` children, unchanged. The raw kind is retained for ordinary rule dispatch and diagnostics. |
 | `.application` | Lean parser applications are nested per argument, but formatting wants one function-application segment. | Child `0` is the head, children `1...` are arguments in source order. Raw `null` argument containers are spliced. |
-| `.infixChain kind` | Same-kind infix peers should break as one balanced chain, and renderer indentation should not infer peer structure from nested raw nodes. | Odd-length array alternating operand, operator, operand. Operands are even indexes; operators are odd indexes. |
+| `.infixChain kind` | Infix peers with equal Lean parser binding powers should break as one balanced chain, and renderer indentation should not infer peer structure from nested raw nodes. Same-kind peers remain the compatibility fallback when parser metadata is unavailable. | Odd-length array alternating operand, operator, operand. Operands are even indexes; operators are odd indexes. The outer parser kind is retained for rule dispatch. |
 | `.definition` | Definitions, abbreviations, class abbreviations, and extensible declaration commands using Lean's `declValSimple` parser need one node containing header, assignment marker, body, and suffixes. | A raw `declValSimple` wrapper is spliced wherever it occurs among the command's children, leaving `:=` immediately before the value/body. A `whereStructInst` value remains one child so its leading `where` can stay on the final signature line while its fields own the following structural breaks. Only a separate `Term.whereDecls` child is treated as an auxiliary declaration suffix. |
 | `.annotatedDeclaration` | Every command form that accepts declaration annotations forms one flow, whether it is built in, introduced by a syntax extension, nested under a command wrapper, recursive under `where`, or a named structure constructor. Source breaks are preserved; otherwise the command remains after its annotations only when the complete command fits on one physical line. The wrapper also establishes the command-line base inherited by modifier and declaration children. | Child `0` contains the leading annotations or, when no annotation is present, the leading declaration modifiers. Any remaining modifiers and the command follow as separate children in source order. An annotation or direct documentation comment embedded in an extensible command node is extracted without changing that command's remaining child indexes; this applies inside scoped-command wrappers as well as at module level. A leading modifier container in an extensible command is removed from that command and placed before it, so the command starts at its keyword and both remain one flow. Optional wrappers around a recursive declaration's attributes are removed. Structure-constructor modifiers are separated from the constructor command so both inherit the structure field base. An inductive constructor keeps its `|` prefix outside the wrapper so annotations that follow it retain source token order. |
 | `.signatureParameters` | Parameter sequences need flow behavior at binder boundaries without forcing rules to inspect raw `null` wrappers. | Direct binder/parameter children from declaration signatures, function binders, `termination_by` parameter lambdas, and `unif_hint` commands. In a termination lambda, the final parameter and `=>` share one child so the arrow stays attached while preceding parameters flow at two indentation levels. |
@@ -251,8 +254,10 @@ Current logical regroupings are:
 | Lake DSL commands | Lake package and library commands need their `where` configuration body to share the command base, while Git dependency clauses need one rule to own the complete `from git` header and revision suffix. | Optional configuration wrappers are replaced by their `where` and field children. Dependency-name, source, and Git wrappers are spliced into the raw `requireDecl` node in source order. |
 | Multi-item delimited collections | Brace terms, arrays, lists, tuples, anonymous constructors, and matrix vectors need one balanced rule to own opening, item, and closing breaks. | Parser sequence wrappers are spliced only when they contain an actual comma or matrix-row semicolon, so delimiters, items, and separators become direct children of the original raw collection node. Unseparated custom-syntax fragments and singleton wrappers remain intact to preserve the established base for one multiline item. |
 
-Regrouping deliberately avoids semantic interpretation. For example, it flattens only
-same-kind infix parser nodes; it does not decide operator precedence itself.
+Regrouping deliberately avoids semantic interpretation. Infix peers are flattened
+only when Lean's evaluated trailing parser descriptions report identical result and
+left binding powers; the formatter does not classify operator text or reproduce a
+precedence table.
 
 The `letExpression` annotation is a syntactic parser fact rather than semantic
 interpretation. For each concrete body, `SyntaxTree` runs `termParser argPrec` against
@@ -1045,11 +1050,14 @@ shape.
 
 Infix chains are kept for balanced peer-operator breaks. Raw binary infix trees are
 locally usable, but a long chain needs one rule decision over all peer operators. The
-`.infixChain` node keeps that syntax reasoning in rules and leaves indentation math in
-the renderer. If an infix chain's right operand is an alternating `term | term | ...`
-sequence, the infix rule exposes the right-operand boundary and the generic wrapper rule
-flows at its bars. This is a shape classification rather than a rule-name or syntax-kind
-special case.
+syntax-tree pass evaluates the active trailing parser descriptions once per syntax kind
+and flattens adjacent binary nodes with identical binding powers. Thus `+` and `-`, or
+project-defined peers, share a continuation base without a formatter-maintained operator
+table. The `.infixChain` node keeps that syntax reasoning in rules and leaves indentation
+math in the renderer. If an infix chain's right operand is an alternating
+`term | term | ...` sequence, the infix rule exposes the right-operand boundary and the
+generic wrapper rule flows at its bars. This is a parser-derived shape classification
+rather than a rule-name or token-text special case.
 
 ### Why rule and renderer separation?
 
