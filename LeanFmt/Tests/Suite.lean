@@ -2953,6 +2953,37 @@ def assertInstanceEquationArmsUseDeclarationBase (env : Lean.Environment) : IO U
       { lineWidth := 100 }
   assertEq "instance equation arms use the declaration base" expected formatted
 
+def assertProofEquationArmsUseDeclarationBase (env : Lean.Environment) : IO Unit := do
+  let source :=
+    "theorem listFindIndex {p : α → β → Bool} (hp : Primrec₂ p) :\n"
+    ++ "    ∀ l : List β, Primrec fun a => l.findIdx (p a)\n"
+    ++ "| [] => const 0\n"
+    ++ "| a :: l => (cond (hp.comp .id (const a)) (const 0) (succ.comp (listFindIndex hp l))).of_eq fun n =>\n"
+    ++ "  by simp [List.findIdx_cons]\n"
+    ++ "\n"
+    ++ "theorem next : True := by\n"
+    ++ "  trivial\n"
+  let expected :=
+    "theorem listFindIndex {p : α → β → Bool} (hp : Primrec₂ p)\n"
+    ++ "    : ∀ l : List β, Primrec fun a => l.findIdx (p a)\n"
+    ++ "  | [] => const 0\n"
+    ++ "  | a :: l => (cond (hp.comp .id (const a)) (const 0) (succ.comp (listFindIndex hp l))).of_eq fun n =>\n"
+    ++ "    by simp [List.findIdx_cons]\n"
+    ++ "\n"
+    ++ "theorem next : True := by\n"
+    ++ "  trivial\n"
+  let result ←
+    Formatter.formatSourceWithEnvDetailed env source
+      "proof-equation-declaration-base.lean" { lineWidth := 100 }
+  assertTrue "proof equation arms do not fall back" (!result.fellBack)
+  assertEq "proof equation arms use the declaration base" expected result.formatted
+  assertTrue "proof equation arm alignment preserves code"
+    (← codePreservedIgnoringWhitespace env source result.formatted)
+  let formattedAgain ←
+    Formatter.formatSourceWithEnv env result.formatted
+      "proof-equation-declaration-base-formatted.lean" { lineWidth := 100 }
+  assertEq "proof equation arm alignment is idempotent" result.formatted formattedAgain
+
 def assertDefinitionContainingProofUntouched (env : Lean.Environment) : IO Unit := do
   let source :=
     "structure ProofRecord where\n"
@@ -9882,6 +9913,7 @@ def runBasicFormattingTests (env : Lean.Environment) : IO Unit := do
   assertTheoremTermProofBodyUntouched env
   assertTheoremEquationProofBodyUntouched env
   assertInstanceEquationArmsUseDeclarationBase env
+  assertProofEquationArmsUseDeclarationBase env
   assertDefinitionContainingProofUntouched env
   assertInstanceContainingProofUntouched env
   assertTerminationProofSuffixUntouched env

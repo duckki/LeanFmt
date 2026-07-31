@@ -824,7 +824,11 @@ parent rule; an existing source-line boundary and the child's internal layout re
 unchanged.
 A protected proof-layout child that already begins on a source line still adopts a
 pending structural indent from its parent before rebasing its internal relative layout.
-This keeps nested record values beneath the field assignment that owns them.
+This keeps nested record values beneath the field assignment that owns them. That
+rule-owned indent is a structural floor for the complete island: fit recovery must not
+leave later source-aligned lines at an older column, even when uniformly shifting a
+pre-existing long line would make it longer. Equation arms therefore remain aligned
+under their declaration instead of escaping Lean's layout block.
 A proof body whose introducer was moved onto a line by itself starts one indentation
 level below that introducer. This structural floor applies only when no code precedes the
 introducer on its output line; inline proof islands retain their source-relative layout.

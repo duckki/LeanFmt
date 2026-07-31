@@ -40,8 +40,16 @@ private def shiftLineIndent (sourceColumn targetColumn : Nat) (line : String) : 
     let removeCount := min (sourceColumn - targetColumn) (leadingWhitespace line).length
     (line.drop removeCount).toString
 
+private def shiftBoundaryIndent (sourceColumn targetColumn : Nat) (line : String)
+    : String :=
+  if line.isEmpty && sourceColumn <= targetColumn then
+    spaces (targetColumn - sourceColumn)
+  else
+    shiftLineIndent sourceColumn targetColumn line
+
 private def rebaseLines (sourceColumn targetColumn : Nat) : List String → List String
   | [] => []
+  | [line] => [shiftBoundaryIndent sourceColumn targetColumn line]
   | line :: rest =>
       shiftLineIndent sourceColumn targetColumn line
       :: rebaseLines sourceColumn targetColumn rest
@@ -616,7 +624,9 @@ private def emitRebased? (request : EmissionRequest) (tree : SyntaxTree.Tree)
   let inlineContinuationColumns? :=
     match inlineContinuationColumns? with
     | some (sourceIndent, targetIndent) =>
-        if proofLayout || calcLayout || quotation then
+        if proofLayout && request.respectPendingIndent then
+          some (sourceIndent, targetIndent)
+        else if proofLayout || calcLayout || quotation then
           some
             (
               sourceIndent,
