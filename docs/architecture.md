@@ -828,7 +828,9 @@ This keeps nested record values beneath the field assignment that owns them. Tha
 rule-owned indent is a structural floor for the complete island: fit recovery must not
 leave later source-aligned lines at an older column, even when uniformly shifting a
 pre-existing long line would make it longer. Equation arms therefore remain aligned
-under their declaration instead of escaping Lean's layout block.
+under their declaration instead of escaping Lean's layout block. When a parent moves a
+protected layout to a new line column, that structural target applies to the complete
+island, including every later equation arm and protected proof line in the block.
 A proof body whose introducer was moved onto a line by itself starts one indentation
 level below that introducer. This structural floor applies only when no code precedes the
 introducer on its output line; inline proof islands retain their source-relative layout.

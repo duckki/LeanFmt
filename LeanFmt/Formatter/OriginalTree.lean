@@ -619,7 +619,14 @@ private def emitRebased? (request : EmissionRequest) (tree : SyntaxTree.Tree)
               movedIndent
             else
               sourceIndent
-          some (sourceIndent, max movedIndent structuralIndent)
+          let targetIndent :=
+            if proofLayout
+                && request.respectPendingIndent
+                && originalLeadingHasLineStructure then
+              structuralIndent
+            else
+              max movedIndent structuralIndent
+          some (sourceIndent, targetIndent)
       | _, _ => none
   let inlineContinuationColumns? :=
     match inlineContinuationColumns? with

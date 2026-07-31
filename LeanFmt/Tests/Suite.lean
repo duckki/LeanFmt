@@ -2984,6 +2984,34 @@ def assertProofEquationArmsUseDeclarationBase (env : Lean.Environment) : IO Unit
       "proof-equation-declaration-base-formatted.lean" { lineWidth := 100 }
   assertEq "proof equation arm alignment is idempotent" result.formatted formattedAgain
 
+def assertIndentedProofEquationLayoutMovesAsUnit (env : Lean.Environment) : IO Unit := do
+  let source :=
+    "theorem allValuesAreTrue (seed : Nat)\n"
+    ++ "    : ∀ values : List Nat,\n"
+    ++ "        values = values\n"
+    ++ "          ∧ values.reverse.reverse = values\n"
+    ++ "    | [] => by\n"
+    ++ "      trivial\n"
+    ++ "    | _ :: rest => by\n"
+    ++ "      trivial\n"
+  let expected :=
+    "theorem allValuesAreTrue (seed : Nat)\n"
+    ++ "    : ∀ values : List Nat, values = values ∧ values.reverse.reverse = values\n"
+    ++ "  | [] => by\n"
+    ++ "    trivial\n"
+    ++ "  | _ :: rest => by\n"
+    ++ "    trivial\n"
+  let result ←
+    Formatter.formatSourceWithEnvDetailed env source "indented-proof-equation-layout.lean"
+  assertTrue "indented proof equation layout does not fall back" (!result.fellBack)
+  assertEq "indented proof equation layout moves as one island" expected result.formatted
+  assertTrue "indented proof equation layout preserves code"
+    (← codePreservedIgnoringWhitespace env source result.formatted)
+  let formattedAgain ←
+    Formatter.formatSourceWithEnv env result.formatted
+      "indented-proof-equation-layout-formatted.lean"
+  assertEq "indented proof equation layout is idempotent" result.formatted formattedAgain
+
 def assertDefinitionContainingProofUntouched (env : Lean.Environment) : IO Unit := do
   let source :=
     "structure ProofRecord where\n"
@@ -9914,6 +9942,7 @@ def runBasicFormattingTests (env : Lean.Environment) : IO Unit := do
   assertTheoremEquationProofBodyUntouched env
   assertInstanceEquationArmsUseDeclarationBase env
   assertProofEquationArmsUseDeclarationBase env
+  assertIndentedProofEquationLayoutMovesAsUnit env
   assertDefinitionContainingProofUntouched env
   assertInstanceContainingProofUntouched env
   assertTerminationProofSuffixUntouched env

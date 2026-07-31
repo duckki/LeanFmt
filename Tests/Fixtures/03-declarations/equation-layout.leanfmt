@@ -1,0 +1,17 @@
+theorem allValuesAreTrue (seed : Nat)
+    : ∀ values : List Nat,
+        values = values
+          ∧ values.reverse.reverse = values
+    | [] => by
+      trivial
+    | _ :: rest => by
+      trivial
+-----------------------------------------------------------------------------------------
+-- leanfmt: expected output below (DO NOT EDIT)
+-----------------------------------------------------------------------------------------
+theorem allValuesAreTrue (seed : Nat)
+    : ∀ values : List Nat, values = values ∧ values.reverse.reverse = values
+  | [] => by
+    trivial
+  | _ :: rest => by
+    trivial
