@@ -1749,7 +1749,8 @@ mutual
     let state :=
       match segment.parent with
       | .node _ _ =>
-          if rule.liftsTailIndentation state.context segment then
+          if rule.liftsTailIndentation state.context segment
+              && !rule.inheritBase state.context segment then
             match segmentFirstToken? segment with
             | some token =>
                 let baseColumn := state.nextTokenColumn token

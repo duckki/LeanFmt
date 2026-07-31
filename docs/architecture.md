@@ -430,7 +430,8 @@ Rule methods mean:
 - `liftsTailIndentation`: while rendering every child except the final child, establish
   the indentation of the following rule boundary as that child's tail indentation.
   Infix-like and flow rules lift continuations one level beyond that tail. Rules never
-  encode prefix widths or variable depth contributions.
+  encode prefix widths or variable depth contributions. Tail lifting does not replace
+  a base explicitly inherited from the surrounding syntax.
 - `startAlignment`: rules classify start alignment as absent, preferred for visual
   stability, or required by layout-sensitive parsing. The renderer decides whether
   padding is needed after measuring the nested layout. It may suppress preferred
@@ -687,6 +688,10 @@ child boundary. Every earlier child inherits the indentation of the following ru
 boundary as its tail indentation. Thus a `for` binder is anchored by `in`, an infix
 operand by its following operator, and an off-column child by the already-rounded
 boundary rather than by the width of its prefix.
+
+If the same rule also sets `inheritBase`, that inherited base remains the segment's
+structural base. Tail lifting constrains continuations but does not rebase the segment
+onto the physical column of an inline opener.
 
 For example, an inner operator is lifted beyond the operator that follows its containing
 operand:

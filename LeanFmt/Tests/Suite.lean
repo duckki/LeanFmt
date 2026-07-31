@@ -6935,6 +6935,39 @@ def assertStructUpdateWithFieldsBreaks (env : Lean.Environment) : IO Unit := do
     Formatter.formatSourceWithEnv env infixSource "struct-update-infix-depth.lean"
   assertEq "structure update source uses infix-left depth" infixExpected infixFormatted
 
+def assertNestedArrayStructureInstancesUseExpressionBase (env : Lean.Environment)
+    : IO Unit := do
+  let source :=
+    "def nestedStructure := do\n"
+    ++ "  return #[{\n"
+    ++ "    eager\n"
+    ++ "    lazy? := some do\n"
+    ++ "      return { eager with\n"
+    ++ "        edit? := exceptionallyLongStructureFieldValueName firstArgument secondArgument thirdArgument\n"
+    ++ "      }\n"
+    ++ "  }]\n"
+  let expected :=
+    "def nestedStructure := do\n"
+    ++ "  return #[{\n"
+    ++ "    eager\n"
+    ++ "    lazy? :=\n"
+    ++ "      some do\n"
+    ++ "        return {\n"
+    ++ "          eager with\n"
+    ++ "            edit? :=\n"
+    ++ "              exceptionallyLongStructureFieldValueName firstArgument secondArgument\n"
+    ++ "                thirdArgument\n"
+    ++ "        }\n"
+    ++ "  }]\n"
+  let formatted ←
+    Formatter.formatSourceWithEnv env source "nested-array-structure-base.lean"
+  assertEq "nested array structure instances use the enclosing expression base"
+    expected formatted
+  let formattedAgain ←
+    Formatter.formatSourceWithEnv env formatted
+      "nested-array-structure-base-formatted.lean"
+  assertEq "nested array structure formatting is idempotent" formatted formattedAgain
+
 def assertTupleBreakBalanced (env : Lean.Environment) : IO Unit := do
   let source :=
     "def tupleOperand := (firstItemNameWithEnoughCharactersForLayoutTesting, secondItemNameWithEnoughCharactersForLayoutTesting,)\n"
@@ -9787,6 +9820,7 @@ def runCollectionAndDeclarationTests (env : Lean.Environment) : IO Unit := do
   assertStructInstanceFieldEquationsUseFieldBase env
   assertStructInstanceFieldBindersPreserved env
   assertStructUpdateWithFieldsBreaks env
+  assertNestedArrayStructureInstancesUseExpressionBase env
   assertTupleBreakBalanced env
   assertAnonymousConstructorBreakBalanced env
   assertExportBreaksLongList env

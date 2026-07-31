@@ -87,7 +87,7 @@ structural base.
 
 ### 3. Moved subtrees retain stale source indentation
 
-Severity: high.
+Status: resolved.
 
 When formatting moves a parent expression or scoped command, some protected
 proofs, custom-command bodies, or nested structure instances retain an old
@@ -114,6 +114,10 @@ Source-preserved subtrees must be rebased relative to the formatted position of
 their owning syntax. Structural formatting of a nested structure instance must
 also use a parent-relative block base instead of recursively using each visual
 opener column.
+
+Protected layouts are now rebased when their parent moves. Singleton `#[…]`
+wrappers propagate the enclosing expression base, and tail lifting no longer
+replaces a base that a nested structure instance explicitly inherits.
 
 ### 4. Branches inherit the wrong owning base
 

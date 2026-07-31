@@ -118,7 +118,8 @@ def RuleContext.parentIsSingletonArrayItemWrapper (context : RuleContext) : Bool
   | parent :: grandparent :: _ =>
       parent.rawKind? == some `null
       && parent.segment.size == 1
-      && grandparent.rawKind? == some `«term[_]»
+      && (grandparent.rawKind? == some `«term[_]»
+          || grandparent.rawKind? == some `«term#[_,]»)
       && grandparent.childIndex == 1
   | _ => false
 
@@ -624,7 +625,8 @@ def defaultRule : LineBreakRule :=
 /-! ### Shared wrapper and context rules -/
 
 def singletonArrayItemWrapper (context : RuleContext) (segment : Segment) : Bool :=
-  parentIsRawKind context `«term[_]» && segmentContentCount segment == 1
+  (parentIsRawKind context `«term[_]» || parentIsRawKind context `«term#[_,]»)
+  && segmentContentCount segment == 1
 
 def rawKindIsQuantifier (kind : Lean.SyntaxNodeKind) : Bool :=
   kind == `Lean.Parser.Term.forall
@@ -2800,7 +2802,9 @@ def nullRule : LineBreakRule :=
 def arrayRule : LineBreakRule :=
   {
     name := "array"
-    inheritBase := fun _ segment => 1 < arrayItemCount segment
+    inheritBase :=
+      fun _ segment =>
+        segment.rawKind? == some `«term#[_,]» || 1 < arrayItemCount segment
     roundUpBaseIndentation := true
     breakPoints := arrayBreaks
   }
