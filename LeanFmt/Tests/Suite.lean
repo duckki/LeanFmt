@@ -5810,6 +5810,21 @@ def assertIfLetPatternKeepsAssignmentWithHeader (env : Lean.Environment) : IO Un
     Formatter.formatSourceWithEnv env source "if-let-pattern-assignment.lean"
   assertEq "if-let pattern keeps assignment with its header" expected formatted
 
+def assertIfLetBranchesUseConditionalBase (env : Lean.Environment) : IO Unit := do
+  let source :=
+    "def nestedThenBranch (opt? : Option Nat) : Bool :=\n"
+    ++ "  if let some opt := opt? then\n"
+    ++ "    match opt with\n"
+    ++ "    | 0 => false\n"
+    ++ "    | _ => true\n"
+    ++ "  else\n"
+    ++ "    false\n"
+  let formatted ← Formatter.formatSourceWithEnv env source "if-let-branch-base.lean"
+  assertEq "if-let branches use the conditional base" source formatted
+  let formattedAgain ←
+    Formatter.formatSourceWithEnv env formatted "if-let-branch-base-formatted.lean"
+  assertEq "if-let branch formatting is idempotent" formatted formattedAgain
+
 def assertDependentIfThenElseKeepsHeaderAndBranchesAligned (env : Lean.Environment)
     : IO Unit := do
   let source :=
@@ -9690,6 +9705,7 @@ def runControlFlowTests (env : Lean.Environment) : IO Unit := do
   assertIfThenElseUsesExistingBreaks env
   assertIfThenElseKeepsAttachedDoBody env
   assertIfLetPatternKeepsAssignmentWithHeader env
+  assertIfLetBranchesUseConditionalBase env
   assertDependentIfThenElseKeepsHeaderAndBranchesAligned env
   assertElseIfContinuesOnElseLine env
   assertElseIfChainBreaksThenBranchesTogether env

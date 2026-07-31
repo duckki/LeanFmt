@@ -2410,6 +2410,14 @@ def dependentIfThenElseBreaks (_context : RuleContext) (segment : Segment)
       else
         boundaryBreak? segment index indentLevels
 
+def ifLetThenElseBreaks (_context : RuleContext) (segment : Segment) : List BreakPoint :=
+  [(6, 1), (7, 0), (8, 1)].filterMap
+    fun (index, indentLevels) =>
+      if attachedBodyStart segment index then
+        none
+      else
+        boundaryBreak? segment index indentLevels
+
 def ifThenElseChainBreaks (_context : RuleContext) (segment : Segment)
     : List BreakPoint :=
   (List.range (segment.size - 1)).filterMap
@@ -3002,6 +3010,15 @@ def dependentIfThenElseRule : LineBreakRule :=
     breakPoints := dependentIfThenElseBreaks
   }
 
+def ifLetThenElseRule : LineBreakRule :=
+  {
+    name := "ifLetThenElse"
+    useExistingBreaks := fun _ _ => true
+    startAlignment := fun _ _ => .preferred
+    roundUpBaseIndentation := true
+    breakPoints := ifLetThenElseBreaks
+  }
+
 def ifThenElseChainRule : LineBreakRule :=
   {
     name := "ifThenElseChain"
@@ -3592,6 +3609,7 @@ def ruleFor : SyntaxTree.Tree → Option LineBreakRule
   | .node (.raw `Mathlib.Meta.SetNotationForOrder.«binderPred⊇_») _ =>
       some defaultRule
   | .node (.raw `termDepIfThenElse) _ => some dependentIfThenElseRule
+  | .node (.raw `termIfLet) _ => some ifLetThenElseRule
   | .node (.raw `BigOperators.bigsum) _ => some bigOperatorRule
   | .node (.raw `BigOperators.bigprod) _ => some bigOperatorRule
   | .node (.raw `BigOperators.bigexpect) _ => some bigOperatorRule
