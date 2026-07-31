@@ -3528,8 +3528,9 @@ def ruleFor : SyntaxTree.Tree → Option LineBreakRule
   | .node (.raw `Lean.Parser.Term.leading_parser) _ => some applicationRule
   | .node (.raw `Lean.Parser.Term.typeAscription) _ => some typeAscriptionRule
   | .node (.raw `Lean.Parser.Term.optEllipsis) _ => some defaultRule
-  | .node (.raw `Lean.Parser.Term.explicit) _ => some defaultRule
-  | .node (.raw `Lean.Parser.Term.explicitUniv) _ => some defaultRule
+  | .node (.raw `Lean.Parser.Term.explicit) _ => some <| prefixedTermRule "explicit"
+  | .node (.raw `Lean.Parser.Term.explicitUniv) _ =>
+      some <| prefixedTermRule "explicitUniv"
   | .node (.raw `Lean.Parser.Term.have) _ => some haveRule
   | .node (.raw `Lean.Parser.Term.haveI) _ => some haveRule
   | .node (.raw `Lean.Parser.Term.hole) _ => some defaultRule

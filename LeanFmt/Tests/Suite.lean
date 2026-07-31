@@ -3901,6 +3901,29 @@ def assertMovedInlineCalcKeepsContinuationLayout (env : Lean.Environment) : IO U
   assertTrue "moved inline calc preserves code"
     (← codePreservedIgnoringWhitespace env source result.formatted)
 
+def assertExplicitLambdaKeepsPrefixMarker (env : Lean.Environment) : IO Unit := do
+  let source :=
+    "def explicitLambdaPrefixMarker : Nat :=\n"
+    ++ "  have : ∀ {u : Unit}, LongTypeNameWithEnoughCharactersToForceLineBreaking u := @fun u h => veryLongApplicationNameWithEnoughCharactersToForceLineBreaking u h extraLongArgumentName\n"
+    ++ "  result\n"
+  let expected :=
+    "def explicitLambdaPrefixMarker : Nat :=\n"
+    ++ "  have : ∀ {u : Unit}, LongTypeNameWithEnoughCharactersToForceLineBreaking u :=\n"
+    ++ "    @fun u h =>\n"
+    ++ "      veryLongApplicationNameWithEnoughCharactersToForceLineBreaking u h\n"
+    ++ "        extraLongArgumentName\n"
+    ++ "  result\n"
+  let result ←
+    Formatter.formatSourceWithEnvDetailed env source "explicit-lambda-prefix-marker.lean"
+  assertTrue "explicit lambda prefix marker does not fall back" (!result.fellBack)
+  assertEq "explicit lambda keeps @ with fun" expected result.formatted
+  assertTrue "explicit lambda prefix marker preserves code"
+    (← codePreservedIgnoringWhitespace env source result.formatted)
+  let formattedAgain ←
+    Formatter.formatSourceWithEnv env result.formatted
+      "explicit-lambda-prefix-marker-formatted.lean"
+  assertEq "explicit lambda prefix marker is idempotent" result.formatted formattedAgain
+
 def assertHaveTermFormatting (env : Lean.Environment) : IO Unit := do
   let source :=
     "theorem haveTermLayoutWithLongHeaderName (h : VeryLongHypothesisNameForLayoutTesting) : VeryLongTargetNameForLayoutTesting :=\n"
@@ -9971,6 +9994,7 @@ def runBasicFormattingTests (env : Lean.Environment) : IO Unit := do
   assertOriginalLayoutValueHonorsDeclarationBreak env
   assertCalcLayoutIslandAfterNestedInfix env
   assertMovedInlineCalcKeepsContinuationLayout env
+  assertExplicitLambdaKeepsPrefixMarker env
   assertHaveTermFormatting env
   assertHaveProofAfterInfixPreservesLayout env
   assertAbsoluteValueDelimitersStayAttached env
