@@ -6287,6 +6287,16 @@ def assertGeneratedBinderOperatorBreaksBeforeBody (env : Lean.Environment) : IO 
   assertEq "generated binder with suffix breaks before its body"
     suffixedExpected suffixedFormatted
 
+def assertDependentPairBreaksBeforeBody (env : Lean.Environment) : IO Unit := do
+  let source :=
+    "def dependentPair : Type := Σ value : VeryLongTypeNameForDependentBinderLayoutTesting, VeryLongDependentTypeNameForBinderLayoutTesting value\n"
+  let expected :=
+    "def dependentPair : Type :=\n"
+    ++ "  Σ value : VeryLongTypeNameForDependentBinderLayoutTesting,\n"
+    ++ "    VeryLongDependentTypeNameForBinderLayoutTesting value\n"
+  let formatted ← Formatter.formatSourceWithEnv env source "dependent-pair-body.lean"
+  assertEq "dependent pair breaks before its body" expected formatted
+
 def assertQuantifierIdentifierSequenceFlows (env : Lean.Environment) : IO Unit := do
   let source :=
     "def quantifiedPrefixes : Prop := ∃ leftPrefixFields leftPrefixErrors "
@@ -9794,6 +9804,7 @@ def runControlFlowTests (env : Lean.Environment) : IO Unit := do
   assertQuantifierBreaksAfterComma env
   assertBreakNeverPrecedesTrailingSeparator env
   assertGeneratedBinderOperatorBreaksBeforeBody env
+  assertDependentPairBreaksBeforeBody env
   assertQuantifierIdentifierSequenceFlows env
   assertArrowQuantifierKeepsQuantifierOnArrowLine env
   assertArrowMatchKeepsMatchOnArrowLine env

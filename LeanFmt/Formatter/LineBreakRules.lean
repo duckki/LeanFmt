@@ -647,11 +647,21 @@ def treeHasBinderBodySeparator (tree : SyntaxTree.Tree) : Bool :=
         fun index => index < bodyIndex && childStartsWithLexeme segment index ","
   | none => false
 
+def treeHasDirectBinderCollection : SyntaxTree.Tree → Bool
+  | .node _ children =>
+      children.any
+        fun child =>
+          treeIsRawKind child `Lean.explicitBinders
+          || treeIsRawKind child `Lean.unbracketedExplicitBinders
+          || treeIsRawKind child `Batteries.ExtendedBinder.extBinderCollection
+  | _ => false
+
 def treeIsBinderOperatorTerm (tree : SyntaxTree.Tree) : Bool :=
   match tree with
   | .node (.raw kind) _ =>
       rawKindIsQuantifier kind
-      || ((treeFirstLexeme? tree).any binderOperatorLexeme
+      || ((treeHasDirectBinderCollection tree
+            || (treeFirstLexeme? tree).any binderOperatorLexeme)
           && treeHasBinderBodySeparator tree)
   | _ => false
 
