@@ -2100,7 +2100,10 @@ mutual
         renderSegmentByRule childState childSegment childRule structuralBreakPoints
       else if emitOriginal then
         emitOriginalAt
-          (!startsOnNewSourceLine || state.pendingCommandBoundary?.isSome)
+          (!startsOnNewSourceLine
+            || state.pendingCommandBoundary?.isSome
+            || (originalClassification?.any OriginalTree.LayoutIslandKind.isProofLayout
+                && state.pendingIndent?.isSome))
           none originalClassification?
       else
         renderSegment childState childSegment (some (childRule, childBreakPoints))

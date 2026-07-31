@@ -822,6 +822,9 @@ declarations around them can still be formatted. When an original-source child f
 its previous token on the same source line, it honors a pending boundary selected by its
 parent rule; an existing source-line boundary and the child's internal layout remain
 unchanged.
+A protected proof-layout child that already begins on a source line still adopts a
+pending structural indent from its parent before rebasing its internal relative layout.
+This keeps nested record values beneath the field assignment that owns them.
 A proof body whose introducer was moved onto a line by itself starts one indentation
 level below that introducer. This structural floor applies only when no code precedes the
 introducer on its output line; inline proof islands retain their source-relative layout.

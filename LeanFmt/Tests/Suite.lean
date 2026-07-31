@@ -2721,6 +2721,42 @@ def assertProofApplicationFollowsMovedInlineAnchor (env : Lean.Environment)
   assertEq "proof application after moved inline anchor is idempotent"
     result.formatted formattedAgain
 
+def assertNestedProofLayoutFollowsPendingIndent (env : Lean.Environment) : IO Unit := do
+  let source :=
+    "def nestedProofLayoutRecord :=\n"
+    ++ "  let c : Cone F :=\n"
+    ++ "  { pt := conePoint\n"
+    ++ "    π :=\n"
+    ++ "      { app := fun x => veryLongApplicationNameWithEnoughCharactersToKeepTheNestedStructureBroken x\n"
+    ++ "        naturality _ _ f := by\n"
+    ++ "          exact proof } }\n"
+    ++ "  c\n"
+  let expected :=
+    "def nestedProofLayoutRecord :=\n"
+    ++ "  let c : Cone F :=\n"
+    ++ "    {\n"
+    ++ "      pt := conePoint\n"
+    ++ "      π :=\n"
+    ++ "        {\n"
+    ++ "          app :=\n"
+    ++ "            fun x => veryLongApplicationNameWithEnoughCharactersToKeepTheNestedStructureBroken x\n"
+    ++ "          naturality _ _ f := by\n"
+    ++ "            exact proof\n"
+    ++ "        }\n"
+    ++ "    }\n"
+    ++ "  c\n"
+  let result ←
+    Formatter.formatSourceWithEnvDetailed env source
+      "nested-proof-layout-pending-indent.lean" { lineWidth := 100 }
+  assertTrue "nested proof layout does not fall back" (!result.fellBack)
+  assertEq "nested proof layout follows pending indent" expected result.formatted
+  assertTrue "nested proof layout preserves code"
+    (← codePreservedIgnoringWhitespace env source result.formatted)
+  let formattedAgain ←
+    Formatter.formatSourceWithEnv env result.formatted
+      "nested-proof-layout-pending-indent-formatted.lean" { lineWidth := 100 }
+  assertEq "nested proof layout is idempotent" result.formatted formattedAgain
+
 def assertMovedProofLayoutIslandKeepsContinuationIndentation (env : Lean.Environment)
     : IO Unit := do
   let source :=
@@ -9838,6 +9874,7 @@ def runBasicFormattingTests (env : Lean.Environment) : IO Unit := do
   assertMovedChildrenUseLogicalLayoutBases env
   assertMovedInlineProofBodiesRemainParseable env
   assertProofApplicationFollowsMovedInlineAnchor env
+  assertNestedProofLayoutFollowsPendingIndent env
   assertMovedProofLayoutIslandKeepsContinuationIndentation env
   assertDetachedInlineProofBodyKeepsInternalIndentation env
   assertShowProofAfterMovedLambdaIsIdempotent env
