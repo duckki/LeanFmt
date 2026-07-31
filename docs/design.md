@@ -768,6 +768,10 @@ veryLongFunctionName child children additionalArgumentOne
   additionalArgumentTwo additionalArgumentThree
 ```
 
+Lean's `leading_parser` syntax describes a parser constructor with ordinary
+positional arguments, so those arguments use the same flow layout instead of
+letting a nested parser-combinator expression establish their indentation.
+
 Nested applications choose their continuation from the nested application's
 structural base rather than aligning every line under the first argument:
 

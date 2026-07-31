@@ -887,6 +887,18 @@ def assertGroupedEqualPrecedenceInfixChain (env : Lean.Environment) : IO Unit :=
       { lineWidth := 55 }
   assertEq "equal-precedence infix continuations share one base" expected formatted
 
+def assertLeadingParserArgumentsFlow (env : Lean.Environment) : IO Unit := do
+  let source :=
+    "def parserDeclaration := leading_parser (withAnonymousAntiquot := false) atomic (termParser >> pushNone >> \" : \" >> tfaeType >> \" := \") >> termParser\n"
+  let expected :=
+    "def parserDeclaration :=\n"
+    ++ "  leading_parser (withAnonymousAntiquot := false)\n"
+    ++ "    atomic (termParser >> pushNone >> \" : \" >> tfaeType >> \" := \") >> termParser\n"
+  let formatted ←
+    Formatter.formatSourceWithEnv env source "leading-parser-arguments.lean"
+      { lineWidth := 100 }
+  assertEq "leading parser arguments use application flow" expected formatted
+
 def assertDoFallbackRegrouping (env : Lean.Environment) : IO Unit := do
   let source :=
     "def fallback (candidate : Option Nat) : Option Nat := do\n"
@@ -9783,6 +9795,7 @@ def runBasicFormattingTests (env : Lean.Environment) : IO Unit := do
   assertDefinitionSourceBreakAfterAssignOverridesFlat env
 
 def runExpressionAndRendererTests (env : Lean.Environment) : IO Unit := do
+  assertLeadingParserArgumentsFlow env
   assertSelfFormattingLetAndArrayRegressions env
   assertCliSelfFormattingRegressions env
   assertSelfFormattingRulePriorities env
