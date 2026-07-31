@@ -8442,6 +8442,33 @@ def assertDeclarationRuleTransparent : IO Unit := do
   assertTrue "declaration rule has no break points"
     (rule.breakPoints context segment == [])
 
+def assertRecursiveCommandArgumentsShareBase : IO Unit := do
+  let argumentKind := `Aesop.Frontend.Parser.rule_expr___
+  let tail :=
+    SyntaxTree.Tree.node (.raw argumentKind)
+      #[.leaf (syntheticAtomToken "second"), .leaf (syntheticAtomToken "third")]
+  let arguments :=
+    SyntaxTree.Tree.node (.raw argumentKind) #[.leaf (syntheticAtomToken "first"), tail]
+  let segment := Formatter.LineBreakRules.Segment.ofTree arguments
+  let rule := Formatter.LineBreakRules.formattingRuleFor arguments
+  let context : Formatter.LineBreakRules.RuleContext := {}
+  assertEq "recursive command arguments use a sequence rule" "recursiveSequence" rule.name
+  assertTrue "recursive command argument tails inherit one shared base"
+    (rule.inheritBase context segment)
+  assertTrue "recursive command arguments break without accumulating depth"
+    (rule.breakPoints context segment == [{ index := 1, indentLevels := 0 }])
+
+  let command :=
+    SyntaxTree.Tree.node (.raw `Aesop.Frontend.Parser.addRules)
+      #[
+        .node (.raw `Lean.Parser.Term.attrKind) #[],
+        .leaf (syntheticAtomToken "add_aesop_rules"),
+        arguments
+      ]
+  let regrouped := SyntaxTree.regroupTree command
+  assertTrue "empty optional command prefixes do not masquerade as infix operands"
+    (!regrouped.containsNodeKind (.infixChain `Aesop.Frontend.Parser.addRules))
+
 def assertBracketedNotationRulesKeepDelimitersAttached : IO Unit := do
   let indexedTerm :=
     SyntaxTree.Tree.node (.raw `Uniformity.«term𝓤[_]»)
@@ -9863,6 +9890,7 @@ def runCliAndArchitectureTests (env : Lean.Environment) : IO Unit := do
   assertCliFixtureUpdate env
   assertFormatterArchitecture
   assertDeclarationRuleTransparent
+  assertRecursiveCommandArgumentsShareBase
   assertBracketedNotationRulesKeepDelimitersAttached
   assertLakeDslFormatting
   assertMathlibLowRiskSyntaxKindsHaveRules

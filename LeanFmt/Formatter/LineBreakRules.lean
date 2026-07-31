@@ -618,6 +618,23 @@ def defaultRule : LineBreakRule :=
     breakPoints := defaultBreaks
   }
 
+def recursiveSequenceBreaks (_context : RuleContext) (segment : Segment)
+    : List BreakPoint :=
+  match defaultPresentChildIndexes segment with
+  | [] | [_] => []
+  | _ :: rest =>
+      rest.filterMap fun index => boundaryBreak? segment index 0
+
+def recursiveSequenceRule : LineBreakRule :=
+  {
+    name := "recursiveSequence"
+    useExistingBreaks :=
+      fun context segment => !(recursiveSequenceBreaks context segment).isEmpty
+    flow := fun context segment => !(recursiveSequenceBreaks context segment).isEmpty
+    inheritBase := fun _ _ => true
+    breakPoints := recursiveSequenceBreaks
+  }
+
 -----------------------------------------------------------------------------------------
 -- Custom Rules
 -----------------------------------------------------------------------------------------
@@ -3391,6 +3408,7 @@ def ruleFor : SyntaxTree.Tree → Option LineBreakRule
   | .node (.raw `Lean.Parser.Command.elabTail) _ => some transparentRule
   | .node (.raw `Lean.Parser.Command.elab_rules) _ => some defaultRule
   | .node (.raw `Lean.Parser.Command.initialize) _ => some defaultRule
+  | .node (.raw `Lean.Parser.Command.section) _ => some defaultRule
   | .node (.raw `Lean.Parser.Command.initializeKeyword) _ => some defaultRule
   | .node (.raw `Lean.runCmd) _ => some transparentRule
   | .node (.raw `Lean.includeStr) _ => some defaultRule
@@ -3777,7 +3795,8 @@ def ruleFor : SyntaxTree.Tree → Option LineBreakRule
       some defaultRule
   | .node (.raw `Aesop.Frontend.Parser.attr_rules_) _ => some defaultRule
   | .node (.raw `Aesop.Frontend.Parser.rule_expr_) _ => some defaultRule
-  | .node (.raw `Aesop.Frontend.Parser.rule_expr___) _ => some defaultRule
+  | .node (.raw `Aesop.Frontend.Parser.rule_expr___) _ =>
+      some recursiveSequenceRule
   | .node (.raw `Aesop.Frontend.Parser.ruleSetsFeature) _ => some defaultRule
   | .node (.raw `Aesop.Frontend.Parser.feature_) _ => some defaultRule
   | .node (.raw `Aesop.Frontend.Parser.feature__1) _ => some defaultRule
@@ -3851,6 +3870,7 @@ def ruleFor : SyntaxTree.Tree → Option LineBreakRule
   | .node (.raw `Matroid.aesop_mat) _ => some defaultRule
   | .node (.raw `Matroid.ExchangeProperty.aesop_mat) _ => some defaultRule
   | .node (.raw `aesop_graph) _ => some defaultRule
+  | .node (.raw `Aesop.Frontend.Parser.addRules) _ => some defaultRule
   | .node (.raw `CategoryTheory.cat_disch) _ => some defaultRule
   | .node (.raw `CategoryTheory.SimplicialObject.Truncated.mkNotation) _ =>
       some defaultRule
@@ -3983,6 +4003,12 @@ def ruleFor : SyntaxTree.Tree → Option LineBreakRule
       if isSymmetricDelimitedGeneratedTerm kind children
           || isGeneratedPostfixTerm kind children then
         some transparentRule
+      else if children.back?.any
+                fun child =>
+                  match child with
+                  | .node (.raw childKind) _ => childKind == kind
+                  | _ => false then
+        some recursiveSequenceRule
       else if treeIsBinderOperatorTerm (.node (.raw kind) children) then
         some quantifierRule
       else if isGeneratedLocalNotationKind kind

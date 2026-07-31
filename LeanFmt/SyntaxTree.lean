@@ -377,9 +377,13 @@ partial def directLeafAtom? : Tree → Bool
   | _ => false
 
 def isBinaryInfixRawNode (kind : SyntaxNodeKind) (children : Array Tree) : Bool :=
+  let hasLeftOperand := children[0]?.any fun child => child.firstToken?.isSome
+  let hasRightOperand := children[2]?.any fun child => child.firstToken?.isSome
   kind != `null
   && kind != `Lean.Parser.Term.app
   && children.size == 3
+  && hasLeftOperand
+  && hasRightOperand
   && match children[1]? with
       | some operator => directLeafAtom? operator
       | none => false
