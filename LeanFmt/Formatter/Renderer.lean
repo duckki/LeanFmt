@@ -2044,8 +2044,9 @@ mutual
       if emitOriginal
           && OriginalTree.canUseStructuralOverflowFallback child
           && 0 < renderedOverflowCount childState rendered then
+        let structuralBreakPoints := ruleBreakPoints childContext childSegment childRule
         let structural :=
-          renderSegment childState childSegment (some (childRule, childBreakPoints))
+          renderSegmentByRule childState childSegment childRule structuralBreakPoints
         preferCandidateWithFewerOverflows childState rendered structural
       else
         rendered

@@ -7731,6 +7731,9 @@ def assertFormattingExceptionChecks (env : Lean.Environment) : IO Unit := do
           match exception with
           | .lineOverflow _ => true
           | _ => false)
+  assertTrue "structure instance original layout may fall back structurally"
+    (Formatter.OriginalTree.canUseStructuralOverflowFallback
+      <| SyntaxTree.Tree.node (.raw `Lean.Parser.Term.structInst) #[])
   let jsxPayload := String.ofList (List.replicate 85 'x')
   let jsxText := "<div>" ++ jsxPayload ++ "</div>"
   let sourceJsxTree :=

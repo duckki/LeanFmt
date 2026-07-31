@@ -767,6 +767,14 @@ proof island by whole indentation levels, never past its original source column.
 fit calculation reserves any closing delimiters and other tight parent suffix that must
 remain on the proof's last line; excluding that suffix would undercount the actual
 completed-line width. The proof's internal relative layout therefore remains unchanged.
+
+If moving a proof-bearing anonymous constructor or structure instance still creates an
+avoidable overflow, the renderer may retry that complete island through its ordinary
+structural rule and select the result only when it has fewer overflowing lines. The retry
+recomputes the rule's breakpoints because the protected-source path intentionally does not
+prepare them. This lets established collection, field, and nested-expression rules resolve
+the overflow without adding syntax decisions to original-source emission.
+
 When a multiline proof or
 quotation begins inline, its later source lines use the introducer's source-to-output
 movement, clamped to the island's structural indentation, rather than treating the

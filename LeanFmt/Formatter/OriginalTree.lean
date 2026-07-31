@@ -476,7 +476,8 @@ def LayoutIslandKind.preservesFollowingCommentIndent : LayoutIslandKind → Bool
   | _ => false
 
 def canUseStructuralOverflowFallback : SyntaxTree.Tree → Bool
-  | .node (.raw `Lean.Parser.Term.anonymousCtor) _ => true
+  | .node (.raw `Lean.Parser.Term.anonymousCtor) _
+  | .node (.raw `Lean.Parser.Term.structInst) _ => true
   | _ => false
 
 partial def startsWithEmission : SyntaxTree.Tree → Bool
