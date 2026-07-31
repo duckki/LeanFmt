@@ -2071,7 +2071,14 @@ mutual
         (rebaseSourceTextTargetColumn? := targetColumn?)
         (classification? := classification?)
     let rendered :=
-      if emitOriginal then
+      if emitOriginal
+          && OriginalTree.canUseStructuralLayoutAfterParentMove child
+          && state.pendingIndent?.any
+              fun desiredIndent =>
+                parentRelativeOriginalColumn? != some desiredIndent then
+        let structuralBreakPoints := ruleBreakPoints childContext childSegment childRule
+        renderSegmentByRule childState childSegment childRule structuralBreakPoints
+      else if emitOriginal then
         emitOriginalAt
           (!startsOnNewSourceLine || state.pendingCommandBoundary?.isSome)
           none originalClassification?

@@ -1112,7 +1112,7 @@ def assertCommentAfterOpeningDelimiterPreserved (env : Lean.Environment) : IO Un
   assertTrue "commented delimiter preserves code and the comment"
     (← codePreservedIgnoringWhitespace env source result.formatted)
 
-def assertProofIslandRetainsFittingSourceIndent (env : Lean.Environment) : IO Unit := do
+def assertProofIslandUsesStructuralIndent (env : Lean.Environment) : IO Unit := do
   let source :=
     "def shiftedRewriteRules :=\n"
     ++ "  outer\n"
@@ -1123,14 +1123,14 @@ def assertProofIslandRetainsFittingSourceIndent (env : Lean.Environment) : IO Un
     "def shiftedRewriteRules :=\n"
     ++ "  outer\n"
     ++ "    (fun x => by\n"
-    ++ "    rw [map_zero, ← ConcreteCategory.comp_apply, ← NatTrans.naturality, ConcreteCategory.comp_apply]\n"
-    ++ "      at hk)\n"
+    ++ "      rw [map_zero, ← ConcreteCategory.comp_apply, ← NatTrans.naturality, ConcreteCategory.comp_apply]\n"
+    ++ "        at hk)\n"
   let formatted ←
     Formatter.formatSourceWithEnv env source "fitting-proof-island-indent.lean"
       { lineWidth := 100 }
-  assertEq "proof island keeps its fitting source indent instead of overflowing"
-    expected formatted
-  assertTrue "proof island source-indent fallback fits" (Formatter.linesFit formatted 100)
+  assertEq "proof island keeps its structural indentation" expected formatted
+  assertTrue "unbreakable proof lines may overflow from their structural indentation"
+    (!Formatter.linesFit formatted 100)
 
 def assertProofIslandFitIncludesParentSuffix (env : Lean.Environment) : IO Unit := do
   let source :=
@@ -1142,13 +1142,16 @@ def assertProofIslandFitIncludesParentSuffix (env : Lean.Environment) : IO Unit 
     "def nestedProof :=\n"
     ++ "  outer _ _\n"
     ++ "    (fun x hx b hb =>\n"
-    ++ "      Quiver.Hom.op_inj (Cofork.IsColimit.hom_ext h (by\n"
-    ++ "          exact veryLongQualifiedIdentifierNameThatNearlyFillsTheAvailableSourceLinexxxxxxxxx hb)))\n"
+    ++ "      Quiver.Hom.op_inj\n"
+    ++ "        (Cofork.IsColimit.hom_ext h\n"
+    ++ "          (by\n"
+    ++ "            exact veryLongQualifiedIdentifierNameThatNearlyFillsTheAvailableSourceLinexxxxxxxxx hb)))\n"
   let formatted ←
     Formatter.formatSourceWithEnv env source "fitting-proof-island-suffix.lean"
       { lineWidth := 100 }
-  assertEq "proof island fitting reserves its tight parent suffix" expected formatted
-  assertTrue "proof island plus its parent suffix fits" (Formatter.linesFit formatted 100)
+  assertEq "moved proof island uses structural application breaks" expected formatted
+  assertTrue "unbreakable nested proof lines may overflow structurally"
+    (!Formatter.linesFit formatted 100)
 
 def assertQuotationIslandRetainsFittingSourceIndent (env : Lean.Environment)
     : IO Unit := do
@@ -2375,20 +2378,22 @@ def assertMovedProofLayoutKeepsFittingContinuation (env : Lean.Environment)
   let expected :=
     "theorem movedProofLayoutFit (f : Nat → Nat) : SomeVeryLongResultTypeNameForProofLayout :=\n"
     ++ "  fun ε ε0 ↦\n"
-    ++ "    (someApplication ε0).imp fun i H j ij ↦ by\n"
-    ++ "    exact "
+    ++ "    (someApplication ε0).imp\n"
+    ++ "      fun i H j ij ↦ by\n"
+    ++ "        exact "
     ++ proofTerm
     ++ "\n"
     ++ "\n"
     ++ "theorem movedProofLayoutShort (f : Nat → Nat) : SomeVeryLongResultTypeNameForProofLayout :=\n"
     ++ "  fun ε ε0 ↦\n"
-    ++ "    (someApplication ε0).imp fun i H j ij ↦ by\n"
-    ++ "      exact shortProof\n"
+    ++ "    (someApplication ε0).imp\n"
+    ++ "      fun i H j ij ↦ by\n"
+    ++ "        exact shortProof\n"
   let result ←
     Formatter.formatSourceWithEnvDetailed env source
       "moved-proof-layout-fitting-continuation.lean" { lineWidth := 100 }
   assertTrue "moved proof-layout continuation does not fall back" (!result.fellBack)
-  assertEq "only overflowing moved proof-layout continuation retains its source indent"
+  assertEq "moved proof-layout continuations keep their structural indent"
     expected result.formatted
 
 def assertMovedProofBodiesKeepRelativeIndentation (env : Lean.Environment) : IO Unit := do
@@ -2600,8 +2605,11 @@ def assertMovedProofLayoutIslandKeepsContinuationIndentation (env : Lean.Environ
     "def anonymousCtorProofAfterMovedLambda :=\n"
     ++ "  longApplicationNameWithEnoughCharactersToForceItsArgumentsOntoSeparateLines\n"
     ++ "    (fun value =>\n"
-    ++ "      ⟨value, by\n"
-    ++ "      exact True.intro⟩)\n"
+    ++ "      ⟨\n"
+    ++ "        value,\n"
+    ++ "        by\n"
+    ++ "          exact True.intro\n"
+    ++ "      ⟩)\n"
   let result ←
     Formatter.formatSourceWithEnvDetailed env source
       "moved-proof-layout-island.lean" { lineWidth := 100 }
@@ -3587,7 +3595,7 @@ def assertOriginalLayoutValueHonorsDeclarationBreak (env : Lean.Environment)
   assertTrue "original-layout declaration value preserves code"
     (← codePreservedIgnoringWhitespace env source formatted)
   assertTextContains "original-layout declaration value honors assignment break"
-    formatted ":=\n  ⟨fun"
+    formatted ":=\n  ⟨"
   assertTextLacks "original-layout declaration value does not erase assignment break"
     formatted ":= ⟨fun"
   let formattedAgain ←
@@ -7012,11 +7020,16 @@ def assertAnonymousConstructorBreakBalanced (env : Lean.Environment) : IO Unit :
     "def movedInlineProofLayout :=\n"
     ++ "  Fork.IsLimit.mk' _\n"
     ++ "    fun s =>\n"
-    ++ "      ⟨{  toFun := fun x => ⟨s x, by exact proof⟩\n"
+    ++ "      ⟨\n"
+    ++ "        {\n"
+    ++ "          toFun := fun x => ⟨s x, by exact proof⟩\n"
     ++ "          monotone' := fun _ _ h => s.monotone h\n"
     ++ "          map_limit' := fun x => s.continuous x\n"
-    ++ "        }, by exact proof, fun hm => by\n"
-    ++ "        exact hm⟩\n"
+    ++ "        },\n"
+    ++ "        by exact proof,\n"
+    ++ "        fun hm => by\n"
+    ++ "          exact hm\n"
+    ++ "      ⟩\n"
   let movedProofLayoutResult ←
     Formatter.formatSourceWithEnvDetailed env movedProofLayoutSource
       "moved-inline-proof-layout.lean" { lineWidth := 60 }
@@ -7755,12 +7768,12 @@ def assertFormattingExceptionChecks (env : Lean.Environment) : IO Unit := do
     SyntaxTree.parseModuleStringWithEnv env movedProofLine "moved-proof-overflow.lean"
   assertTrue "moved proof overflow remains hidden from the standalone audit"
     (Formatter.Diagnostics.overflowOccurrences movedProofModule).isEmpty
-  assertTrue "newly indented proof overflow is attributed to formatting"
-    ((Formatter.Diagnostics.formattingExceptions fittingProofModule movedProofModule).any
-      fun exception =>
-        match exception with
-        | .lineOverflow _ => true
-        | _ => false)
+  assertTrue "newly indented unbreakable proof overflow is exempt"
+    (!(Formatter.Diagnostics.formattingExceptions fittingProofModule movedProofModule).any
+        fun exception =>
+          match exception with
+          | .lineOverflow _ => true
+          | _ => false)
   let fittingProofLayout :=
     "def movedProofLayout (n : Nat) :=\n"
     ++ "  Nat.recOn n default fun n Y =>\n"
@@ -9065,6 +9078,27 @@ def assertMathlibLowRiskSyntaxKindsHaveRules : IO Unit := do
     SyntaxTree.Tree.node (.raw `Lean.Parser.«command__Simproc__[_]_(_):=_») #[]
   assertTrue "bracketed simproc declarations keep original formatting"
     (Formatter.OriginalTree.shouldEmit bracketedSimprocTree)
+  let dsimprocTree :=
+    SyntaxTree.Tree.node (.raw `Lean.Parser.«command_Dsimproc_decl_(_):=_») #[]
+  assertTrue "dsimproc declarations keep original formatting"
+    (Formatter.OriginalTree.shouldEmit dsimprocTree)
+  let bracketedDsimprocTree :=
+    SyntaxTree.Tree.node (.raw `Lean.Parser.«command__Dsimproc__[_]_(_):=_») #[]
+  assertTrue "bracketed dsimproc declarations keep original formatting"
+    (Formatter.OriginalTree.shouldEmit bracketedDsimprocTree)
+  let documentedDsimprocTree :=
+    SyntaxTree.regroupOtherRawNode
+      `Lean.Parser.«command__Dsimproc__[_]_(_):=_»
+      #[
+        .node (.raw `null)
+          #[.node (.raw `Lean.Parser.Command.docComment)
+              #[.leaf (syntheticAtomToken "/-- documentation -/")]],
+        .leaf (syntheticAtomToken "dsimproc")
+      ]
+  assertTrue "nested command documentation is separated from its command"
+    (match documentedDsimprocTree with
+      | .node .annotatedDeclaration _ => true
+      | _ => false)
   let libraryNoteTree :=
     SyntaxTree.Tree.node (.raw `Batteries.Util.LibraryNote.«commandLibrary_note___») #[]
   assertTrue "Batteries library notes keep original formatting"
@@ -9532,7 +9566,7 @@ def runBasicFormattingTests (env : Lean.Environment) : IO Unit := do
   assertLeadingCommentsPreserved env
   assertTrailingLineCommentPreserved env
   assertCommentAfterOpeningDelimiterPreserved env
-  assertProofIslandRetainsFittingSourceIndent env
+  assertProofIslandUsesStructuralIndent env
   assertProofIslandFitIncludesParentSuffix env
   assertQuotationIslandRetainsFittingSourceIndent env
   assertMultitokenChildRetainsFittingSourceColumn env

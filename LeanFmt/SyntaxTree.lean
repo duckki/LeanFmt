@@ -1293,10 +1293,14 @@ def regroupOtherRawNode (kind : SyntaxNodeKind) (children : Array Tree) : Tree :
       | some (annotations, command) =>
           annotatedDeclarationTreeForCommand annotations command
       | none =>
-          match splitLeadingDeclarationModifiers? tree with
-          | some (modifiers, command) =>
-              .node .annotatedDeclaration #[modifiers, command]
-          | none => tree
+          match splitDirectCommandDocComment? tree with
+          | some (annotations, command) =>
+              annotatedDeclarationTreeForCommand annotations command
+          | none =>
+              match splitLeadingDeclarationModifiers? tree with
+              | some (modifiers, command) =>
+                  .node .annotatedDeclaration #[modifiers, command]
+              | none => tree
 
 def regroupRawNode (kind : SyntaxNodeKind) (children : Array Tree) : Tree :=
   if kind == `null then

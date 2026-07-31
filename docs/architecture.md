@@ -235,7 +235,7 @@ Current logical regroupings are:
 | `.application` | Lean parser applications are nested per argument, but formatting wants one function-application segment. | Child `0` is the head, children `1...` are arguments in source order. Raw `null` argument containers are spliced. |
 | `.infixChain kind` | Same-kind infix peers should break as one balanced chain, and renderer indentation should not infer peer structure from nested raw nodes. | Odd-length array alternating operand, operator, operand. Operands are even indexes; operators are odd indexes. |
 | `.definition` | Definitions, abbreviations, class abbreviations, and extensible declaration commands using Lean's `declValSimple` parser need one node containing header, assignment marker, body, and suffixes. | A raw `declValSimple` wrapper is spliced wherever it occurs among the command's children, leaving `:=` immediately before the value/body. A `whereStructInst` value remains one child so its leading `where` can stay on the final signature line while its fields own the following structural breaks. Only a separate `Term.whereDecls` child is treated as an auxiliary declaration suffix. |
-| `.annotatedDeclaration` | Every command form that accepts declaration annotations forms one flow, whether it is built in, introduced by a syntax extension, nested under a command wrapper, recursive under `where`, or a named structure constructor. Source breaks are preserved; otherwise the command remains after its annotations only when the complete command fits on one physical line. The wrapper also establishes the command-line base inherited by modifier and declaration children. | Child `0` contains the leading annotations or, when no annotation is present, the leading declaration modifiers. Any remaining modifiers and the command follow as separate children in source order. An annotation embedded in an extensible command node is extracted without changing that command's remaining child indexes. A leading modifier container in an extensible command is removed from that command and placed before it, so the command starts at its keyword and both remain one flow. Optional wrappers around a recursive declaration's attributes are removed. Structure-constructor modifiers are separated from the constructor command so both inherit the structure field base. An inductive constructor keeps its `|` prefix outside the wrapper so annotations that follow it retain source token order. |
+| `.annotatedDeclaration` | Every command form that accepts declaration annotations forms one flow, whether it is built in, introduced by a syntax extension, nested under a command wrapper, recursive under `where`, or a named structure constructor. Source breaks are preserved; otherwise the command remains after its annotations only when the complete command fits on one physical line. The wrapper also establishes the command-line base inherited by modifier and declaration children. | Child `0` contains the leading annotations or, when no annotation is present, the leading declaration modifiers. Any remaining modifiers and the command follow as separate children in source order. An annotation or direct documentation comment embedded in an extensible command node is extracted without changing that command's remaining child indexes; this applies inside scoped-command wrappers as well as at module level. A leading modifier container in an extensible command is removed from that command and placed before it, so the command starts at its keyword and both remain one flow. Optional wrappers around a recursive declaration's attributes are removed. Structure-constructor modifiers are separated from the constructor command so both inherit the structure field base. An inductive constructor keeps its `|` prefix outside the wrapper so annotations that follow it retain source token order. |
 | `.signatureParameters` | Parameter sequences need flow behavior at binder boundaries without forcing rules to inspect raw `null` wrappers. | Direct binder/parameter children from declaration signatures, function binders, `termination_by` parameter lambdas, and `unif_hint` commands. In a termination lambda, the final parameter and `=>` share one child so the arrow stays attached while preceding parameters flow at two indentation levels. |
 | `.structureHeader`, `.structureConstructor`, and `.structureDeriving` | A structure header may wrap before `extends`, but that continuation must not become the base inherited by constructors, fields, or `deriving`. Separate render scopes let each part own its break and indentation without renderer state exceptions. | The raw structure has a `.structureHeader` first child, ending in `where` when a body is present. It is followed by an optional `.structureConstructor`, the raw `structFields` node directly, and an optional `.structureDeriving`. Structures and classes that only extend parents still receive a header node. The constructor and deriving wrappers contain their original regrouped syntax. |
 | `.matchDiscriminants` | Multiple match scrutinees need peer flow boundaries after commas, aligned under the first scrutinee, rather than generic nested parser wrapping. | Children of the discriminant sequence immediately before `with`, preserving alternating discriminants and commas. |
@@ -778,19 +778,22 @@ the column where that segment actually starts, including when a child that began
 line now follows a formatted prefix such as `:`. Every protected line moves by the same
 delta. A proof island normally cannot move left of its structural proof indentation,
 which keeps a block proof beneath its owning `have` rather than beneath a wrapped type
-continuation or outside its declaration. If that uniform shift alone would make a
-source-fitting proof line overflow, the renderer reduces the shift for the complete
-proof island by whole indentation levels, never past its original source column. The
-fit calculation reserves any closing delimiters and other tight parent suffix that must
-remain on the proof's last line; excluding that suffix would undercount the actual
-completed-line width. The proof's internal relative layout therefore remains unchanged.
+continuation or outside its declaration. This structural floor is retained even when an
+unbreakable tactic line consequently exceeds the configured width. A source-emitted
+quotation or compound proof-layout island may instead reduce a uniform shift by whole
+indentation levels, never past its original source column. That fit calculation reserves
+any closing delimiters and other tight parent suffix that must remain on the island's
+last line; excluding that suffix would undercount the actual completed-line width.
 
-If moving a proof-bearing anonymous constructor or structure instance still creates an
-avoidable overflow, the renderer may retry that complete island through its ordinary
-structural rule and select the result only when it has fewer overflowing lines. The retry
-recomputes the rule's breakpoints because the protected-source path intentionally does not
-prepare them. This lets established collection, field, and nested-expression rules resolve
-the overflow without adding syntax decisions to original-source emission.
+If a parent break moves a proof-bearing application, anonymous constructor, structure
+instance, or other supported braced proof layout away from its parent-relative source
+column, the renderer uses that tree's ordinary structural rule. Equation clauses and
+other protected proof-layout shapes remain source islands. The renderer also may retry
+an otherwise source-emitted complete delimiter island structurally when doing so removes
+an avoidable overflow. Each structural path recomputes the rule's breakpoints because
+protected-source emission intentionally does not prepare them. This lets established
+collection, field, and nested-expression rules establish a parse-safe block base without
+adding syntax decisions to original-source emission.
 
 When a multiline proof or
 quotation begins inline, its later source lines use the introducer's source-to-output
@@ -803,6 +806,9 @@ declarations around them can still be formatted. When an original-source child f
 its previous token on the same source line, it honors a pending boundary selected by its
 parent rule; an existing source-line boundary and the child's internal layout remain
 unchanged.
+A proof body whose introducer was moved onto a line by itself starts one indentation
+level below that introducer. This structural floor applies only when no code precedes the
+introducer on its output line; inline proof islands retain their source-relative layout.
 An application whose argument is a proof-bearing `fun` is protected as one layout
 island. The syntax tree owns the lambda shell but not the proof body's internal
 layout, so moving the application and the proof independently can detach the proof
@@ -1000,11 +1006,11 @@ report only newly introduced shapes; unchanged pre-existing overflow remains ava
 through direct `overflowOccurrences` analysis without being attributed to the formatter.
 The standalone analysis keeps layout-island and isolated-token exemptions, while the
 source-versus-formatted comparison temporarily removes those movable exemptions. This
-reports a movable proof, quotation, or isolated token that fit in source but was shifted
-past the limit, without reporting the same pre-existing source overflow. Compound
-proof-layout islands remain exempt: their surrounding syntax and proof are emitted as
-one indivisible source-layout unit, so no internal rule boundary is available to resolve
-an overflow introduced by a required structural move. For an isolated token, the
+reports a movable quotation or isolated token that fit in source but was shifted past
+the limit, without reporting the same pre-existing source overflow. Proof and compound
+proof-layout islands remain exempt: their proof text is emitted as an indivisible
+source-layout unit, so no internal rule boundary is available to resolve an overflow
+introduced by a required structural move. For an isolated token, the
 comparison maps its token index back to the source and retains the exemption only when
 that token's original physical line already overflowed; this covers an unbreakable
 declaration name split away from an already-long command prefix.

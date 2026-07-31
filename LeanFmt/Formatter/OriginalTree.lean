@@ -122,6 +122,14 @@ private def currentLineAfterAppend (currentLine text : String) : String :=
   else
     currentLine ++ text
 
+private def tokenStartsCurrentLine (currentLine : String) (token : SyntaxTree.Token)
+    : Bool :=
+  if !currentLine.endsWith token.lexeme then
+    false
+  else
+    let prefixLength := currentLine.length - token.lexeme.length
+    (currentLine.take prefixLength).all SpaceRules.isHorizontalWhitespace
+
 private def isProofTree (tree : SyntaxTree.Tree) : Bool :=
   match tree with
   | .node .proofBody _ => true
@@ -197,6 +205,8 @@ private def isLayoutSensitiveCommand : SyntaxTree.Tree → Bool
   | .node (.raw `Lean.Parser.Command.elab_rules) _ => true
   | .node (.raw `Lean.Parser.«command_Simproc_decl_(_):=_») _ => true
   | .node (.raw `Lean.Parser.«command__Simproc__[_]_(_):=_») _ => true
+  | .node (.raw `Lean.Parser.«command_Dsimproc_decl_(_):=_») _ => true
+  | .node (.raw `Lean.Parser.«command__Dsimproc__[_]_(_):=_») _ => true
   | .node (.raw `Lean.runCmd) _ => true
   | .node (.raw `Batteries.Tactic.Alias.alias) _ => true
   | .node (.raw `Batteries.Tactic.Alias.aliasLR) _ => true
@@ -440,7 +450,7 @@ def LayoutIslandKind.prefersParentRelativeColumn : LayoutIslandKind → Bool
   | _ => false
 
 def LayoutIslandKind.hasUnbreakableLineLayout : LayoutIslandKind → Bool
-  | .proofLayout | .proofWidgetsJsx => true
+  | .proof | .proofLayout | .proofWidgetsJsx => true
   | _ => false
 
 def LayoutIslandKind.isProof : LayoutIslandKind → Bool
@@ -460,7 +470,7 @@ def LayoutIslandKind.isCalc : LayoutIslandKind → Bool
   | _ => false
 
 def LayoutIslandKind.retainsRelativeLayout : LayoutIslandKind → Bool
-  | .proof | .proofWidgetsJsx | .quotation => true
+  | .proof | .proofWidgetsJsx | .quotation | .layoutSensitiveCommand => true
   | _ => false
 
 def LayoutIslandKind.usesPendingIndent : LayoutIslandKind → Bool
@@ -468,6 +478,7 @@ def LayoutIslandKind.usesPendingIndent : LayoutIslandKind → Bool
   | .proofLemma
   | .proofWidgetsJsx
   | .quotation
+  | .layoutSensitiveCommand
   | .syntaxComment => true
   | _ => false
 
@@ -478,6 +489,14 @@ def LayoutIslandKind.preservesFollowingCommentIndent : LayoutIslandKind → Bool
 def canUseStructuralOverflowFallback : SyntaxTree.Tree → Bool
   | .node (.raw `Lean.Parser.Term.anonymousCtor) _
   | .node (.raw `Lean.Parser.Term.structInst) _ => true
+  | _ => false
+
+def canUseStructuralLayoutAfterParentMove : SyntaxTree.Tree → Bool
+  | .node .application _
+  | .node (.raw `Lean.Parser.Term.anonymousCtor) _
+  | .node (.raw `Lean.Parser.Term.structInst) _
+  | .node (.raw `«term{_}») _
+  | .node (.raw `Lean.Parser.Command.whereStructInst) _ => true
   | _ => false
 
 partial def startsWithEmission : SyntaxTree.Tree → Bool
@@ -621,6 +640,23 @@ private def emitRebased? (request : EmissionRequest) (tree : SyntaxTree.Tree)
       none
   let targetColumn? :=
     request.rebaseSourceTextTargetColumn?.orElse fun _ => layoutTargetColumn?
+  let proofBodyTargetColumn? :=
+    if proof && originalLeadingHasLineStructure then
+      request.lastToken?.bind
+        fun token =>
+          if tokenStartsCurrentLine request.currentLine token then
+            some (request.currentLine.length - token.lexeme.length + indentationSpaces)
+          else
+            none
+    else
+      none
+  let targetColumn? :=
+    match targetColumn?, proofBodyTargetColumn? with
+    | some targetColumn, some proofBodyTargetColumn =>
+        some (max targetColumn proofBodyTargetColumn)
+    | some targetColumn, none => some targetColumn
+    | none, some proofBodyTargetColumn => some proofBodyTargetColumn
+    | none, none => none
   let targetColumn? :=
     if proof && originalLeadingHasLineStructure then
       targetColumn?.map
@@ -629,7 +665,7 @@ private def emitRebased? (request : EmissionRequest) (tree : SyntaxTree.Tree)
     else
       targetColumn?
   let targetColumn? :=
-    if (proof || quotation) && !inlineMultilineLayoutIsland then
+    if quotation && !inlineMultilineLayoutIsland then
       targetColumn?.map
         fun targetColumn =>
           fittingTargetColumn request.source tree sourceText sourceColumn
