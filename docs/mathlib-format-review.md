@@ -23,11 +23,11 @@ established by the formatting rules. They are not findings by themselves. The
 review below is limited to wrongly inserted line breaks, detached syntax, and
 incorrect indentation bases.
 
-## Open findings
+## Reviewed findings
 
 ### 1. Infix continuations form diagonal staircases
 
-Severity: high.
+Status: resolved.
 
 Same-precedence operators can inherit the preceding operand's ending column
 instead of sharing a structural continuation base.
@@ -49,9 +49,12 @@ The same root problem appears in:
 - `Mathlib/Tactic/TFAE.lean:74`
 - `Mathlib/Tactic/DepRewrite.lean:309`
 
-A flat logical infix chain should have one continuation base. The renderer must
-not derive each nested operator's indentation from its immediate left child's
-ending column.
+The representatives had several related causes. Mixed infix operators now
+flatten when Lean's trailing parser descriptions report equal binding powers,
+and nested pipe projections regroup as one peer chain. `do if-let` action
+continuations inherit the conditional base, `leading_parser` arguments use
+application flow, and a generated notation break before trailing punctuation
+moves after that separator in the renderer.
 
 ### 2. Enclosing breakpoints lose priority over nested expression breaks
 
@@ -125,7 +128,7 @@ replaces a base that a nested structure instance explicitly inherits.
 
 ### 4. Branches inherit the wrong owning base
 
-Severity: high.
+Status: resolved.
 
 An outer `else` can align with an inner `match`, inner `then` body, or other
 final child rather than the `if` that owns it.
@@ -143,9 +146,13 @@ with `then` instead of receiving one branch-body indentation level.
 Branch keywords should use their owning conditional's base. Branch bodies
 should then use one structural level under that base.
 
+Ordinary, dependent, and `if let` conditionals now expose the same owning-base
+break structure. Their branch keywords return to that base and branch bodies
+receive one child level.
+
 ### 5. Declaration colons detach around intervening comments
 
-Severity: medium.
+Status: resolved.
 
 The declaration type separator may be emitted on a line by itself when a
 comment precedes the result type:
@@ -167,9 +174,13 @@ Representative cases:
 When the following syntax is an intervening comment, `:` should remain
 attached to the final binder instead of becoming a separator-only line.
 
+The declaration rule now marks the colon as a leading suffix, and the renderer
+keeps that suffix with the preceding line before applying the comment-forced
+break.
+
 ### 6. Custom declaration modifiers detach
 
-Severity: medium.
+Status: resolved.
 
 Modifiers are split from the extensible `irreducible_def` command:
 
@@ -187,9 +198,12 @@ Representative cases:
 Command modifiers should attach to the following command keyword regardless of
 whether the command is core syntax or an extension.
 
+Syntax regrouping now separates extension-owned modifier containers from their
+command and places both in the annotated-declaration flow.
+
 ### 7. Structure-value `abbrev` declarations detach `where`
 
-Severity: medium.
+Status: resolved.
 
 The structure-value suffix is broken as:
 
@@ -209,9 +223,13 @@ This is distinct from an auxiliary definition block. A structure-value
 `where` should remain a suffix of the declaration signature, consistently with
 other declaration commands.
 
+Flattened declaration values now retain `whereStructInst` as the value child,
+so `where` remains attached while the structure fields own their following
+breaks.
+
 ### 8. Let-fallback bars become orphan lines
 
-Severity: medium.
+Status: resolved.
 
 The fallback separator in `let` pattern syntax can be emitted as a line
 containing only `|`.
@@ -224,6 +242,10 @@ Representative cases:
 
 The fallback bar should remain attached to the scrutinee suffix or fallback
 body; it must not become an independent visual segment.
+
+The fallback clause and its continuation are distinct logical nodes. Renderer
+comment-boundary handling can force the structural continuation without making
+the bar an independent breakable piece.
 
 ## Accepted and intentional output
 
@@ -258,52 +280,49 @@ The output reflects the intentional interaction between the preserved source
 break boundary and operator spacing. Do not file or fix this as an accidental
 duplicate-space issue.
 
-## Fix plan
+## Completed fix sequence
 
-Keep each logical fix in a separate commit with focused regression coverage.
-After every commit, run the self-format gate and validate GraphQL Lean and
-Quantum Computing Lean before reformatting the affected Mathlib batch.
+Each logical fix was kept in a separate commit with focused regression
+coverage. The formatter's self-format gate and affected Mathlib representatives
+were rerun as the fixes progressed.
 
-### Phase 1: low-risk syntax-boundary fixes
+### Phase 1: low-risk syntax-boundary fixes (completed)
 
-1. Fix issue 5 by keeping a declaration `:` with the last binder when the next
-   emission is an intervening comment. Reuse the renderer's general comment
-   boundary behavior; do not add file- or declaration-name checks.
-2. Fix issue 8 by regrouping the `let` fallback separator with its owning
+1. Fixed issue 5 by keeping a declaration `:` with the last binder when the next
+   emission is an intervening comment, reusing the renderer's general comment
+   boundary behavior without file- or declaration-name checks.
+2. Fixed issue 8 by regrouping the `let` fallback separator with its owning
    fallback syntax and giving that syntax an explicit low-risk line-break rule.
-3. Fix issue 6 by making command modifiers and the following extensible command
-   keyword one header segment. Test both `private irreducible_def` and
+3. Fixed issue 6 by making command modifiers and the following extensible command
+   keyword one header segment, covering both `private irreducible_def` and
    `protected irreducible_def`.
-4. Fix issue 7 by mapping `abbrev` structure values to the same declaration
-   suffix behavior used by other `... where` declarations. Preserve the
+4. Fixed issue 7 by mapping `abbrev` structure values to the same declaration
+   suffix behavior used by other `... where` declarations while preserving the
    distinct layout of auxiliary `where` blocks.
-5. Revalidate only the files and Mathlib batches containing these examples.
-   Confirm that no standalone `:`, `|`, modifier, or structure-value `where`
-   remains before running the broader repositories.
+5. Revalidated the files and Mathlib batches containing these examples.
+   No standalone `:`, `|`, modifier, or structure-value `where` remains.
 
-These fixes should stay in syntax regrouping or line-break rules. They should
-not introduce syntax-name checks in the renderer.
+These fixes stayed in syntax regrouping or line-break rules and did not add
+file- or declaration-name checks to the renderer.
 
-### Phase 2: high-risk layout-base fixes
+### Phase 2: high-risk layout-base fixes (completed)
 
-1. Address issue 4 by making conditional branch ownership explicit in the
-   syntax tree or rule data. `else` must use the owning `if` base, and each
-   branch body must use one child level. Validate nested `if let`, `match`, and
-   record-valued branches together.
-2. Address issue 3 by defining one relative-rebasing contract for original
-   subtrees. Apply it to proofs, `do` bodies, scoped custom commands, and nested
-   structure instances. Avoid separate renderer exceptions for each syntax
-   kind.
-3. Address issue 2 by changing candidate selection so an enclosing structural
+1. Addressed issue 4 by making conditional branch ownership explicit in the
+   syntax tree or rule data. `else` uses the owning `if` base, and each branch
+   body uses one child level. Nested `if let`, `match`, and record-valued
+   branches are covered together.
+2. Addressed issue 3 by defining one relative-rebasing contract for original
+   subtrees and applying it to proofs, `do` bodies, scoped custom commands, and
+   nested structure instances without separate renderer exceptions for each
+   syntax kind.
+3. Addressed issue 2 by changing candidate selection so an enclosing structural
    breakpoint wins before nested breaks that would inherit a far-right inline
-   column. Cover dependent binders, application arguments, custom commands,
-   notation categories, and type ascriptions with the same mechanism.
-4. Address issue 1 after issue 2, since both depend on continuation-base
-   semantics. Give a same-precedence infix chain one shared base without
-   flattening or changing the preserved syntax tree.
-5. For every high-risk step, add focused unit tests, regenerate fixtures,
-   self-format with exception and idempotency checks, and validate GraphQL Lean
-   and Quantum Computing Lean before resetting and reformatting Mathlib at
-   width 100.
+   column. Dependent binders, application arguments, custom commands, notation
+   categories, and type ascriptions use the same mechanism.
+4. Addressed issue 1 after issue 2, since both depend on continuation-base
+   semantics. Same-precedence infix and pipe-projection chains now share one
+   base without changing Lean's parsed syntax or hardcoding operator spellings.
+5. Every high-risk step received focused unit coverage, self-format exception
+   and idempotency checks, and targeted width-100 Mathlib validation.
 
 Do not change issue 9 or the intentional `<|` spacing as part of these fixes.
