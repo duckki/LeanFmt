@@ -7367,8 +7367,7 @@ def assertCliSkipsHiddenPathsByDefault : IO Unit :=
           ] do
         assertTrue s!"CLI --include-hidden discovers {file}" (includedFiles.contains file)
 
-def assertCliLoadsImportedSyntax (loader : LeanFmt.Driver.EnvironmentLoader)
-    : IO Unit := do
+def assertCliLoadsImportedSyntax : IO Unit := do
   let root : FilePath := ".lake/leanfmt-cli-test/project-env"
   IO.FS.createDirAll root
   let firstFile := root / "ImportedSyntax.lean"
@@ -7379,10 +7378,18 @@ def assertCliLoadsImportedSyntax (loader : LeanFmt.Driver.EnvironmentLoader)
     "import LeanFmt\nimport LeanFmt.Tests.ProjectSyntax\n\n#check ∀ᵉ x ∈ xs, project_syntax\n"
   IO.FS.writeFile firstFile firstSource
   IO.FS.writeFile secondFile secondSource
-  let exitCode ←
-    LeanFmt.Driver.runOptionsWithLoader loader
-      { includeHidden := true, files := [firstFile, secondFile] }
-  assertTrue "CLI loads syntax through one worker per exact header" (exitCode == 0)
+  let output ←
+    IO.Process.output
+      {
+        cmd := ".lake/build/bin/fmt"
+        args := #["--include-hidden", firstFile.toString, secondFile.toString]
+      }
+  if output.exitCode != 0 then
+    throw
+    <| IO.userError
+    <| "CLI loads syntax through one worker per exact header failed\n"
+        ++ output.stdout
+        ++ output.stderr
   assertEq "CLI preserves first imported-syntax source"
     firstSource (← IO.FS.readFile firstFile)
   assertEq "CLI preserves second imported-syntax source"
@@ -7390,8 +7397,8 @@ def assertCliLoadsImportedSyntax (loader : LeanFmt.Driver.EnvironmentLoader)
 
 def assertFmtExecutableConfigured : IO Unit := do
   let lakefile ← IO.FS.readFile "lakefile.toml"
-  assertTextContains "lakefile uses namespaced test driver" lakefile
-    "testDriver = \"LeanFmt.Tests\""
+  assertTextContains "lakefile uses executable test driver" lakefile
+    "testDriver = \"leanfmtTest\""
   assertTextContains "lakefile defines namespaced test library" lakefile
     "name = \"LeanFmt.Tests\""
   assertTextContains "test library uses suite root" lakefile
@@ -7402,6 +7409,11 @@ def assertFmtExecutableConfigured : IO Unit := do
   assertTextContains "lakefile defines test CLI" lakefile "name = \"fmt-test\""
   assertTextContains "test CLI uses LeanFmt.Tests.Main root" lakefile
     "root = \"LeanFmt.Tests.Main\""
+  assertTextContains "lakefile defines suite test executable" lakefile
+    "name = \"leanfmtTest\""
+  assertTextContains "suite test executable uses LeanFmt.Tests.Run root" lakefile
+    "root = \"LeanFmt.Tests.Run\""
+  assertTextContains "suite test executable builds fmt first" lakefile "needs = [\"fmt\"]"
 
 def assertRendererTraceIncludesPathAndState (env : Lean.Environment) : IO Unit := do
   let source :=
@@ -8876,7 +8888,7 @@ def runCliAndArchitectureTests (env : Lean.Environment) : IO Unit := do
   assertCliFormatsDirectory env loader
   assertCliFormatsDirectoryRecursively env loader
   assertCliSkipsHiddenPathsByDefault
-  assertCliLoadsImportedSyntax loader
+  assertCliLoadsImportedSyntax
   assertFmtExecutableConfigured
   assertRendererTraceIncludesPathAndState env
   assertCliFixtureUpdate env
@@ -8928,24 +8940,14 @@ def runTestGroups (env : Lean.Environment) : IO Unit := do
     SyntaxTree.importEnvironment #[{ module := `LeanFmt.Tests.ProjectSyntax }]
   let groups :=
     #[
-      runSyntaxTreeTests env,
-      runBasicFormattingTests env,
-      runExpressionAndRendererTests projectSyntaxEnv,
-      runControlFlowTests projectSyntaxEnv,
-      runCollectionAndDeclarationTests env,
-      runCliAndArchitectureTests env
+      ("syntax-tree", runSyntaxTreeTests env),
+      ("basic-formatting", runBasicFormattingTests env),
+      ("expression-renderer", runExpressionAndRendererTests projectSyntaxEnv),
+      ("control-flow", runControlFlowTests projectSyntaxEnv),
+      ("collection-declaration", runCollectionAndDeclarationTests env),
+      ("cli-architecture", runCliAndArchitectureTests env)
     ]
-  let tasks ← (groups.mapM IO.asTask).toIO
-  let results := tasks.map Task.get
-  for result in results do
-    IO.ofExcept result
-
-#eval
-  show IO Unit from do
-    let env ← Formatter.defaultEnvironment
-    if (← IO.getEnv "LEANFMT_COMPATIBILITY_TEST") == some "1" then
-      runCompatibilityTests env
-    else
-      runTestGroups env
+  for (_name, group) in groups do
+    group
 
 end LeanFmt.Tests

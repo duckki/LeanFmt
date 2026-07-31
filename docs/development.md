@@ -190,16 +190,17 @@ Run the unit-style test suite:
 lake test
 ```
 
-To build the test library directly:
+To build the test library directly without executing the suite:
 
 ```sh
 lake build LeanFmt.Tests
 ```
 
-`LeanFmt.Tests.Suite` is the test library root. Its broad suite runners execute the
-unit-style checks concurrently from one `#eval`. Syntax environments shared by multiple
-groups are loaded before their tasks start, so tests do not repeat environment setup or
-race Lean's initializer loading.
+`LeanFmt.Tests.Suite` is the test library root. `LeanFmt.Tests.Run` is the
+`leanfmtTest` executable used by `lake test`; it invokes the broad suite runners from
+`main` so editor language-server checks can elaborate the test library without running
+side-effectful tests. Syntax environments shared by multiple groups are loaded before
+the groups start, so tests do not repeat environment setup.
 
 Run fixture checks without rewriting fixture files:
 
