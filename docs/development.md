@@ -382,6 +382,9 @@ tracked Lean file from that project's `lake env` while checking preservation, un
 rules, and idempotence. It builds the complete project again only after every requested
 formatter batch succeeds:
 
+The current visually reviewed Mathlib findings and their planned fix order are
+recorded in [mathlib-format-review.md](mathlib-format-review.md).
+
 ```sh
 scripts/validate-external-projects.sh $HOME/lean-libs/mathlib4
 ```
