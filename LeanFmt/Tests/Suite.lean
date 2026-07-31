@@ -1205,13 +1205,11 @@ def assertOverflowRecoveryKeepsNestedCommandIndent (env : Lean.Environment)
     "variable (C : Type) in\n"
     ++ "/-- The left localizer morphism in the Guitart exact square `iso`. -/\n"
     ++ "private abbrev L\n"
-    ++ "      : LocalizerMorphism\n"
-    ++ "          ((CochainComplex.Plus.quasiIso C).inverseImage\n"
-    ++ "            (InjectiveObject.ι C).mapCochainComplexPlus)\n"
-    ++ "          (isomorphisms (Plus (InjectiveObject C)))\n"
-    ++ "  where\n"
-    ++ "    functor := HomotopyCategory.Plus.quotient (InjectiveObject C)\n"
-    ++ "    map _ _ f hf := (isIso_quotient_map_iff f).2 hf\n"
+    ++ "    : LocalizerMorphism\n"
+    ++ "        ((CochainComplex.Plus.quasiIso C).inverseImage (InjectiveObject.ι C).mapCochainComplexPlus)\n"
+    ++ "        (isomorphisms (Plus (InjectiveObject C))) where\n"
+    ++ "  functor := HomotopyCategory.Plus.quotient (InjectiveObject C)\n"
+    ++ "  map _ _ f hf := (isIso_quotient_map_iff f).2 hf\n"
   let result ←
     Formatter.formatSourceWithEnvDetailed env source
       "overflow-recovery-nested-command-indent.lean" { lineWidth := 100 }
@@ -2301,6 +2299,22 @@ def assertStructureValueWhereFormattingKeepsSuffix (env : Lean.Environment)
       "structure-value-where-formatting-formatted.lean"
   assertEq "structure-value where formatting is idempotent"
     result.formatted formattedAgain
+
+def assertAbbrevStructureValueKeepsWhereSuffix (env : Lean.Environment) : IO Unit := do
+  let source :=
+    "abbrev structureValuedAbbreviationWithLongName {α : Type} [VeryLongTypeclassName α] : Result α where\n"
+    ++ "  field := value\n"
+  let expected :=
+    "abbrev structureValuedAbbreviationWithLongName {α : Type} [VeryLongTypeclassName α]\n"
+    ++ "    : Result α where\n"
+    ++ "  field := value\n"
+  let formatted ←
+    Formatter.formatSourceWithEnv env source "abbrev-structure-value-where.lean"
+  assertEq "abbrev structure value keeps where with its signature" expected formatted
+  let formattedAgain ←
+    Formatter.formatSourceWithEnv env formatted
+      "abbrev-structure-value-where-formatted.lean"
+  assertEq "abbrev structure value formatting is idempotent" formatted formattedAgain
 
 def assertWhereFinallyKeepsHeaderAndProofBody (env : Lean.Environment) : IO Unit := do
   let source :=
@@ -9545,6 +9559,7 @@ def runBasicFormattingTests (env : Lean.Environment) : IO Unit := do
   assertMatchArmKeepsDoOnArrowLine env
   assertWhereFormattingKeepsSuffix env
   assertStructureValueWhereFormattingKeepsSuffix env
+  assertAbbrevStructureValueKeepsWhereSuffix env
   assertWhereFinallyKeepsHeaderAndProofBody env
   assertProofBodyUntouched env
   assertAttachedProofLambdaKeepsFittingLayout env

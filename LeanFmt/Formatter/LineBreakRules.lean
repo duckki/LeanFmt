@@ -231,6 +231,26 @@ def childIsRawKind (segment : Segment) (index : Nat) (kind : Lean.SyntaxNodeKind
   | some (.node (.raw childKind) _) => childKind == kind
   | _ => false
 
+partial def treeIsRawKindThroughNullWrappers
+    (tree : SyntaxTree.Tree) (kind : Lean.SyntaxNodeKind)
+    : Bool :=
+  match tree with
+  | .node (.raw childKind) children =>
+      if childKind == kind then
+        true
+      else if childKind == `null then
+        let content := children.filter fun child => child.firstToken?.isSome
+        content.size == 1
+        && content[0]?.any fun child => treeIsRawKindThroughNullWrappers child kind
+      else
+        false
+  | _ => false
+
+def childIsRawKindThroughNullWrappers
+    (segment : Segment) (index : Nat) (kind : Lean.SyntaxNodeKind)
+    : Bool :=
+  segment.child? index |>.any fun child => treeIsRawKindThroughNullWrappers child kind
+
 def firstChildRawKind? (segment : Segment) (kind : Lean.SyntaxNodeKind) : Option Nat :=
   segment.indexes.find? fun index => childIsRawKind segment index kind
 
@@ -797,7 +817,8 @@ def declarationValueBreaks (_context : RuleContext) (segment : Segment)
   ++ segment.indexes.filterMap
       fun index =>
         if segment.start < index
-            && (childStartsWithLexeme segment index "where"
+            && (childIsRawKindThroughNullWrappers
+                  segment index `Lean.Parser.Term.whereDecls
                 || (childIsRawKind segment index `Lean.Parser.Termination.suffix
                     && (segment.child? index).any treeHasContent)) then
           boundaryBreak? segment index 0
@@ -917,7 +938,9 @@ def declarationTrailingClauseBreaks (segment : Segment) : List BreakPoint :=
   terminationSuffixChildBreaks segment
   ++ segment.indexes.filterMap
       fun index =>
-        if 3 < index && childStartsWithLexeme segment index "where" then
+        if 3 < index
+            && childIsRawKindThroughNullWrappers
+                segment index `Lean.Parser.Term.whereDecls then
           boundaryBreak? segment index 0
         else
           none
@@ -2181,6 +2204,9 @@ def assertNotExistsRule : LineBreakRule :=
 def definitionRule : LineBreakRule :=
   {
     name := "definition"
+    keepPrefixWithChildFirstLine :=
+      fun _ segment index =>
+        childIsRawKind segment index `Lean.Parser.Command.whereStructInst
     useExistingBreaks := fun _ _ => true
     inheritBase := fun _ _ => true
     breakPoints := definitionBreaks

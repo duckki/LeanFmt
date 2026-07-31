@@ -650,7 +650,16 @@ def regroupDefinitionChildren (children : Array Tree) : Option (Array Tree) :=
   match flattenSimpleDeclarationValueChildren? children with
   | some flattened =>
       some <| regroupFlattenedDefinitionChildren flattened
-  | none => regroupDefinitionTrailingWhereDecls? children
+  | none =>
+      match regroupDefinitionTrailingWhereDecls? children with
+      | some children => some children
+      | none =>
+          if children.any
+              fun child =>
+                rawKind? child == some `Lean.Parser.Command.whereStructInst then
+            some children
+          else
+            none
 
 def splitEquationTrailingClauses? : Tree → Option (Tree × Array Tree)
   | .node (.raw `Lean.Parser.Command.declValEqns) valueChildren => do
