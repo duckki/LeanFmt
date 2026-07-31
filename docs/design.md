@@ -1395,6 +1395,14 @@ closing delimiter break together.
 ]
 ```
 
+For generated two-operand notation, a comma-like trailing separator remains
+attached to the first operand and the continuation starts after it:
+
+```lean
+custom⟪firstVeryLongOperand,
+  secondVeryLongOperand⟫
+```
+
 leanfmt does not add a trailing comma.
 
 A single multiline item keeps the outer array compact around that item. This

@@ -580,6 +580,12 @@ Blank-line trivia at an accepted break point is a source break too: the renderer
 retains one blank line while rebasing the following token to the rule-computed
 indentation instead of preserving its old absolute column.
 
+Before applying a rule break, the renderer normalizes boundaries that would
+separate a trailing punctuation token from its preceding syntax. The break moves
+to the next content child, after the separator. This lexical emission invariant
+keeps the default shape rule generic: it does not inspect comma spelling or
+duplicate token-spacing policy.
+
 For flow rules, accepted source breaks remain selected if their layout needs additional
 computed wrapping; the renderer adds fitting breaks instead of discarding the accepted
 ones. For non-flow rules, accepted source breaks are activation signals for the complete

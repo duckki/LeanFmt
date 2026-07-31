@@ -1225,6 +1225,22 @@ def breakPointPreservesTightTokenBoundary
             && SpaceRules.preservesTightPostfixSpacing right)
   | none => true
 
+def moveBreakPointAfterTrailingSeparator
+    (segment : LineBreakRules.Segment) (breakPoint : LineBreakRules.BreakPoint)
+    : LineBreakRules.BreakPoint :=
+  match contentChildIndexAtOrAfter? segment breakPoint.index with
+  | some separatorIndex =>
+      match segment.child? separatorIndex >>= SyntaxTree.Tree.singleToken? with
+      | some separator =>
+          if SpaceRules.isTrailingSeparatorToken separator.lexeme then
+            match contentChildIndexAtOrAfter? segment (separatorIndex + 1) with
+            | some nextIndex => { breakPoint with index := nextIndex }
+            | none => breakPoint
+          else
+            breakPoint
+      | none => breakPoint
+  | none => breakPoint
+
 def commentForcesBreakAt
     (source : String) (segment : LineBreakRules.Segment) (index : Nat)
     : Bool :=
@@ -1247,11 +1263,12 @@ def normalizeBreakPoints
     (segment : LineBreakRules.Segment)
     (breakPoints : List LineBreakRules.BreakPoint)
     : List LineBreakRules.BreakPoint :=
-  (breakPoints.filter
-    fun breakPoint =>
-      segment.start <= breakPoint.index
-      && breakPoint.index < segment.stop
-      && breakPointPreservesTightTokenBoundary segment breakPoint)
+  (breakPoints.map (moveBreakPointAfterTrailingSeparator segment)
+    |>.filter
+        fun breakPoint =>
+          segment.start <= breakPoint.index
+          && breakPoint.index < segment.stop
+          && breakPointPreservesTightTokenBoundary segment breakPoint)
   |>.mergeSort fun left right => left.index < right.index
 
 def ruleBreakPoints

@@ -918,6 +918,22 @@ def assertDoIfLetBindUsesConditionalBase (env : Lean.Environment) : IO Unit := d
       { lineWidth := 70 }
   assertEq "do if-let bindings use the conditional base" expected formatted
 
+def assertGeneratedPairBreakMovesAfterComma (env : Lean.Environment) : IO Unit := do
+  let source :=
+    "syntax \"custom⟪\" term \",\" term \"⟫\" : term\n"
+    ++ "\n"
+    ++ "def customPair := custom⟪firstVeryLongOperandNameWithMoreText, secondVeryLongOperandName - thirdVeryLongOperandName⟫\n"
+  let expected :=
+    "syntax \"custom⟪\" term \",\" term \"⟫\" : term\n"
+    ++ "\n"
+    ++ "def customPair :=\n"
+    ++ "  custom⟪firstVeryLongOperandNameWithMoreText,\n"
+    ++ "    secondVeryLongOperandName - thirdVeryLongOperandName⟫\n"
+  let formatted ←
+    Formatter.formatSourceWithEnv env source "generated-pair-comma-break.lean"
+      { lineWidth := 70 }
+  assertEq "generated pair breaks after its comma" expected formatted
+
 def assertDoFallbackRegrouping (env : Lean.Environment) : IO Unit := do
   let source :=
     "def fallback (candidate : Option Nat) : Option Nat := do\n"
@@ -9816,6 +9832,7 @@ def runBasicFormattingTests (env : Lean.Environment) : IO Unit := do
 def runExpressionAndRendererTests (env : Lean.Environment) : IO Unit := do
   assertLeadingParserArgumentsFlow env
   assertDoIfLetBindUsesConditionalBase env
+  assertGeneratedPairBreakMovesAfterComma env
   assertSelfFormattingLetAndArrayRegressions env
   assertCliSelfFormattingRegressions env
   assertSelfFormattingRulePriorities env
