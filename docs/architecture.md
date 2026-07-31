@@ -241,7 +241,7 @@ Current logical regroupings are:
 | `.matchDiscriminants` | Multiple match scrutinees need peer flow boundaries after commas, aligned under the first scrutinee, rather than generic nested parser wrapping. | Children of the discriminant sequence immediately before `with`, preserving alternating discriminants and commas. |
 | `.matchPatterns` | Multiple patterns in one alternative need peer/balanced wrapping rather than raw nested `null` behavior. | Pattern children from the `matchAlt` pattern wrapper, with a redundant single `null` wrapper removed. |
 | `.doForHeader` | A `for` binder and its collection need separate LHS and `in` layout without teaching the renderer about `do` syntax. | The `for` keyword and declaration children before the loop body. |
-| `.doFallbackClause` and `.doFallbackContinuation` | Lean's raw `do` tree may store `| fallback` and later commands in one wrapper. Formatting needs an ordinary optional boundary before a fitting fallback, a body boundary after `|`, and a structural boundary before the later command without a source-dependent breakpoint predicate. | The clause contains `|` and its fallback body. The continuation contains every following child that belongs to the surrounding `do` sequence. Both `let pattern := value \| fallback` and `let pattern ← action \| fallback` use this shape, including extensible `let_expr` syntax. |
+| `.doFallbackClause` and `.doFallbackContinuation` | Lean's raw `do` tree may store `| fallback` and later commands in one wrapper. Formatting needs an ordinary optional boundary before the fallback clause and a structural boundary before the later command without a source-dependent breakpoint predicate. The clause delegates ordinary wrapping to its fallback child so `|` stays with the first term; its boundary after `|` activates only when intervening comments need a structural continuation indent. | The clause contains `|` and its fallback body. The continuation contains every following child that belongs to the surrounding `do` sequence. Both `let pattern := value \| fallback` and `let pattern ← action \| fallback` use this shape, including extensible `let_expr` syntax. |
 | `.structureUpdate` | The source before `with` behaves as an LHS expression, while the surrounding braces remain an ordinary balanced structure. | The comma-separated source expressions as direct children, including their separators and the final `with` token. Redundant anonymous sequence wrappers are removed. |
 | `.ifThenElseClause` and `.ifThenElseChain` | Nested raw `else if` nodes must share one balanced branch decision without making the renderer inspect conditional syntax or ancestor paths. | The chain alternates clause headers and result branches, followed by the final `else` and fallback branch. A clause header contains `if ... then` or `else if ... then` as one transparent segment, so the condition can still wrap by its own rules. |
 | `.proofBody` | Tactic syntax after `by` or `decreasing_by` is one protected proof-layout region, including ordinary term proofs, binder default tactics, and termination proofs. | The tactic-sequence children after the separate introducer token. For `binderTactic`, the preceding `:=` also remains a separate sibling. |
@@ -351,6 +351,8 @@ structure LineBreakRule where
     : RuleContext -> Segment -> Nat -> Bool := fun _ _ _ => false
   keepLeadingSuffixBeforeForcedComment
     : RuleContext -> Segment -> Bool := fun _ _ => false
+  keepPrefixWithChildFirstLine
+    : RuleContext -> Segment -> Bool := fun _ _ => false
   useExistingBreaks : RuleContext -> Segment -> Bool := fun _ _ => false
   mandatory : RuleContext -> Segment -> Bool := fun _ _ => false
   flow : RuleContext -> Segment -> Bool := fun _ _ => false
@@ -409,6 +411,13 @@ Rule methods mean:
   on the preceding line instead of breaking both before and after it. Declaration
   signatures use this to keep `:` with their final binder without making rules inspect
   comment trivia.
+- `keepPrefixWithChildFirstLine`: when a flow child can format its first line beside the
+  already-rendered prefix, delegate wrapping to that child rather than taking the
+  boundary immediately before it. Such a rule requires a genuinely single-line flat
+  probe and does not reactivate the boundary merely because it existed in the source.
+  A comment at that boundary still activates the break, so its continuation indentation
+  is structural. Refutable `let` fallback clauses use this to keep `|` with the
+  fallback's first term.
 - `mandatory`: returned breaks are structural and are applied without a flat attempt.
 - `flow`: returned breaks are candidates; flat layout is tried first, then accepted
   source breaks, then computed wrapping. If the accepted source layout still overflows,

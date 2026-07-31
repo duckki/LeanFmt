@@ -191,8 +191,8 @@ structure LineBreakRule where
   atomic : Bool := false
   formatOriginalChildLeadingBoundary : RuleContext → Segment → Nat → Bool :=
     fun _ _ _ => false
-  keepLeadingSuffixBeforeForcedComment : RuleContext → Segment → Bool :=
-    fun _ _ => false
+  keepLeadingSuffixBeforeForcedComment : RuleContext → Segment → Bool := fun _ _ => false
+  keepPrefixWithChildFirstLine : RuleContext → Segment → Bool := fun _ _ => false
   useExistingBreaks : RuleContext → Segment → Bool := fun _ _ => false
   mandatory : RuleContext → Segment → Bool := fun _ _ => false
   flow : RuleContext → Segment → Bool := fun _ _ => false
@@ -1746,11 +1746,7 @@ def doFallbackBodyRequiresBreak (segment : Segment) : Bool :=
 def doFallbackBreaks (segment : Segment) : List BreakPoint :=
   match doFallbackClauseIndex? segment with
   | some clauseIndex =>
-      let clauseBreak :=
-        if doFallbackClauseBodyRequiresBreak segment clauseIndex then
-          []
-        else
-          [boundaryBreak? segment clauseIndex 0].filterMap id
+      let clauseBreak := [boundaryBreak? segment clauseIndex 0].filterMap id
       let continuationBreaks :=
         segment.indexes.filterMap
           fun index =>
@@ -1799,15 +1795,6 @@ def doFallbackClauseBreaks (_context : RuleContext) (segment : Segment)
   | _pipeIndex :: fallbackIndex :: _ =>
       [boundaryBreak? segment fallbackIndex 1].filterMap id
   | _ => []
-
-def doFallbackClauseMandatory (_context : RuleContext) (segment : Segment) : Bool :=
-  match (nonemptyChildIndexes segment).drop 1 with
-  | fallbackIndex :: _ =>
-      segment.child? fallbackIndex
-      |>.any
-          fun fallback =>
-            1 < directDoSequenceItemCount fallback
-  | _ => false
 
 def doFallbackContinuationBreaks (_context : RuleContext) (segment : Segment)
     : List BreakPoint :=
@@ -1901,7 +1888,9 @@ def doLetExprRule : LineBreakRule :=
 def doFallbackClauseRule : LineBreakRule :=
   {
     name := "doFallbackClause"
-    mandatory := doFallbackClauseMandatory
+    formatOriginalChildLeadingBoundary :=
+      fun _ segment index => segment.start < index
+    keepPrefixWithChildFirstLine := fun _ _ => true
     flow := fun _ _ => true
     inheritBase := fun _ _ => true
     breakPoints := doFallbackClauseBreaks

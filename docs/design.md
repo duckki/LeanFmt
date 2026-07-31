@@ -1324,9 +1324,10 @@ consume value
 ```
 
 ```lean
-let some value := candidate |
-  reportFailure
-  return none
+let some value := candidate
+| do
+    reportFailure
+    return none
 consume value
 ```
 

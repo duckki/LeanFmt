@@ -1232,8 +1232,7 @@ def commentForcesBreakAt
       SpaceRules.commentForcesLineBreak originalTrivia
   | none => false
 
-def treeStartsWithSuffixBeforeForcedComment
-    (source : String) (tree : SyntaxTree.Tree)
+def treeStartsWithSuffixBeforeForcedComment (source : String) (tree : SyntaxTree.Tree)
     : Bool :=
   match tree.tokens.toList.filter (SyntaxTree.tokenComesFromSource source) with
   | first :: second :: _ =>
@@ -1630,6 +1629,19 @@ def FlowRenderContext.childFirstLineFits
   && lineFitsWithTrailingWidth rendered.currentLine rendered.lineFitSuffixWidth
       rendered.options.lineWidth
 
+def FlowRenderContext.childSourceFirstLineFitsAfterPrefix
+    (flow : FlowRenderContext) (state : RenderState) (index : Nat)
+    (child : SyntaxTree.Tree)
+    : Bool :=
+  let probe := flow.stateForPieceFit state index
+  match probe.lastToken?, child.firstToken?,
+        treeFirstSourceLineWidth? probe.source child with
+  | some left, some first, some firstLineWidth =>
+      let spacingWidth := (SpaceRules.spaceBetweenTokens left first).length
+      treeSourceHasLineStructure probe.source child
+      && probe.currentColumn + spacingWidth + firstLineWidth <= probe.options.lineWidth
+  | _, _, _ => false
+
 def FlowRenderContext.withBreak
     (flow : FlowRenderContext) (state : RenderState)
     (breakPoint : LineBreakRules.BreakPoint)
@@ -1646,6 +1658,7 @@ def FlowRenderContext.stateForForcedNestedChild?
     (breakAfterPreviousChild : Bool)
     (childFit : LayoutProbe) (pieceFit : LayoutProbe)
     (leadingSuffixPrecedesForcedComment : Bool)
+    (keepPrefixWithChildFirstLine : Bool)
     : Option RenderState :=
   match flow.breakAt? index with
   | some breakPoint =>
@@ -1657,6 +1670,8 @@ def FlowRenderContext.stateForForcedNestedChild?
           <| state.withPendingIndent
               (state.currentIndent + breakPoint.indentLevels * indentationSpaces)
       else if leadingSuffixPrecedesForcedComment then
+        none
+      else if keepPrefixWithChildFirstLine then
         none
       else if breakAfterPreviousChild
               || !childFit.fits
@@ -1814,7 +1829,11 @@ mutual
           fun breakPoint =>
             commentForcesBreakAt state.source segment breakPoint.index
             || sourceBrokenCommentedDelimiterAt state.source segment breakPoint.index
-      if probe.acceptedForRule isFlow breakPoints && !hasRetainedSourceBreak then
+      let keepsPrefixWithChildFirstLine :=
+        rule.keepPrefixWithChildFirstLine state.context segment
+      if probe.acceptedForRule isFlow breakPoints
+          && (!keepsPrefixWithChildFirstLine || probe.flat)
+          && !hasRetainedSourceBreak then
         state.commitLayoutProbe probe
       else
         renderAfterFlatFailure state segment rule breakPoints isFlow
@@ -1836,6 +1855,8 @@ mutual
       : RenderState :=
     let fallback (_ : Unit) := renderRuleLayout state segment rule breakPoints isFlow
     if !isFlow then
+      fallback ()
+    else if rule.keepPrefixWithChildFirstLine state.context segment then
       fallback ()
     else
       match sourceBreaksForRule? state segment rule breakPoints with
@@ -2246,12 +2267,16 @@ mutual
               childFit
             else
               flow.measurePiece state index
-          let childFirstLineFits :=
-            flow.childFirstLineFits state index childContext child
+          let childFirstLineFits := flow.childFirstLineFits state index childContext child
           let leadingSuffixPrecedesForcedComment :=
             flow.rule.keepLeadingSuffixBeforeForcedComment state.context flow.segment
             && childFirstLineFits
             && treeStartsWithSuffixBeforeForcedComment state.source child
+          let keepPrefixWithChildFirstLine :=
+            flow.rule.keepPrefixWithChildFirstLine state.context flow.segment
+            && (childFirstLineFits
+                || flow.childSourceFirstLineFitsAfterPrefix state index child)
+            && !commentForcesBreakAt state.source flow.segment index
           let renderNestedAndContinue (state : RenderState) :=
             let before := state
             let rendered :=
@@ -2260,7 +2285,8 @@ mutual
             renderFlowChildren rendered flow (index + 1)
               (renderedTreeIsMultiline before rendered child)
           match flow.stateForForcedNestedChild? state index breakAfterPreviousChild
-                  childFit pieceFit leadingSuffixPrecedesForcedComment with
+                  childFit pieceFit leadingSuffixPrecedesForcedComment
+                  keepPrefixWithChildFirstLine with
           | some state => renderNestedAndContinue state
           | none =>
               if segmentHasRuleSourceBreaks state.source childContext childSegment then
@@ -2268,7 +2294,7 @@ mutual
               else if childFit.fits then
                 renderFlowChildren (state.commitLayoutProbe childFit) flow (index + 1)
                   false
-              else if childFirstLineFits then
+              else if childFirstLineFits || keepPrefixWithChildFirstLine then
                 renderNestedAndContinue state
               else
                 let state :=

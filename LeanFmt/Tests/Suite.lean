@@ -1563,6 +1563,13 @@ def assertDoLetElseBreaks (env : Lean.Environment) : IO Unit := do
     ("  let .leaf comma :=\n"
       ++ "    veryLongAtomicValueNameForDoLetElseFormattingThatCannotShareTheHeaderLine\n"
       ++ "  | veryLongAtomicFallbackNameForDoLetElseFormattingThatCannotShareTheHeaderLine")
+  assertCase "do-let fallback keeps the bar with a wrapping fallback"
+    ("  let .leaf comma := commaTree\n"
+      ++ "  | return .text "
+      ++ "\"A long fallback message that cannot share the fallback separator line at all\"")
+    ("  let .leaf comma := commaTree\n"
+      ++ "  | return .text\n"
+      ++ "            \"A long fallback message that cannot share the fallback separator line at all\"")
   let nestedSource :=
     "def nestedDoLetElse (e : Expr) : MetaM (Bool × Expr) := do\n"
     ++ "  try\n"
@@ -1601,8 +1608,8 @@ def assertDoLetElseBreaks (env : Lean.Environment) : IO Unit := do
     ++ "  return value\n"
   let multiStatementFallbackExpected :=
     "def multiStatementFallback (candidate : Option Nat) : Option Nat := do\n"
-    ++ "  let some value := candidate |\n"
-    ++ "    if candidate.isNone then\n"
+    ++ "  let some value := candidate\n"
+    ++ "  | if candidate.isNone then\n"
     ++ "      reportFailure; return none\n"
     ++ "    throwError \"candidate was rejected\"\n"
     ++ "  return value\n"
@@ -1614,7 +1621,7 @@ def assertDoLetElseBreaks (env : Lean.Environment) : IO Unit := do
   assertTrue "multi-statement do-let fallback preserves code"
     (← codePreservedIgnoringWhitespace env multiStatementFallbackSource
         multiStatementFallbackResult.formatted)
-  assertEq "multi-statement do-let fallback stays beneath the pipe"
+  assertEq "multi-statement do-let fallback keeps its first term with the pipe"
     multiStatementFallbackExpected multiStatementFallbackResult.formatted
   let multiStatementFallbackAgain ←
     Formatter.formatSourceWithEnv env multiStatementFallbackResult.formatted
@@ -4662,8 +4669,7 @@ def assertDeclarationTypeBreak (env : Lean.Environment) : IO Unit := do
   let formatted ← Formatter.formatSourceWithEnv env source "declaration-type-break.lean"
   assertEq "declaration type break" expected formatted
 
-def assertDeclarationColonStaysWithBindersBeforeResultComment
-    (env : Lean.Environment)
+def assertDeclarationColonStaysWithBindersBeforeResultComment (env : Lean.Environment)
     : IO Unit := do
   let source :=
     "theorem declarationColonBeforeResultComment\n"
