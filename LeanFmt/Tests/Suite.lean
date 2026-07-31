@@ -4662,6 +4662,33 @@ def assertDeclarationTypeBreak (env : Lean.Environment) : IO Unit := do
   let formatted ← Formatter.formatSourceWithEnv env source "declaration-type-break.lean"
   assertEq "declaration type break" expected formatted
 
+def assertDeclarationColonStaysWithBindersBeforeResultComment
+    (env : Lean.Environment)
+    : IO Unit := do
+  let source :=
+    "theorem declarationColonBeforeResultComment\n"
+    ++ "    (argument : VeryLongArgumentTypeWithEnoughCharactersForLayoutTesting)\n"
+    ++ "    :\n"
+    ++ "    -- Explain the result type.\n"
+    ++ "    True := by\n"
+    ++ "  trivial\n"
+  let expected :=
+    "theorem declarationColonBeforeResultComment\n"
+    ++ "    (argument : VeryLongArgumentTypeWithEnoughCharactersForLayoutTesting) :\n"
+    ++ "    -- Explain the result type.\n"
+    ++ "    True := by\n"
+    ++ "  trivial\n"
+  let formatted ←
+    Formatter.formatSourceWithEnv env source
+      "declaration-colon-before-result-comment.lean"
+  assertEq "declaration colon stays with binders before a result comment"
+    expected formatted
+  let formattedAgain ←
+    Formatter.formatSourceWithEnv env formatted
+      "declaration-colon-before-result-comment-formatted.lean"
+  assertEq "declaration colon before result comment is idempotent"
+    formatted formattedAgain
+
 def assertImplicitBinderPreservesTightBraces (env : Lean.Environment) : IO Unit := do
   let source := "def implicitBinder {ObjectRef : Type} : Type := ObjectRef\n"
   let formatted ← Formatter.formatSourceWithEnv env source "implicit-binder-tight.lean"
@@ -9563,6 +9590,7 @@ def runExpressionAndRendererTests (env : Lean.Environment) : IO Unit := do
   assertTheoremParenthesizedLetKeepsValueSuffix env
   assertLetBodyAfterInfixClosesLetLayout env
   assertDeclarationTypeBreak env
+  assertDeclarationColonStaysWithBindersBeforeResultComment env
   assertImplicitBinderPreservesTightBraces env
   assertExplicitBinderTypeBreak env
   assertGroupedBinderIdentifiersFlow env

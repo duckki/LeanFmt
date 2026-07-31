@@ -349,6 +349,8 @@ structure LineBreakRule where
   atomic : Bool := false
   formatOriginalChildLeadingBoundary
     : RuleContext -> Segment -> Nat -> Bool := fun _ _ _ => false
+  keepLeadingSuffixBeforeForcedComment
+    : RuleContext -> Segment -> Bool := fun _ _ => false
   useExistingBreaks : RuleContext -> Segment -> Bool := fun _ _ => false
   mandatory : RuleContext -> Segment -> Bool := fun _ _ => false
   flow : RuleContext -> Segment -> Bool := fun _ _ => false
@@ -402,6 +404,11 @@ Rule methods mean:
   boundary and rebases the island's internal source layout to its formatted start
   column. Transparent wrappers use this for later children, so a source newline inside
   a type specification cannot detach its term from the preceding `:`.
+- `keepLeadingSuffixBeforeForcedComment`: when a flow child begins with a suffix token
+  immediately followed by a comment that forces a line break, keep the fitting suffix
+  on the preceding line instead of breaking both before and after it. Declaration
+  signatures use this to keep `:` with their final binder without making rules inspect
+  comment trivia.
 - `mandatory`: returned breaks are structural and are applied without a flat attempt.
 - `flow`: returned breaks are candidates; flat layout is tried first, then accepted
   source breaks, then computed wrapping. If the accepted source layout still overflows,

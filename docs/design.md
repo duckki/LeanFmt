@@ -492,6 +492,16 @@ def lookupVariableValue? (variableValues : VariableValues) (name : Name)
   body
 ```
 
+If a comment intervenes before the result type, a fitting `:` remains attached
+to the final binder rather than becoming a line by itself:
+
+```lean
+theorem projective_of_lifting_property (h : LiftingProperty P) :
+    -- The lifting property makes `P` projective.
+    Projective R P := by
+  ...
+```
+
 Long function return types break before arrows:
 
 ```lean
