@@ -3242,6 +3242,28 @@ def assertNotationValueBreaksAfterArrow (env : Lean.Environment) : IO Unit := do
   let rule := Formatter.LineBreakRules.formattingRuleFor notation3
   assertTrue "notation3 uses the notation value boundary"
     (rule.breakPoints {} segment == [{ index := 2, indentLevels := 1 }])
+  let notationItems :=
+    SyntaxTree.Tree.node (.raw `null)
+      #[
+        .leaf (syntheticAtomToken "\"left\""),
+        .leaf (syntheticAtomToken "term"),
+        .leaf (syntheticAtomToken "\"right\"")
+      ]
+  let groupedNotation :=
+    SyntaxTree.Tree.node (.raw `Mathlib.Notation3.notation3)
+      #[
+        .leaf (syntheticAtomToken "notation3"),
+        notationItems,
+        .leaf (syntheticAtomToken "=>"),
+        .leaf (syntheticAtomToken "value")
+      ]
+  let groupedSegment := Formatter.LineBreakRules.Segment.ofTree groupedNotation
+  let groupedRule := Formatter.LineBreakRules.formattingRuleFor groupedNotation
+  assertTrue "notation header groups expose an enclosing break"
+    (groupedRule.breakPoints {} groupedSegment
+      == [{ index := 1, indentLevels := 1 }, { index := 3, indentLevels := 1 }])
+  assertTrue "notation header and value breaks flow independently"
+    (groupedRule.flow {} groupedSegment)
 
 def assertSetBuilderBreaksAfterSeparator : IO Unit := do
   for kind

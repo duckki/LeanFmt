@@ -55,7 +55,7 @@ ending column.
 
 ### 2. Enclosing breakpoints lose priority over nested expression breaks
 
-Severity: high.
+Status: resolved.
 
 Dependent binders, custom-command arguments, applications, notation parser
 categories, and type ascriptions sometimes remain inline until a nested child
@@ -84,6 +84,10 @@ add_aesop_rules safe
 The enclosing comma, operator, or command-argument breakpoint should be
 selected before internal child breakpoints when that establishes a normal
 structural base.
+
+Generated binder terms are now recognized from their binder shape, recursive
+command argument sequences share one continuation base, and notation header
+groups expose a flowing outer breakpoint before nested parser-category syntax.
 
 ### 3. Moved subtrees retain stale source indentation
 

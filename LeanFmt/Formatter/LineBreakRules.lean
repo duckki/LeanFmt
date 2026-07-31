@@ -2863,13 +2863,29 @@ def declarationValueRule : LineBreakRule :=
     breakPoints := declarationValueBreaks
   }
 
+def notationHeaderGroupBreak? (segment : Segment) : Option BreakPoint := do
+  let arrowIndex ←
+    segment.indexes.find? fun index => childStartsWithLexeme segment index "=>"
+  let headerIndex ← previousContentIndex? segment arrowIndex
+  let header ← segment.child? headerIndex
+  match header with
+  | .node (.raw `null) children =>
+      if 1 < (children.filter fun child => child.firstToken?.isSome).size then
+        boundaryBreak? segment headerIndex 1
+      else
+        none
+  | _ => none
+
+def notationBreaks (_context : RuleContext) (segment : Segment) : List BreakPoint :=
+  [notationHeaderGroupBreak? segment, breakAfterLexeme? segment "=>" 1].filterMap id
+
 def notationRule : LineBreakRule :=
   {
     name := "notation"
     useExistingBreaks := fun _ _ => true
+    flow := fun _ _ => true
     inheritBase := fun _ _ => true
-    breakPoints :=
-      fun _ segment => [breakAfterLexeme? segment "=>" 1].filterMap id
+    breakPoints := notationBreaks
   }
 
 def macroRule : LineBreakRule :=
