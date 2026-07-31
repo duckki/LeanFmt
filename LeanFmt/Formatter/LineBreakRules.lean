@@ -635,6 +635,9 @@ def recursiveSequenceRule : LineBreakRule :=
     breakPoints := recursiveSequenceBreaks
   }
 
+def doIfLetBindRule : LineBreakRule :=
+  { defaultRule with name := "doIfLetBind", inheritBase := fun _ _ => true }
+
 -----------------------------------------------------------------------------------------
 -- Custom Rules
 -----------------------------------------------------------------------------------------
@@ -3550,7 +3553,7 @@ def ruleFor : SyntaxTree.Tree → Option LineBreakRule
   | .node (.raw `Lean.Parser.Term.letOpts) _ => some defaultRule
   | .node (.raw `Lean.Parser.Term.letOptNondep) _ => some defaultRule
   | .node (.raw `Lean.Parser.Term.doLetExpr) _ => some doLetExprRule
-  | .node (.raw `Lean.Parser.Term.doIfLetBind) _ => some defaultRule
+  | .node (.raw `Lean.Parser.Term.doIfLetBind) _ => some doIfLetBindRule
   | .node (.raw `Lean.Parser.Term.doHave) _ => some defaultRule
   | .node (.raw `Lean.Parser.Term.inferInstanceAs) _ => some defaultRule
   | .node (.raw `Lean.Parser.Term.noindex) _ => some defaultRule

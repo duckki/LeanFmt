@@ -772,6 +772,15 @@ Lean's `leading_parser` syntax describes a parser constructor with ordinary
 positional arguments, so those arguments use the same flow layout instead of
 letting a nested parser-combinator expression establish their indentation.
 
+In a `do` conditional with an `if let ... ← action` condition, an overflowing
+action breaks from the conditional's base:
+
+```lean
+if let some value ←
+    lookupLongOptionalValue firstArgument secondArgument then
+  use value
+```
+
 Nested applications choose their continuation from the nested application's
 structural base rather than aligning every line under the first argument:
 

@@ -899,6 +899,25 @@ def assertLeadingParserArgumentsFlow (env : Lean.Environment) : IO Unit := do
       { lineWidth := 100 }
   assertEq "leading parser arguments use application flow" expected formatted
 
+def assertDoIfLetBindUsesConditionalBase (env : Lean.Environment) : IO Unit := do
+  let source :=
+    "def cached := do\n"
+    ++ "  if let some (value, cached) ← MonadCache.findCached? { val := expression : ExprStructEq } then\n"
+    ++ "    pure value\n"
+    ++ "  else\n"
+    ++ "    pure expression\n"
+  let expected :=
+    "def cached := do\n"
+    ++ "  if let some (value, cached) ←\n"
+    ++ "      MonadCache.findCached? { val := expression : ExprStructEq } then\n"
+    ++ "    pure value\n"
+    ++ "  else\n"
+    ++ "    pure expression\n"
+  let formatted ←
+    Formatter.formatSourceWithEnv env source "do-if-let-bind-base.lean"
+      { lineWidth := 70 }
+  assertEq "do if-let bindings use the conditional base" expected formatted
+
 def assertDoFallbackRegrouping (env : Lean.Environment) : IO Unit := do
   let source :=
     "def fallback (candidate : Option Nat) : Option Nat := do\n"
@@ -9796,6 +9815,7 @@ def runBasicFormattingTests (env : Lean.Environment) : IO Unit := do
 
 def runExpressionAndRendererTests (env : Lean.Environment) : IO Unit := do
   assertLeadingParserArgumentsFlow env
+  assertDoIfLetBindUsesConditionalBase env
   assertSelfFormattingLetAndArrayRegressions env
   assertCliSelfFormattingRegressions env
   assertSelfFormattingRulePriorities env
