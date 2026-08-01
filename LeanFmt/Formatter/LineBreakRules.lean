@@ -345,7 +345,7 @@ def tokenChildIndexes (segment : Segment) : List Nat :=
       | some child => child.firstToken?.isSome
       | none => false
 
-inductive TopLevelCommandKind where
+inductive CommandKind where
   | moduleKeyword
   | publicImport
   | ordinaryImport
@@ -354,7 +354,7 @@ inductive TopLevelCommandKind where
   | other
 deriving BEq, Repr
 
-def topLevelCommandKind (tree : SyntaxTree.Tree) : TopLevelCommandKind :=
+def commandKind (tree : SyntaxTree.Tree) : CommandKind :=
   if treeIsRawKind tree `Lean.Parser.Module.moduleTk then
     .moduleKeyword
   else if treeIsRawKind tree `Lean.Parser.Module.import then
@@ -366,15 +366,20 @@ def topLevelCommandKind (tree : SyntaxTree.Tree) : TopLevelCommandKind :=
   else
     .other
 
-inductive TopLevelCommandSequenceKind where
+inductive CommandSequenceKind where
   | module
   | header
   | imports
   | commands
 deriving BEq, Repr
 
-def topLevelCommandSequenceKind? (context : RuleContext) (segment : Segment)
-    : Option TopLevelCommandSequenceKind :=
+def inMutualCommandSequence (context : RuleContext) : Bool :=
+  context.ancestors.head?.any
+    fun parent =>
+      parent.rawKind? == some `Lean.Parser.Command.mutual && parent.childIndex == 1
+
+def commandSequenceKind? (context : RuleContext) (segment : Segment)
+    : Option CommandSequenceKind :=
   if segment.rawKind? == some `Lean.Parser.Module.module then
     some .module
   else if segment.rawKind? == some `Lean.Parser.Module.header then
@@ -384,6 +389,8 @@ def topLevelCommandSequenceKind? (context : RuleContext) (segment : Segment)
     some .imports
   else if segment.rawKind? == some `null
           && parentIsRawKind context `Lean.Parser.Module.module then
+    some .commands
+  else if segment.rawKind? == some `null && inMutualCommandSequence context then
     some .commands
   else
     none
@@ -1423,18 +1430,14 @@ def moduleCommandBreaks (context : RuleContext) (segment : Segment) : List Break
     []
 
 def mutualCommandBreaks (context : RuleContext) (segment : Segment) : List BreakPoint :=
-  match context.ancestors with
-  | parent :: _ =>
-      if parent.rawKind? == some `Lean.Parser.Command.mutual
-          && parent.childIndex == 1 then
-        match nonemptyChildIndexes segment with
-        | []
-        | [_] => []
-        | _ :: rest =>
-            rest.filterMap fun index => boundaryBreak? segment index 0
-      else
-        []
-  | _ => []
+  if inMutualCommandSequence context then
+    match nonemptyChildIndexes segment with
+    | []
+    | [_] => []
+    | _ :: rest =>
+        rest.filterMap fun index => boundaryBreak? segment index 0
+  else
+    []
 
 def letRecDeclarationSequenceBreaks (context : RuleContext) (segment : Segment)
     : List BreakPoint :=

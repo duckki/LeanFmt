@@ -345,6 +345,19 @@ structure Segment where
 Existing blank lines may still separate short declaration groups and other
 top-level commands.
 
+The same declaration boundary applies inside a `mutual` block. Adjacent multiline
+declarations are separated even when the input omitted the blank line:
+
+```lean
+mutual
+  theorem first : True := by
+    trivial
+
+  theorem second : True := by
+    trivial
+end
+```
+
 A long individual import is not split internally. Syntax declarations and
 other command forms keep their tokens and use either an explicit command rule
 or the generic structural layout.

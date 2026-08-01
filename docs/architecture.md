@@ -374,11 +374,11 @@ anchor. Every returned point is an ordinary layout opportunity or a structural b
 when its rule is mandatory. Break points carry no source-, token-, or comment-dependent
 activation predicate.
 
-Top-level command sequences are the one file-layout specialization. `LineBreakRules`
-classifies module, header, import, and command sequences and catalogs command nodes as
-module keywords, public or ordinary imports, module docstrings, declarations, or other
-commands. This exposes syntax facts without encoding vertical spacing in every
-`BreakPoint`.
+Command sequences are the one vertical-spacing specialization. `LineBreakRules`
+classifies module, header, import, top-level command, and mutual-command sequences and
+catalogs command nodes as module keywords, public or ordinary imports, module docstrings,
+declarations, or other commands. This exposes syntax facts without encoding vertical
+spacing in every `BreakPoint`.
 
 When the renderer processes one of those sequences, it renders each command once and
 records whether the result is multiline. Boundaries known from syntax or the previous

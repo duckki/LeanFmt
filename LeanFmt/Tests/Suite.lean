@@ -1112,6 +1112,27 @@ def assertMultilineTopLevelDeclarationsUseBlankLines (env : Lean.Environment)
     Formatter.formatSourceWithEnv env source "top-level-declaration-spacing.lean"
   assertEq "multiline top-level declarations use blank lines" expected formatted
 
+def assertMultilineMutualDeclarationsUseBlankLines (env : Lean.Environment)
+    : IO Unit := do
+  let source :=
+    "mutual\n"
+    ++ "theorem first : True := by\n"
+    ++ "  trivial\n"
+    ++ "theorem second : True := by\n"
+    ++ "  trivial\n"
+    ++ "end\n"
+  let expected :=
+    "mutual\n"
+    ++ "  theorem first : True := by\n"
+    ++ "    trivial\n"
+    ++ "\n"
+    ++ "  theorem second : True := by\n"
+    ++ "    trivial\n"
+    ++ "end\n"
+  let formatted ←
+    Formatter.formatSourceWithEnv env source "mutual-declaration-spacing.lean"
+  assertEq "multiline mutual declarations use blank lines" expected formatted
+
 def assertLongImportStaysOnOneLine (env : Lean.Environment) : IO Unit := do
   let source :=
     "import GraphQL.Algorithms.ExecutionUngrouped.Equivalence.AppendSelection.SingleFieldGroup\n"
@@ -3255,11 +3276,13 @@ def assertTerminationClausesUseDeclarationBase (env : Lean.Environment) : IO Uni
     ++ "    | 0 => 0\n"
     ++ "    | n + 1 => second n\n"
     ++ "  termination_by n => n\n"
+    ++ "\n"
     ++ "  @[implicit_reducible]\n"
     ++ "  def second : Nat → Nat\n"
     ++ "    | 0 => 0\n"
     ++ "    | n + 1 => third n\n"
     ++ "  termination_by n => n\n"
+    ++ "\n"
     ++ "  @[implicit_reducible]\n"
     ++ "  def third : Nat → Nat\n"
     ++ "    | 0 => 0\n"
@@ -9897,6 +9920,7 @@ def runBasicFormattingTests (env : Lean.Environment) : IO Unit := do
   assertImportsStayOnSeparateLines env
   assertModuleHeaderGroupsUseBlankLines env
   assertMultilineTopLevelDeclarationsUseBlankLines env
+  assertMultilineMutualDeclarationsUseBlankLines env
   assertLongImportStaysOnOneLine env
   assertNamespaceCommandsStayOnSeparateLines env
   assertOpenCommandListBreaksFromOpenColumn env

@@ -1721,8 +1721,8 @@ inductive CommandBoundaryPlan where
   | blankLineIfMultiline
 
 def commandBoundaryPlan
-    (sequenceKind : LineBreakRules.TopLevelCommandSequenceKind)
-    (previous current : LineBreakRules.TopLevelCommandKind)
+    (sequenceKind : LineBreakRules.CommandSequenceKind)
+    (previous current : LineBreakRules.CommandKind)
     (previousMultiline : Bool)
     : CommandBoundaryPlan :=
   match sequenceKind with
@@ -2384,15 +2384,15 @@ mutual
               breakPoint.index false rest
       let rec renderCommandPieces
           (state : RenderState) (start : Nat) (firstPiece : Bool)
-          (sequenceKind : LineBreakRules.TopLevelCommandSequenceKind)
-          (previousKind? : Option LineBreakRules.TopLevelCommandKind)
+          (sequenceKind : LineBreakRules.CommandSequenceKind)
+          (previousKind? : Option LineBreakRules.CommandKind)
           (previousMultiline : Bool)
           : List LineBreakRules.BreakPoint → RenderState
         | breaks =>
             let stop := breaks.head?.map (·.index) |>.getD segment.stop
             let finalPiece := breaks.isEmpty
             let currentTree? := segmentRangeFirstTree? segment start stop
-            let currentKind? := currentTree?.map LineBreakRules.topLevelCommandKind
+            let currentKind? := currentTree?.map LineBreakRules.commandKind
             let boundaryPlan :=
               match previousKind?, currentKind? with
               | some previousKind, some currentKind =>
@@ -2419,7 +2419,7 @@ mutual
                 let rest := rest.dropWhile fun next => next.index == breakPoint.index
                 renderCommandPieces (stateAfterBreak rendered breakPoint)
                   breakPoint.index false sequenceKind currentKind? currentMultiline rest
-      match LineBreakRules.topLevelCommandSequenceKind? state.context segment with
+      match LineBreakRules.commandSequenceKind? state.context segment with
       | some sequenceKind =>
           renderCommandPieces state segment.start true sequenceKind none false breakPoints
       | none => renderOrdinaryPieces state segment.start true breakPoints
