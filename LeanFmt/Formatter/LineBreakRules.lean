@@ -179,6 +179,11 @@ def parentIsInfixChain (context : RuleContext) : Bool :=
       | _ => false
   | _ => false
 
+def parentIsLowPriorityInfixChain (context : RuleContext) : Bool :=
+  match context.ancestors with
+  | parent :: _ => parent.nodeKind? == some (.infixChain `«term_<|_»)
+  | _ => false
+
 def grandparentIsRawKind (context : RuleContext) (kind : Lean.SyntaxNodeKind) : Bool :=
   match context.ancestors with
   | _ :: grandparent :: _ => grandparent.rawKind? == some kind
@@ -910,6 +915,12 @@ def childHasNestedProofBody (segment : Segment) (index : Nat) : Bool :=
   && match segment.child? index with
       | some child => treeContainsProofTree child
       | none => false
+
+def lowPriorityInfixOwnsRhsStart (segment : Segment) (index : Nat) : Bool :=
+  lowPriorityInfixSegment segment
+  && 0 < index
+  && index % 2 == 0
+  && !childHasNestedProofBody segment index
 
 def declarationValueHasAttachedBodyInfix (segment : Segment) : Bool :=
   match contentIndexAfterLexeme? segment ":=" with
@@ -2675,6 +2686,7 @@ def infixBreaks (_context : RuleContext) (segment : Segment) : List BreakPoint :
                   id
               else if 1 < index
                       && index % 2 == 0
+                      && !lowPriorityInfixOwnsRhsStart segment index
                       && (childIsRawKind segment index `Lean.Parser.Term.have
                           || childIsRawKind segment index `Lean.Parser.Term.haveI) then
                 [boundaryBreak? segment index 0].filterMap id
@@ -3282,8 +3294,11 @@ def haveRule : LineBreakRule :=
     name := "have"
     mandatory := fun _ _ => true
     inheritBase :=
-      fun context _ =>
-        !parentIsInfixChain context && !parentIsRawKind context `Lean.Parser.Term.typeSpec
+      fun context segment =>
+        (!parentIsInfixChain context
+          || (parentIsLowPriorityInfixChain context
+              && !treeContainsProofTree segment.parent))
+        && !parentIsRawKind context `Lean.Parser.Term.typeSpec
     breakPoints := haveBreaks
   }
 

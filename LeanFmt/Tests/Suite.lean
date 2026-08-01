@@ -3954,6 +3954,31 @@ def assertLowPriorityPipeCalcKeepsIndentedOperand (env : Lean.Environment) : IO 
       "low-priority-pipe-calc-formatted.lean" { lineWidth := 70 }
   assertEq "low-priority pipe calc is idempotent" result.formatted formattedAgain
 
+def assertLowPriorityPipeKeepsHaveOperandAttached (env : Lean.Environment) : IO Unit := do
+  let source :=
+    "def pipeHave : Nat :=\n"
+    ++ "  longFunctionNameWithEnoughCharactersToForceLowPriorityPipeBreak\n"
+    ++ "  <|\n"
+    ++ "  have value := 0\n"
+    ++ "  value\n"
+  let expected :=
+    "def pipeHave : Nat :=\n"
+    ++ "  longFunctionNameWithEnoughCharactersToForceLowPriorityPipeBreak\n"
+    ++ "  <| have value := 0\n"
+    ++ "  value\n"
+  let result ←
+    Formatter.formatSourceWithEnvDetailed env source
+      "low-priority-pipe-have.lean" { lineWidth := 70 }
+  assertTrue "low-priority pipe have does not fall back" (!result.fellBack)
+  assertEq "low-priority pipe owns the first line of its have operand"
+    expected result.formatted
+  assertTrue "low-priority pipe have preserves code"
+    (← codePreservedIgnoringWhitespace env source result.formatted)
+  let formattedAgain ←
+    Formatter.formatSourceWithEnv env result.formatted
+      "low-priority-pipe-have-formatted.lean" { lineWidth := 70 }
+  assertEq "low-priority pipe have is idempotent" result.formatted formattedAgain
+
 def assertMovedInlineCalcKeepsContinuationLayout (env : Lean.Environment) : IO Unit := do
   let source :=
     "def movedInlineCalcKeepsContinuationLayout : Nat :=\n"
@@ -10172,6 +10197,7 @@ def runBasicFormattingTests (env : Lean.Environment) : IO Unit := do
   assertOriginalLayoutValueHonorsDeclarationBreak env
   assertCalcLayoutIslandAfterNestedInfix env
   assertLowPriorityPipeCalcKeepsIndentedOperand env
+  assertLowPriorityPipeKeepsHaveOperandAttached env
   assertMovedInlineCalcKeepsContinuationLayout env
   assertExplicitLambdaKeepsPrefixMarker env
   assertHaveTermFormatting env

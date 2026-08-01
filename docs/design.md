@@ -1158,6 +1158,20 @@ with the `have` expression rather than the assigned value. A dependent return
 type that begins with `have` owns its layout base after the signature colon, so
 both its proof and following type stay offside after the signature is reflowed.
 
+When `have` is the right operand of a broken low-priority pipe, its first line
+stays attached to `<|`. The body returns to the low-priority expression's
+structural base, preserving the same internal rule:
+
+```lean
+def pipeHave :=
+  longFunctionNameWithEnoughCharactersToForceLowPriorityPipeBreak
+  <| have value := 0
+  value
+```
+
+A `have` that contains a protected proof body keeps a separate operand boundary
+so the proof and its following body continue to move as one layout island.
+
 ## Conditionals
 
 A fitting conditional stays on one line. A multiline conditional breaks as a
