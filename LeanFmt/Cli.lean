@@ -28,7 +28,7 @@ def usage : String :=
       "  --line-width N",
       s!"            Use N as the formatter line limit; default is {Formatter.maxLineWidth}.",
       "  -j, --jobs N",
-      s!"            Run at most N workers concurrently; ordinary files default to hardware concurrency, imported environments to at most {Driver.maxDefaultImportedEnvironmentWorkerJobs}.",
+      "            Run at most N workers concurrently; defaults to hardware concurrency.",
       "            Each imported worker handles one exact import header and then exits.",
       "            Reduce this when imported environments cause memory pressure.",
       "  -h, --help",

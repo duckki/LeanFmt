@@ -272,21 +272,11 @@ def shouldUseWorker (options : Options) (cwd? : Option FilePath) (fileCount : Na
     : Bool :=
   !options.worker && cwd?.isSome && fileCount > 1
 
-def maxDefaultImportedEnvironmentWorkerJobs : Nat := 2
-
 def defaultWorkerJobs (hardwareConcurrency : Nat) : Nat :=
   max 1 hardwareConcurrency
 
-def defaultImportedEnvironmentWorkerJobs (hardwareConcurrency : Nat) : Nat :=
-  min maxDefaultImportedEnvironmentWorkerJobs (defaultWorkerJobs hardwareConcurrency)
-
-def configuredDefaultEnvironmentWorkerJobs (options : Options) : Nat :=
+def configuredWorkerJobs (options : Options) : Nat :=
   max 1 <| options.workerJobs?.getD (defaultWorkerJobs options.hardwareConcurrency)
-
-def configuredImportedEnvironmentWorkerJobs (options : Options) : Nat :=
-  max 1
-  <| options.workerJobs?.getD
-      (defaultImportedEnvironmentWorkerJobs options.hardwareConcurrency)
 
 partial def splitIntoBatchCount (batchCount : Nat) (items : List α) : List (List α) :=
   if batchCount == 0 || items.isEmpty then
@@ -445,7 +435,7 @@ def runExactEnvironmentWorkerBatches
     (process : WorkerProcessContext)
     (options : Options) (cwd? : Option FilePath) (groups : List ImportHeaderGroup)
     : IO UInt32 := do
-  let requestedJobs := configuredImportedEnvironmentWorkerJobs options
+  let requestedJobs := configuredWorkerJobs options
   let groupBatches := exactEnvironmentWorkerBatches groups
   let fileCount := groups.foldl (fun count group => count + group.files.length) 0
   profileLine options
@@ -479,7 +469,7 @@ def runDefaultEnvironmentFiles
     : IO UInt32 := do
   if files.isEmpty then
     return 0
-  let requestedJobs := configuredDefaultEnvironmentWorkerJobs options
+  let requestedJobs := configuredWorkerJobs options
   let batches :=
     (splitIntoBatchCount (min requestedJobs files.length) files).map
       fun files => { files, environmentCount := 1 }

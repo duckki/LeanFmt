@@ -7797,14 +7797,12 @@ def assertWorkersUseInputLakeRoot : IO Unit := do
         manyFiles.mapIdx
           fun index file =>
             { key := s!"environment-{index}", files := [file] }
-      assertTrue "automatic imported worker count is positive"
-        (LeanFmt.Driver.defaultImportedEnvironmentWorkerJobs 8 > 0)
-      assertTrue "automatic imported worker count follows Lean's conservative cap"
-        (LeanFmt.Driver.defaultImportedEnvironmentWorkerJobs 8
-          ≤ LeanFmt.Driver.maxDefaultImportedEnvironmentWorkerJobs)
-      assertTrue "explicit imported worker count overrides the machine default"
-        (LeanFmt.Driver.configuredImportedEnvironmentWorkerJobs { workerJobs? := some 3 }
-          == 3)
+      assertTrue "automatic worker count uses every hardware thread"
+        (LeanFmt.Driver.configuredWorkerJobs { hardwareConcurrency := 8 } == 8)
+      assertTrue "automatic worker count remains positive without hardware information"
+        (LeanFmt.Driver.configuredWorkerJobs { hardwareConcurrency := 0 } == 1)
+      assertTrue "explicit worker count overrides the machine default"
+        (LeanFmt.Driver.configuredWorkerJobs { workerJobs? := some 3 } == 3)
       let concurrentBatches := LeanFmt.Driver.exactEnvironmentWorkerBatches manyGroups
       assertTrue "every exact environment receives its own worker batch"
         (concurrentBatches.length == manyGroups.length)

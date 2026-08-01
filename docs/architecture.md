@@ -103,11 +103,11 @@ Formatting a file follows this pipeline:
    extensions. `LeanEnvironment.lean` is the narrow maintenance boundary for these
    APIs. Driver policy is deliberately separate.
 
-   The automatic imported-environment worker count is capped at two to avoid
-   multiplying cold `.olean` I/O and retained environments without bound. The
-   scheduler keeps the configured number of one-environment workers active until its
-   queue is empty. Worker output is buffered and reported in batch order so diagnostics
-   remain readable and deterministic. `-j` or `--jobs` limits concurrent workers.
+   The automatic worker count follows the machine's hardware concurrency for both
+   default and imported environments. The scheduler keeps the configured number of
+   one-environment workers active until its queue is empty. Worker output is buffered
+   and reported in batch order so diagnostics remain readable and deterministic. `-j`
+   or `--jobs` overrides the automatic worker count.
    Setting `--env-cache-size` to a positive value enables the incremental
    prefix-state path for compatibility testing; zero is the normal direct-import path.
 
@@ -115,10 +115,8 @@ Formatting a file follows this pipeline:
    so the peak is approximately one default environment plus one custom environment
    per active imported worker. Lean's runtime memory limit is per process and is
    sampled periodically at system-check points; it is not an aggregate budget or a
-   concurrency controller. Although Lean exposes current available and constrained
-   system memory, neither value predicts the size of the next imported environment.
-   LeanFmt therefore uses a conservative imported-worker default and leaves the
-   machine-specific choice between one and multiple imported workers to `--jobs`.
+   concurrency controller. `--jobs` remains available when a particular project or
+   machine benefits from a lower concurrency limit.
 3. Convert Lean `Syntax` to a `SyntaxTree.Tree` of tokens and raw parser nodes.
 4. Regroup selected raw nodes into logical `SyntaxTree.NodeKind` nodes.
 5. Render the resulting tree using line-break rules and space rules.

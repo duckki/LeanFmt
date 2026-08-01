@@ -39,8 +39,7 @@ invocation. For example, validate mathlib at width 100 with:
     --files Mathlib mathlib=$HOME/work/lean-libs/mathlib4
 
 Set LEANFMT_VALIDATION_FORMATTER_JOBS=N to limit concurrent formatter workers.
-Default-environment work uses the hardware count; the imported-environment
-automatic default is capped at two.
+The automatic default uses the hardware count for every formatter worker group.
 EOF
 }
 
@@ -319,7 +318,7 @@ run_project_validation_batches() {
   if [[ -n "$FORMATTER_WORKER_JOBS" ]]; then
     printf 'Formatter worker jobs override: %d\n' "$FORMATTER_WORKER_JOBS"
   else
-    printf 'Formatter worker jobs override: automatic (hardware count; exact environments up to 2)\n'
+    printf 'Formatter worker jobs override: automatic (hardware count)\n'
   fi
   if [[ -n "$selected_batch" ]]; then
     printf 'Running selected validation batch: %d\n' "$selected_batch"

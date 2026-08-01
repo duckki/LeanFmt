@@ -97,10 +97,9 @@ Explicitly supplied hidden paths are still processed. Pass `--include-hidden`
 to include hidden descendants during directory traversal. leanfmt uses a
 90-character line limit by default; pass `--line-width N` when a project uses a
 different convention. Multi-file package invocations use concurrent workers:
-default-environment files use the machine's hardware concurrency, while files that
-require project-specific syntax environments use a conservative automatic limit.
-Each exact import header gets one short-lived worker process. Pass `--jobs N` to
-tune concurrency for the machine's memory and storage.
+both default-environment files and files that require project-specific syntax
+environments use the machine's hardware concurrency. Each exact import header gets
+one short-lived worker process. Pass `--jobs N` to override the automatic count.
 
 To preserve the next complete syntax node exactly, put `-- leanfmt: off next`
 immediately before it. The marker works for top-level commands and nested terms:

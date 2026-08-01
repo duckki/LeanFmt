@@ -474,10 +474,10 @@ the corresponding existing clone there. Set
 `LEANFMT_VALIDATION_FILE_PATTERN` to change the default file selector, or
 `LEANFMT_VALIDATION_BATCH_SIZE` to change the validation batch size.
 `LEANFMT_VALIDATION_FORMATTER_JOBS` passes `--jobs` to limit concurrent workers;
-default-environment work uses the machine's hardware concurrency, while the automatic
-imported-environment default is capped at two. Multi-file package formatter
-invocations first process files that parse in leanfmt's default Lean environment, then
-process files that need imported syntax in short-lived workers. The parent asks Lake
+the automatic worker count uses the machine's hardware concurrency for both default
+and imported environments. Multi-file package formatter invocations first process
+files that parse in leanfmt's default Lean environment, then process files that need
+imported syntax in short-lived workers. The parent asks Lake
 for the target package's augmented process environment once and launches workers
 directly with it. Imported files are grouped by exact normalized import header. A group
 is never split across workers, even when it contains many files, and every group gets
