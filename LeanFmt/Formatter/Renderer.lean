@@ -714,7 +714,8 @@ def RenderState.emitOriginalTree
     (classification? : Option OriginalTree.LayoutIslandKind := none)
     : RenderState :=
   let formattedLeadingWhitespace? :=
-    if formatLeadingBoundary then
+    if formatLeadingBoundary
+        || classification?.any OriginalTree.LayoutIslandKind.formatsLeadingBoundary then
       SyntaxTree.Tree.firstToken? tree
       |>.map fun firstToken => state.defaultWhitespace firstToken
     else

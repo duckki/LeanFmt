@@ -285,6 +285,9 @@ partial def treeContainsLexeme (lexeme : String) : SyntaxTree.Tree → Bool
   | .leaf token => token.lexeme == lexeme
   | .node _ children => children.any (treeContainsLexeme lexeme)
 
+def childIsPatternLambdaArgument (segment : Segment) (index : Nat) : Bool :=
+  segment.child? index |>.any SyntaxTree.isPatternLambdaArgument
+
 partial def treeContainsRawKind (kind : Lean.SyntaxNodeKind) : SyntaxTree.Tree → Bool
   | .missing
   | .leaf _ => false
@@ -1487,9 +1490,19 @@ def applicationArgumentStaysAttached
           fun frame => frame.rawKind? == some `Lean.Parser.Command.initialize)
 
 def applicationBreaks (context : RuleContext) (segment : Segment) : List BreakPoint :=
-  (childBoundaryBreaks segment 1).filter
-    fun breakPoint =>
-      !applicationArgumentStaysAttached context segment breakPoint.index
+  let patternFunBreaks :=
+    (childBoundaryBreaks segment 1).filter
+      fun breakPoint =>
+        childIsPatternLambdaArgument segment breakPoint.index
+  if !patternFunBreaks.isEmpty then
+    patternFunBreaks
+  else
+    (childBoundaryBreaks segment 1).filter
+      fun breakPoint =>
+        !applicationArgumentStaysAttached context segment breakPoint.index
+
+def applicationHasPatternLambda (_context : RuleContext) (segment : Segment) : Bool :=
+  segment.indexes.any fun index => childIsPatternLambdaArgument segment index
 
 def pipeProjBreaks (_context : RuleContext) (segment : Segment) : List BreakPoint :=
   match boundaryBreak? segment 1 0 with
@@ -1547,6 +1560,7 @@ def binderDefaultBreaks (_context : RuleContext) (segment : Segment) : List Brea
 def applicationRule : LineBreakRule :=
   {
     name := "application"
+    mandatory := applicationHasPatternLambda
     flow := fun _ _ => true
     inheritBase := fun _ _ => false
     breakPoints := applicationBreaks
@@ -2035,9 +2049,17 @@ def whereFinallyBreaks (_context : RuleContext) (segment : Segment) : List Break
 
 def whereStructInstBreaks (_context : RuleContext) (segment : Segment)
     : List BreakPoint :=
-  match boundaryBreak? segment 1 1 with
-  | some breakPoint => [breakPoint]
-  | none => []
+  let fieldBreak := [boundaryBreak? segment 1 1].filterMap id
+  let trailingWhereBreaks :=
+    segment.indexes.filterMap
+      fun index =>
+        if 1 < index
+            && childIsRawKindThroughNullWrappers
+                segment index `Lean.Parser.Term.whereDecls then
+          boundaryBreak? segment index 0
+        else
+          none
+  fieldBreak ++ trailingWhereBreaks
 
 def terminationSuffixBreaks (_context : RuleContext) (segment : Segment)
     : List BreakPoint :=
@@ -2345,6 +2367,25 @@ def bracketedRelationRule : LineBreakRule :=
     useExistingBreaks := fun _ _ => true
     flow := fun _ _ => true
     breakPoints := bracketedRelationBreaks
+  }
+
+def indexedNotationBreaks (_context : RuleContext) (segment : Segment)
+    : List BreakPoint :=
+  match segment.parent, nonemptyChildIndexes segment with
+  | .node (.indexedInfix _) _, [_, operatorIndex, _, _, rhsIndex] =>
+      [
+        boundaryBreak? segment operatorIndex 1,
+        boundaryBreak? segment rhsIndex 1
+      ].filterMap
+        id
+  | _, _ => []
+
+def indexedNotationRule : LineBreakRule :=
+  {
+    name := "indexedNotation"
+    useExistingBreaks := fun _ _ => true
+    flow := fun _ _ => true
+    breakPoints := indexedNotationBreaks
   }
 
 def isGeneratedTermKind (kind : Lean.SyntaxNodeKind) : Bool :=
@@ -3943,6 +3984,8 @@ def ruleFor : SyntaxTree.Tree → Option LineBreakRule
   | .node (.raw `Lean.Parser.Command.inductive) _ => some inductiveRule
   | .node (.raw `Lean.Parser.Command.coinductive) _ => some inductiveRule
   | .node .application _ => some applicationRule
+  | .node (.indexedInfix _) _ => some indexedNotationRule
+  | .node .patternLambda _ => some basicFunRule
   | .node .signatureParameters _ => some signatureParametersRule
   | .node .matchPatterns _ => some matchPatternsRule
   | .node .matchDiscriminants _ => some matchDiscriminantsRule

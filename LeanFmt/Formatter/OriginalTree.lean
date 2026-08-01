@@ -495,6 +495,10 @@ def LayoutIslandKind.preservesFollowingCommentIndent : LayoutIslandKind → Bool
   | .layoutSensitiveCommand => true
   | _ => false
 
+def LayoutIslandKind.formatsLeadingBoundary : LayoutIslandKind → Bool
+  | .calc => true
+  | _ => false
+
 def canUseStructuralOverflowFallback : SyntaxTree.Tree → Bool
   | .node (.raw `Lean.Parser.Term.anonymousCtor) _
   | .node (.raw `Lean.Parser.Term.structInst) _ => true

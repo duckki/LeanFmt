@@ -61,6 +61,8 @@ inductive NodeKind where
   | letExpression (kind : SyntaxNodeKind) (bodyCanStartApplicationArgument : Bool)
   | application
   | infixChain (kind : SyntaxNodeKind)
+  | indexedInfix (kind : SyntaxNodeKind)
+  | patternLambda
   | definition
   | annotatedDeclaration
   | signatureParameters
@@ -86,6 +88,8 @@ def nodeKindName : NodeKind → String
       s!"LeanFmt.SyntaxTree.NodeKind.letExpression {kind} {bodyCanStartApplicationArgument}"
   | .application => "LeanFmt.SyntaxTree.NodeKind.application"
   | .infixChain kind => s!"LeanFmt.SyntaxTree.NodeKind.infixChain {kind}"
+  | .indexedInfix kind => s!"LeanFmt.SyntaxTree.NodeKind.indexedInfix {kind}"
+  | .patternLambda => "LeanFmt.SyntaxTree.NodeKind.patternLambda"
   | .definition => "LeanFmt.SyntaxTree.NodeKind.definition"
   | .annotatedDeclaration => "LeanFmt.SyntaxTree.NodeKind.annotatedDeclaration"
   | .signatureParameters => "LeanFmt.SyntaxTree.NodeKind.signatureParameters"
@@ -366,6 +370,16 @@ def rawKind? : Tree → Option SyntaxNodeKind
   | .node (.letExpression kind _) _ => some kind
   | _ => none
 
+partial def isPatternLambdaArgument : Tree → Bool
+  | .node .patternLambda _ => true
+  | .node (.raw `null) children =>
+      let content := children.filter fun child => child.firstToken?.isSome
+      content.size == 1 && content[0]?.any isPatternLambdaArgument
+  | .node (.raw `Lean.Parser.Term.explicit) children
+  | .node (.raw `Lean.Parser.Term.explicitUniv) children =>
+      children.back?.any isPatternLambdaArgument
+  | _ => false
+
 abbrev InfixPrecedenceMap := NameMap (Nat × Nat)
 
 partial def parserDescrPrecedence? (kind : SyntaxNodeKind)
@@ -454,6 +468,26 @@ def isBinaryInfixRawNode (kind : SyntaxNodeKind) (children : Array Tree) : Bool 
   && match children[1]? with
       | some operator => directLeafAtom? operator
       | none => false
+
+private def stringContainsSubstring (text pattern : String) : Bool :=
+  match text.splitOn pattern with
+  | _ :: _ :: _ => true
+  | _ => false
+
+private def isGeneratedIndexedInfixKind (kind : SyntaxNodeKind) : Bool :=
+  let name := toString kind
+  (name.startsWith "«term" || stringContainsSubstring name ".«term")
+  && stringContainsSubstring name "[_]"
+  && name.endsWith "_»"
+
+private def isGeneratedIndexedInfixRawNode (kind : SyntaxNodeKind) (children : Array Tree)
+    : Bool :=
+  let hasLeftOperand := children[0]?.any fun child => child.firstToken?.isSome
+  let hasRightOperand := children[4]?.any fun child => child.firstToken?.isSome
+  isGeneratedIndexedInfixKind kind
+  && children.size == 5
+  && hasLeftOperand
+  && hasRightOperand
 
 def appendApplicationArgumentChildren (argumentContainer : Tree) : Array Tree :=
   match argumentContainer with
@@ -1293,6 +1327,10 @@ def regroupOtherRawNode (kind : SyntaxNodeKind) (children : Array Tree) : Tree :
     regroupCtor children
   else if kind == `Lean.Parser.Command.structure then
     regroupStructure children
+  else if kind == `Lean.Parser.Term.fun
+          && children.any
+              fun child => rawKind? child == some `Lean.Parser.Term.matchAlts then
+    .node .patternLambda children
   else if kind == `Lean.Parser.Term.basicFun then
     match children[0]? with
     | some parameters =>
@@ -1425,6 +1463,8 @@ def regroupRawNode
     .node (.raw kind) (regroupCommandInWrapperChildren children)
   else if kind == `Lean.Parser.Term.binderTactic then
     .node (.infixChain kind) (regroupBinderTacticChildren children)
+  else if isGeneratedIndexedInfixRawNode kind children then
+    .node (.indexedInfix kind) children
   else if isBinaryInfixRawNode kind children then
     match children[0]?, children[1]?, children[2]? with
     | some left, some operator, some right =>

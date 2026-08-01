@@ -2414,6 +2414,36 @@ def assertStructureValueWhereFormattingKeepsSuffix (env : Lean.Environment)
   assertEq "structure-value where formatting is idempotent"
     result.formatted formattedAgain
 
+def assertWhereStructInstTrailingWhereUsesCommandBase (env : Lean.Environment)
+    : IO Unit := do
+  let source :=
+    "instance asymm (r : α → α → Prop) [Std.Asymm r] : Std.Asymm (Lex r) where\n"
+    ++ "  asymm := aux\n"
+    ++ "  where\n"
+    ++ "    aux\n"
+    ++ "      | _, _, Lex.rel h₁, Lex.rel h₂ => _root_.asymm h₁ h₂\n"
+    ++ "      | _, _, Lex.rel h₁, Lex.cons _ => _root_.asymm h₁ h₁\n"
+  let expected :=
+    "instance asymm (r : α → α → Prop) [Std.Asymm r] : Std.Asymm (Lex r) where\n"
+    ++ "  asymm := aux\n"
+    ++ "where\n"
+    ++ "  aux\n"
+    ++ "    | _, _, Lex.rel h₁, Lex.rel h₂ => _root_.asymm h₁ h₂\n"
+    ++ "    | _, _, Lex.rel h₁, Lex.cons _ => _root_.asymm h₁ h₁\n"
+  let result ←
+    Formatter.formatSourceWithEnvDetailed env source
+      "where-struct-inst-trailing-where.lean"
+  assertTrue "where struct instance trailing where does not fall back" (!result.fellBack)
+  assertEq "where struct instance trailing where uses command base"
+    expected result.formatted
+  assertTrue "where struct instance trailing where preserves code"
+    (← codePreservedIgnoringWhitespace env source result.formatted)
+  let formattedAgain ←
+    Formatter.formatSourceWithEnv env result.formatted
+      "where-struct-inst-trailing-where-formatted.lean"
+  assertEq "where struct instance trailing where is idempotent"
+    result.formatted formattedAgain
+
 def assertAbbrevStructureValueKeepsWhereSuffix (env : Lean.Environment) : IO Unit := do
   let source :=
     "abbrev structureValuedAbbreviationWithLongName {α : Type} [VeryLongTypeclassName α] : Result α where\n"
@@ -3883,11 +3913,10 @@ def assertCalcLayoutIslandAfterNestedInfix (env : Lean.Environment) : IO Unit :=
     "def embeddingCalcAfterNestedInfix : Nat :=\n"
     ++ "  (firstFunction <| c.sizeUpTo i).trans\n"
     ++ "  <| secondFunction\n"
-    ++ "  <|\n"
-    ++ "    calc\n"
-    ++ "      c.sizeUpTo i + c.blocksFun i = c.sizeUpTo (i + 1) := (c.sizeUpTo_succ i.2).symm\n"
-    ++ "      _ ≤ c.sizeUpTo c.length := monotone_sum_take _ i.2\n"
-    ++ "      _ = n := c.sizeUpTo_length\n"
+    ++ "  <| calc\n"
+    ++ "       c.sizeUpTo i + c.blocksFun i = c.sizeUpTo (i + 1) := (c.sizeUpTo_succ i.2).symm\n"
+    ++ "       _ ≤ c.sizeUpTo c.length := monotone_sum_take _ i.2\n"
+    ++ "       _ = n := c.sizeUpTo_length\n"
   let result ←
     Formatter.formatSourceWithEnvDetailed env source
       "calc-layout-island-after-nested-infix.lean"
@@ -3900,6 +3929,30 @@ def assertCalcLayoutIslandAfterNestedInfix (env : Lean.Environment) : IO Unit :=
     Formatter.formatSourceWithEnv env result.formatted
       "calc-layout-island-after-nested-infix-formatted.lean"
   assertEq "calc after nested infix is idempotent" result.formatted formattedAgain
+
+def assertLowPriorityPipeCalcKeepsIndentedOperand (env : Lean.Environment) : IO Unit := do
+  let source :=
+    "def pipeCalc : Nat :=\n"
+    ++ "  longProofNameWithEnoughCharactersToForceLowPriorityPipeBreak <| calc\n"
+    ++ "    left = middle := proofOne\n"
+    ++ "    _ = right := proofTwo\n"
+  let expected :=
+    "def pipeCalc : Nat :=\n"
+    ++ "  longProofNameWithEnoughCharactersToForceLowPriorityPipeBreak\n"
+    ++ "  <| calc\n"
+    ++ "      left = middle := proofOne\n"
+    ++ "      _ = right := proofTwo\n"
+  let result ←
+    Formatter.formatSourceWithEnvDetailed env source
+      "low-priority-pipe-calc.lean" { lineWidth := 70 }
+  assertTrue "low-priority pipe calc does not fall back" (!result.fellBack)
+  assertEq "low-priority pipe calc keeps an indented operand" expected result.formatted
+  assertTrue "low-priority pipe calc preserves code"
+    (← codePreservedIgnoringWhitespace env source result.formatted)
+  let formattedAgain ←
+    Formatter.formatSourceWithEnv env result.formatted
+      "low-priority-pipe-calc-formatted.lean" { lineWidth := 70 }
+  assertEq "low-priority pipe calc is idempotent" result.formatted formattedAgain
 
 def assertMovedInlineCalcKeepsContinuationLayout (env : Lean.Environment) : IO Unit := do
   let source :=
@@ -6502,6 +6555,40 @@ def assertLambdaKeepsAttachedBlockIntroducers (env : Lean.Environment) : IO Unit
       { lineWidth := 55 }
   assertEq "lambda keeps an attached do introducer" doExpected doFormatted
 
+def assertPatternLambdaApplicationArgumentStaysAttached (env : Lean.Environment)
+    : IO Unit := do
+  let source :=
+    "def patternLambdaApplication :=\n"
+    ++ "  DFunLike.ext first second fun\n"
+    ++ "  | 0 => zeroCase\n"
+    ++ "  | n + 1 => succCase n\n"
+  let expected :=
+    "def patternLambdaApplication :=\n"
+    ++ "  DFunLike.ext first second\n"
+    ++ "    fun\n"
+    ++ "    | 0 => zeroCase\n"
+    ++ "    | n + 1 => succCase n\n"
+  let result ←
+    Formatter.formatSourceWithEnvDetailed env source
+      "pattern-lambda-application-argument.lean" { lineWidth := 70 }
+  let moduleTree ←
+    SyntaxTree.parseModuleStringWithEnv env source
+      "pattern-lambda-application-argument-tree.lean"
+  assertTrue "pattern lambda has a semantic syntax-tree node"
+    (moduleTree.tree.containsNodeKind .patternLambda)
+  assertTrue "pattern lambda application argument does not fall back" (!result.fellBack)
+  assertEq "pattern lambda application argument keeps fun attached"
+    expected result.formatted
+  assertTextContains "pattern lambda application argument keeps fun with alternatives"
+    result.formatted "\n    fun\n    | 0 => zeroCase\n"
+  assertTrue "pattern lambda application argument preserves code"
+    (← codePreservedIgnoringWhitespace env source result.formatted)
+  let formattedAgain ←
+    Formatter.formatSourceWithEnv env result.formatted
+      "pattern-lambda-application-argument-formatted.lean" { lineWidth := 70 }
+  assertEq "pattern lambda application argument is idempotent"
+    result.formatted formattedAgain
+
 def assertProofAfterSemicolonIndentsFromIntroducer (env : Lean.Environment)
     : IO Unit := do
   let source :=
@@ -8809,6 +8896,33 @@ def assertBracketedNotationRulesKeepDelimitersAttached : IO Unit := do
       (rule.breakPoints {} segment
         == [{ index := 1, indentLevels := 1 }, { index := 4, indentLevels := 1 }])
     assertTrue s!"bracketed relation operands flow: {kind}" (rule.flow {} segment)
+  for kind
+      in [
+        `«term_→ₗ[_]_»,
+        `«term_≃ₗ[_]_»,
+        `«term_→ₐ[_]_»,
+        `ProbabilityTheory.«term_=ᵐ[_]_»
+      ] do
+    let indexedRelation :=
+      SyntaxTree.regroupTree
+      <| SyntaxTree.Tree.node (.raw kind)
+          #[
+            .leaf (syntheticAtomToken "lhs"),
+            .leaf (syntheticAtomToken "→ₗ["),
+            .leaf (syntheticAtomToken "index"),
+            .leaf (syntheticAtomToken "]"),
+            .leaf (syntheticAtomToken "rhs")
+          ]
+    let segment := Formatter.LineBreakRules.Segment.ofTree indexedRelation
+    let rule := Formatter.LineBreakRules.formattingRuleFor indexedRelation
+    assertTrue s!"indexed notation has a semantic syntax-tree node: {kind}"
+      (indexedRelation.containsNodeKind (.indexedInfix kind))
+    assertEq s!"indexed notation selects its delimiter-aware rule: {kind}"
+      "indexedNotation" rule.name
+    assertTrue s!"indexed notation keeps closing delimiter attached: {kind}"
+      (rule.breakPoints {} segment
+        == [{ index := 1, indentLevels := 1 }, { index := 4, indentLevels := 1 }])
+    assertTrue s!"indexed notation operands flow: {kind}" (rule.flow {} segment)
 
 def assertLakeDslFormatting : IO Unit := do
   let env ← SyntaxTree.importEnvironment #[{ module := `Lake }]
@@ -9969,6 +10083,7 @@ def runBasicFormattingTests (env : Lean.Environment) : IO Unit := do
   assertMatchArmKeepsDoOnArrowLine env
   assertWhereFormattingKeepsSuffix env
   assertStructureValueWhereFormattingKeepsSuffix env
+  assertWhereStructInstTrailingWhereUsesCommandBase env
   assertAbbrevStructureValueKeepsWhereSuffix env
   assertWhereFinallyKeepsHeaderAndProofBody env
   assertProofBodyUntouched env
@@ -10015,6 +10130,7 @@ def runBasicFormattingTests (env : Lean.Environment) : IO Unit := do
   assertProofValuesRemainLayoutIslands env
   assertOriginalLayoutValueHonorsDeclarationBreak env
   assertCalcLayoutIslandAfterNestedInfix env
+  assertLowPriorityPipeCalcKeepsIndentedOperand env
   assertMovedInlineCalcKeepsContinuationLayout env
   assertExplicitLambdaKeepsPrefixMarker env
   assertHaveTermFormatting env
@@ -10126,6 +10242,7 @@ def runControlFlowTests (env : Lean.Environment) : IO Unit := do
   assertLambdaBodyUsesOperandAnchor env
   assertLambdaBinderSequenceBreaksBetweenBinders env
   assertLambdaKeepsAttachedBlockIntroducers env
+  assertPatternLambdaApplicationArgumentStaysAttached env
   assertProofAfterSemicolonIndentsFromIntroducer env
   assertQuantifierBreaksAfterComma env
   assertBreakNeverPrecedesTrailingSeparator env
