@@ -47,19 +47,19 @@ code.
 | --- | --- | --- | --- |
 | Explicitly named indexed infix notation such as `->e[phi]` can detach its closing `]` | Syntax-tree grouping | Low | Resolved |
 | A multiline named argument can leave its closing `)` at the value body's indentation | Line-break rules | Low | Resolved |
-| A low-priority `<|` can detach from the first line of a `have` right operand | Line-break rules | Low | Resolved |
+| A low-priority `<\|` can leave a `have` right operand at the pipe's base | Line-break rules | Low | Resolved |
 | Protected multiline `fun` operands retain stale indentation after their parent moves | Original-tree layout planning | High | Proposed below |
 | `calc` steps can inherit a moved expression's source column instead of the `calc` block base | Original-tree layout planning | High | Proposed below |
 | Proof-bearing structure-valued `where` clauses can retain a stale leading boundary | Original-tree classification and layout planning | Medium | Proposed below |
 | Mathlib `lemma` equation arms in `mutual` blocks can use the wrong command base | Syntax grouping and original-tree ownership | High | Proposed below |
-| Other multiline `<|` operands can preserve a source column after the pipe moves | Original-tree layout planning | High | Proposed below |
+| Other multiline `<\|` operands can preserve a source column after the pipe moves | Original-tree layout planning | High | Proposed below |
 
 The first three are bounded consistency fixes. Indexed notation should be
 recognized from its parsed delimiter shape rather than a generated parser name.
 A named argument owns the break before its value, while its closing delimiter is
 a tight suffix of that value unless a comment forces a new line. A low-priority
-pipe owns the first line of its right operand, consistently across `by`, `do`,
-`calc`, and `have` starts.
+pipe owns the first line of ordinary `by`, `do`, and `calc` operands. Layout-sensitive
+binding operands such as `let` and `have` share the indented start-alignment rule.
 
 ### Deferred layout-base proposals
 

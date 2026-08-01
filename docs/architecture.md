@@ -872,13 +872,12 @@ the boundary whitespace and the island preserves only its internal relative layo
 `calc` is the deliberate exception: it always delegates its leading boundary to ordinary
 formatting while preserving the relative layout of its steps. A parent break can therefore
 produce `<| calc` without teaching an infix rule about `calc` tokens or source trivia.
-The low-priority infix rule likewise owns the first line of an ordinary right operand;
-only a right operand whose parser requires start alignment introduces a boundary after
-the operator. The operand's syntax rule owns its remaining internal breaks and inherits
-the low-priority expression base when Lean's offside rule requires the body to return
-there. A right operand containing a protected proof body retains a separate operand
-boundary; line-break rules classify that structural proof ownership, while original-tree
-planning remains responsible for preserving and rebasing the proof layout.
+The low-priority infix rule likewise owns the first line of an ordinary right operand.
+Layout-sensitive binding expressions such as `let` and `have` instead require start
+alignment: the infix rule introduces an indented operand boundary after the operator,
+then the operand's syntax rule owns its internal body breaks at that aligned base. A right
+operand containing a protected proof body retains the same separate operand boundary;
+original-tree planning remains responsible for preserving and rebasing the proof layout.
 That ownership propagates through leading-child wrapper chains and stops at the first
 preceding sibling. A transparent type specification can therefore normalize the boundary
 after `:` even when a known application or infix node wraps the extension-owned term,

@@ -3954,30 +3954,51 @@ def assertLowPriorityPipeCalcKeepsIndentedOperand (env : Lean.Environment) : IO 
       "low-priority-pipe-calc-formatted.lean" { lineWidth := 70 }
   assertEq "low-priority pipe calc is idempotent" result.formatted formattedAgain
 
-def assertLowPriorityPipeKeepsHaveOperandAttached (env : Lean.Environment) : IO Unit := do
+def assertLowPriorityPipeAlignsBindingOperands (env : Lean.Environment) : IO Unit := do
   let source :=
-    "def pipeHave : Nat :=\n"
+    "def pipeLet : Nat :=\n"
+    ++ "  longFunctionNameWithEnoughCharactersToForceLowPriorityPipeBreak\n"
+    ++ "  <|\n"
+    ++ "    let value := 0\n"
+    ++ "    value\n\n"
+    ++ "def pipeHave : Nat :=\n"
     ++ "  longFunctionNameWithEnoughCharactersToForceLowPriorityPipeBreak\n"
     ++ "  <|\n"
     ++ "  have value := 0\n"
+    ++ "  value\n\n"
+    ++ "def pipeHaveI : Nat :=\n"
+    ++ "  longFunctionNameWithEnoughCharactersToForceLowPriorityPipeBreak\n"
+    ++ "  <|\n"
+    ++ "  haveI value : Nat := 0\n"
     ++ "  value\n"
   let expected :=
-    "def pipeHave : Nat :=\n"
+    "def pipeLet : Nat :=\n"
     ++ "  longFunctionNameWithEnoughCharactersToForceLowPriorityPipeBreak\n"
-    ++ "  <| have value := 0\n"
-    ++ "  value\n"
+    ++ "  <|\n"
+    ++ "    let value := 0\n"
+    ++ "    value\n\n"
+    ++ "def pipeHave : Nat :=\n"
+    ++ "  longFunctionNameWithEnoughCharactersToForceLowPriorityPipeBreak\n"
+    ++ "  <|\n"
+    ++ "    have value := 0\n"
+    ++ "    value\n\n"
+    ++ "def pipeHaveI : Nat :=\n"
+    ++ "  longFunctionNameWithEnoughCharactersToForceLowPriorityPipeBreak\n"
+    ++ "  <|\n"
+    ++ "    haveI value : Nat := 0\n"
+    ++ "    value\n"
   let result ←
     Formatter.formatSourceWithEnvDetailed env source
-      "low-priority-pipe-have.lean" { lineWidth := 70 }
-  assertTrue "low-priority pipe have does not fall back" (!result.fellBack)
-  assertEq "low-priority pipe owns the first line of its have operand"
+      "low-priority-pipe-bindings.lean" { lineWidth := 70 }
+  assertTrue "low-priority pipe bindings do not fall back" (!result.fellBack)
+  assertEq "low-priority pipe aligns let, have, and haveI operands"
     expected result.formatted
-  assertTrue "low-priority pipe have preserves code"
+  assertTrue "low-priority pipe bindings preserve code"
     (← codePreservedIgnoringWhitespace env source result.formatted)
   let formattedAgain ←
     Formatter.formatSourceWithEnv env result.formatted
-      "low-priority-pipe-have-formatted.lean" { lineWidth := 70 }
-  assertEq "low-priority pipe have is idempotent" result.formatted formattedAgain
+      "low-priority-pipe-bindings-formatted.lean" { lineWidth := 70 }
+  assertEq "low-priority pipe bindings are idempotent" result.formatted formattedAgain
 
 def assertMovedInlineCalcKeepsContinuationLayout (env : Lean.Environment) : IO Unit := do
   let source :=
@@ -4101,11 +4122,10 @@ def assertHaveProofAfterInfixPreservesLayout (env : Lean.Environment) : IO Unit 
     ++ "  Nat.succ (Classical.choose hex)\n"
   let expected :=
     "def f (hM : ∃ n : Nat, n = n) : Nat :=\n"
-    ++ "  id\n"
-    ++ "  <|\n"
-    ++ "  have hex : ∃ n : Nat, n = n := by\n"
-    ++ "    obtain ⟨n, h⟩ := hM; refine ⟨n, h⟩\n"
-    ++ "  Nat.succ (Classical.choose hex)\n"
+    ++ "  id <|\n"
+    ++ "    have hex : ∃ n : Nat, n = n := by\n"
+    ++ "      obtain ⟨n, h⟩ := hM; refine ⟨n, h⟩\n"
+    ++ "    Nat.succ (Classical.choose hex)\n"
   let formatted ← Formatter.formatSourceWithEnv env source "have-proof-after-infix.lean"
   assertEq "have proof after infix keeps the proof offside" expected formatted
   assertTrue "have proof after infix preserves code"
@@ -10226,7 +10246,7 @@ def runBasicFormattingTests (env : Lean.Environment) : IO Unit := do
   assertOriginalLayoutValueHonorsDeclarationBreak env
   assertCalcLayoutIslandAfterNestedInfix env
   assertLowPriorityPipeCalcKeepsIndentedOperand env
-  assertLowPriorityPipeKeepsHaveOperandAttached env
+  assertLowPriorityPipeAlignsBindingOperands env
   assertMovedInlineCalcKeepsContinuationLayout env
   assertExplicitLambdaKeepsPrefixMarker env
   assertHaveTermFormatting env

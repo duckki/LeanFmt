@@ -179,11 +179,6 @@ def parentIsInfixChain (context : RuleContext) : Bool :=
       | _ => false
   | _ => false
 
-def parentIsLowPriorityInfixChain (context : RuleContext) : Bool :=
-  match context.ancestors with
-  | parent :: _ => parent.nodeKind? == some (.infixChain `«term_<|_»)
-  | _ => false
-
 def grandparentIsRawKind (context : RuleContext) (kind : Lean.SyntaxNodeKind) : Bool :=
   match context.ancestors with
   | _ :: grandparent :: _ => grandparent.rawKind? == some kind
@@ -881,7 +876,10 @@ def childUsesMandatoryStartAlignment (segment : Segment) (index : Nat) : Bool :=
   match segment.child? index with
   | some (.node (.letExpression _ _) _) => true
   | some (.node (.raw kind) _) =>
-      kind == `Lean.Parser.Term.let || kind == `Lean.Parser.Term.letrec
+      kind == `Lean.Parser.Term.let
+      || kind == `Lean.Parser.Term.letrec
+      || kind == `Lean.Parser.Term.have
+      || kind == `Lean.Parser.Term.haveI
   | _ => false
 
 def lowPriorityInfixHasMandatoryAlignedRhs (segment : Segment) : Bool :=
@@ -920,7 +918,8 @@ def lowPriorityInfixOwnsRhsStart (segment : Segment) (index : Nat) : Bool :=
   lowPriorityInfixSegment segment
   && 0 < index
   && index % 2 == 0
-  && !childHasNestedProofBody segment index
+  && (!childHasNestedProofBody segment index
+      || childUsesMandatoryStartAlignment segment index)
 
 def declarationValueHasAttachedBodyInfix (segment : Segment) : Bool :=
   match contentIndexAfterLexeme? segment ":=" with
@@ -3295,11 +3294,8 @@ def haveRule : LineBreakRule :=
     name := "have"
     mandatory := fun _ _ => true
     inheritBase :=
-      fun context segment =>
-        (!parentIsInfixChain context
-          || (parentIsLowPriorityInfixChain context
-              && !treeContainsProofTree segment.parent))
-        && !parentIsRawKind context `Lean.Parser.Term.typeSpec
+      fun context _ =>
+        !parentIsInfixChain context && !parentIsRawKind context `Lean.Parser.Term.typeSpec
     breakPoints := haveBreaks
   }
 
