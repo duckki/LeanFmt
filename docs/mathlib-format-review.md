@@ -4,6 +4,80 @@ This document records the visual review of a complete Mathlib formatting run so
 the remaining layout work can be addressed without repeating the corpus review.
 It is a point-in-time work list, not part of the normative formatting style.
 
+## Follow-up validation: 2026-08-01
+
+The formatter was validated again at leanfmt commit `dc968e7` against the same
+Mathlib `v4.32.0` commit. The run used the Lake cache, selected only tracked
+`.lean` files under `Mathlib`, and used the repository's default formatter job
+count. All 83 formatter batches passed preservation, missing-rule, overflow,
+fallback, and idempotency checks. The complete post-format build passed, and
+7,503 changed files were reviewed. The only reported overflow was an accepted
+102-column unbreakable line at `Mathlib/Tactic/Ring/Basic.lean:399`; it starts
+at the correct logical indentation.
+
+The same formatter revision also passed complete validation and post-format
+builds for `graphql-lean` and `quantum-computing-lean`. The GraphQL run changed
+eight files without exposing a logical layout error. The quantum run produced
+no formatting diff. No formatter exception or material performance regression
+was observed in any of the three projects.
+
+### Follow-up rule families
+
+The follow-up review found the families below. A fix should describe a general
+syntax or layout invariant and live in the layer that owns that invariant. A
+Mathlib path is evidence and regression input, never a condition in formatter
+code.
+
+| Family | Intended owner | Risk | Status |
+| --- | --- | --- | --- |
+| Explicitly named indexed infix notation such as `->e[phi]` can detach its closing `]` | Syntax-tree grouping | Low | Planned |
+| A multiline named argument can leave its closing `)` at the value body's indentation | Line-break rules | Low | Planned |
+| A low-priority `<|` can detach from the first line of a `have` right operand | Line-break rules | Low | Planned |
+| Protected multiline `fun` operands retain stale indentation after their parent moves | Original-tree layout planning | High | Proposed below |
+| `calc` steps can inherit a moved expression's source column instead of the `calc` block base | Original-tree layout planning | High | Proposed below |
+| Proof-bearing structure-valued `where` clauses can retain a stale leading boundary | Original-tree classification and layout planning | Medium | Proposed below |
+| Mathlib `lemma` equation arms in `mutual` blocks can use the wrong command base | Syntax grouping and original-tree ownership | High | Proposed below |
+| Other multiline `<|` operands can preserve a source column after the pipe moves | Original-tree layout planning | High | Proposed below |
+
+The first three are bounded consistency fixes. Indexed notation should be
+recognized from its parsed delimiter shape rather than a generated parser name.
+A named argument owns both the break before its value and the return of its
+closing delimiter. A low-priority pipe owns the first line of its right operand,
+consistently across `by`, `do`, `calc`, and `have` starts.
+
+### Deferred layout-base proposals
+
+1. Give each protected original-layout island an explicit formatted anchor and
+   source anchor. Rebase every preserved line by the difference between those
+   anchors. This should cover stale multiline `fun`, `calc`, and residual pipe
+   operands without syntax checks in the renderer.
+2. Distinguish proof-bearing structure values from generic proof-layout islands
+   in original-tree classification. The structure value should preserve its
+   internal proof layout while allowing the declaration rule to format its
+   leading `where` boundary at the command base.
+3. Group Mathlib's extensible `lemma` equation declarations into the same
+   command-and-equation-arm shape used by core declarations before assigning a
+   protected layout. Mutual command indentation should then come from that
+   structural group, not from source columns.
+4. Treat low-priority infix attachment and protected-right-operand rebasing as
+   separate contracts. Line-break rules decide that `<|` owns the operand's
+   first line; original-tree planning decides how the remaining source-preserved
+   lines move with it.
+
+Representative high-risk examples remain:
+
+- `Mathlib/Algebra/Order/Monoid/Defs.lean:29` for multiline `fun`
+- `Mathlib/CategoryTheory/Sites/Presheaf.lean:113` for `calc`
+- `Mathlib/CategoryTheory/Abelian/Injective/Resolution.lean:327` for
+  proof-bearing `where`
+- `Mathlib/AlgebraicGeometry/Morphisms/ChevalleyComplexity.lean:624` for mutual
+  lemma equations
+- `Mathlib/CategoryTheory/Pseudoelements.lean:310` for a protected `<|` operand
+
+Long unbreakable lines and formatter-created too-many-lines warnings remain
+accepted when their surrounding formatting shape and logical indentation are
+correct.
+
 ## Validation baseline
 
 - Review date: 2026-07-30
