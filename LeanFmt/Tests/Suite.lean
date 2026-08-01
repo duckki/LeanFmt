@@ -4721,6 +4721,34 @@ def assertApplicationFitsBeforeSourceBreaks (env : Lean.Environment) : IO Unit :
     Formatter.formatSourceWithEnv env source "application-source-breaks.lean"
   assertEq "application fits before source breaks" expected formatted
 
+def assertNamedArgumentBalancesMultilineValue (env : Lean.Environment) : IO Unit := do
+  let source :=
+    "def namedArgumentClosing : Nat :=\n"
+    ++ "  Nat.recOn\n"
+    ++ "    (motive :=\n"
+    ++ "      fun n =>\n"
+    ++ "        Nat\n"
+    ++ "      )\n"
+    ++ "    0\n"
+    ++ "    fun _ ih => ih\n"
+  let expected :=
+    "def namedArgumentClosing : Nat :=\n"
+    ++ "  Nat.recOn\n"
+    ++ "    (motive :=\n"
+    ++ "      fun n =>\n"
+    ++ "        Nat\n"
+    ++ "    )\n"
+    ++ "    0\n"
+    ++ "    fun _ ih => ih\n"
+  let formatted ← Formatter.formatSourceWithEnv env source "multiline-named-argument.lean"
+  assertEq "named argument closing delimiter returns to its opening column"
+    expected formatted
+  assertTrue "multiline named argument preserves code"
+    (← codePreservedIgnoringWhitespace env source formatted)
+  let formattedAgain ←
+    Formatter.formatSourceWithEnv env formatted "multiline-named-argument-formatted.lean"
+  assertEq "multiline named argument formatting is idempotent" formatted formattedAgain
+
 def assertNestedApplicationHonorsSourceBreaks (env : Lean.Environment) : IO Unit := do
   let source :=
     "def wrappedApplicationUnderEquationArm : Selection -> Result\n"
@@ -10164,6 +10192,7 @@ def runExpressionAndRendererTests (env : Lean.Environment) : IO Unit := do
   assertSelfFormattingRulePriorities env
   assertApplicationFlow env
   assertApplicationFitsBeforeSourceBreaks env
+  assertNamedArgumentBalancesMultilineValue env
   assertNestedApplicationHonorsSourceBreaks env
   assertApplicationCommentBreakAvoidsOverflowAfterOuterShift env
   assertApplicationArgumentUsesHeadAnchorAfterTypeBreak env

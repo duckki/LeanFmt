@@ -1254,6 +1254,9 @@ def typeAscriptionBreaks (_context : RuleContext) (segment : Segment) : List Bre
       | none => []
   | none => []
 
+def namedArgumentBreaks (_context : RuleContext) (segment : Segment) : List BreakPoint :=
+  [boundaryBreak? segment 3 1, boundaryBreak? segment 4 0].filterMap id
+
 /-! ### Declaration lists and module commands -/
 
 def inductiveAlternativeBreaks (context : RuleContext) (segment : Segment)
@@ -2324,6 +2327,13 @@ def typeAscriptionRule : LineBreakRule :=
     name := "typeAscription"
     liftsTailIndentation := fun _ _ => true
     breakPoints := typeAscriptionBreaks
+  }
+
+def namedArgumentRule : LineBreakRule :=
+  {
+    name := "namedArgument"
+    useExistingBreaks := fun _ _ => true
+    breakPoints := namedArgumentBreaks
   }
 
 def tupleRule : LineBreakRule :=
@@ -3617,7 +3627,7 @@ def ruleFor : SyntaxTree.Tree → Option LineBreakRule
   | .node (.raw `Lean.Parser.Term.matchExprElseAlt) _ => some matchExprAltRule
   | .node (.raw `Lean.Parser.Term.matchExprPat) _ => some defaultRule
   | .node (.raw `Lean.Parser.Term.binderDefault) _ => some binderDefaultRule
-  | .node (.raw `Lean.Parser.Term.namedArgument) _ => some defaultRule
+  | .node (.raw `Lean.Parser.Term.namedArgument) _ => some namedArgumentRule
   | .node (.raw `Lean.Parser.Term.strictImplicitBinder) _ => some defaultRule
   | .node (.raw `Lean.Parser.Term.anonymousCtor) _ => some anonymousCtorRule
   | .node (.raw `Lean.Parser.Term.local) _ => some defaultRule
