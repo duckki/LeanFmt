@@ -37,8 +37,6 @@ jobs:
   compatibility:
     name: Previous minor compatibility
     runs-on: ubuntu-latest
-    env:
-      LEANFMT_COMPATIBILITY_TEST: "1"
     strategy:
       fail-fast: false
       matrix:
@@ -50,6 +48,8 @@ jobs:
       - uses: leanprover/lean-action@v1
         with:
           build-args: --wfail
-          test-args: --wfail
+          test: false
           lint: false
           use-github-cache: false
+      - name: Run compatibility smoke tests
+        run: lake exe compatibilityTest

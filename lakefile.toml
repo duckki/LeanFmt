@@ -4,7 +4,7 @@ description = "A structure-preserving code formatter for Lean"
 keywords = ["lean4", "formatter", "devtool", "development-tools"]
 license = "MIT"
 defaultTargets = ["LeanFmt", "fmt"]
-testDriver = "leanfmtTest"
+testDriver = "testSuite"
 
 [[lean_lib]]
 name = "LeanFmt"
@@ -24,7 +24,13 @@ root = "LeanFmt.Tests.Main"
 supportInterpreter = true
 
 [[lean_exe]]
-name = "leanfmtTest"
+name = "testSuite"
 root = "LeanFmt.Tests.Run"
+needs = ["fmt"]
+supportInterpreter = true
+
+[[lean_exe]]
+name = "compatibilityTest"
+root = "LeanFmt.Tests.Compatibility"
 needs = ["fmt"]
 supportInterpreter = true

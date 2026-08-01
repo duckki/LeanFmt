@@ -99,7 +99,10 @@ added to a baseline.
 leanfmt supports one source and release line across our current toolchain and
 supported previous minor versions. The current-toolchain CI job runs the complete
 maintenance gate. Compatibility jobs select each previous minor version in a
-disposable checkout and run the build plus a stable compatibility smoke suite.
+disposable checkout, build the released library and executable, then run the
+isolated `compatibilityTest` smoke executable. The compatibility smoke
+module does not import the comprehensive current-toolchain test suite, so growth
+in that suite cannot increase the elaboration cost of compatibility testing.
 The smoke suite checks parsing, formatting, preservation, idempotency, CLI
 parsing, exact environment loading, and executable configuration without
 asserting parser-version-specific layouts. Linting, fixtures, comprehensive
@@ -197,7 +200,7 @@ lake build LeanFmt.Tests
 ```
 
 `LeanFmt.Tests.Suite` is the test library root. `LeanFmt.Tests.Run` is the
-`leanfmtTest` executable used by `lake test`; it invokes the broad suite runners from
+`testSuite` executable used by `lake test`; it invokes the broad suite runners from
 `main` so editor language-server checks can elaborate the test library without running
 side-effectful tests. Syntax environments shared by multiple groups are loaded before
 the groups start, so tests do not repeat environment setup.

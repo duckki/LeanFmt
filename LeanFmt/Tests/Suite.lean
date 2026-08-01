@@ -8534,7 +8534,7 @@ def assertCliLoadsImportedSyntax : IO Unit := do
 def assertFmtExecutableConfigured : IO Unit := do
   let lakefile ← IO.FS.readFile "lakefile.toml"
   assertTextContains "lakefile uses executable test driver" lakefile
-    "testDriver = \"leanfmtTest\""
+    "testDriver = \"testSuite\""
   assertTextContains "lakefile defines namespaced test library" lakefile
     "name = \"LeanFmt.Tests\""
   assertTextContains "test library uses suite root" lakefile
@@ -8546,7 +8546,7 @@ def assertFmtExecutableConfigured : IO Unit := do
   assertTextContains "test CLI uses LeanFmt.Tests.Main root" lakefile
     "root = \"LeanFmt.Tests.Main\""
   assertTextContains "lakefile defines suite test executable" lakefile
-    "name = \"leanfmtTest\""
+    "name = \"testSuite\""
   assertTextContains "suite test executable uses LeanFmt.Tests.Run root" lakefile
     "root = \"LeanFmt.Tests.Run\""
   assertTextContains "suite test executable builds fmt first" lakefile "needs = [\"fmt\"]"
@@ -10215,23 +10215,6 @@ def runCliAndArchitectureTests (env : Lean.Environment) : IO Unit := do
   assertIgnoreNextPreservesAttributedCommand env
   assertIgnoreNextPreservesNestedTerm env
   assertCslibStyleCoreSyntaxHasRules env
-
-def runCompatibilityTests (env : Lean.Environment) : IO Unit := do
-  assertSyntaxTreeRoundTrip env
-  let source := "def compatibilitySmoke(left right:Nat):Nat:=left+right\n"
-  let formatted ← Formatter.formatSourceWithEnv env source "compatibility-smoke.lean"
-  assertTrue "compatibility formatting preserves code"
-    (← codePreservedIgnoringWhitespace env source formatted)
-  let formattedAgain ←
-    Formatter.formatSourceWithEnv env formatted "compatibility-smoke-formatted.lean"
-  assertEq "compatibility formatting is idempotent" formatted formattedAgain
-  assertCliParsing
-  assertSourceImportsUseLeanHeaderLevel
-  assertLeanEnvironmentKeyIncludesImportSemantics
-  assertImportPrefixCacheMatchesLeanEnvironment
-  assertExportedEnvironmentSkipsPrivateTransitiveImports
-  assertExportedEnvironmentIncludesMetaIrClosure
-  assertFmtExecutableConfigured
 
 def runTestGroups (env : Lean.Environment) : IO Unit := do
   let projectSyntaxEnv ←

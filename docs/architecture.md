@@ -52,7 +52,7 @@ The test-only executable is separate:
 | --- | --- |
 | `LeanFmt.Tests.Cli` | Fixture update/check mode, renderer trace printing, and profile output. |
 | `LeanFmt.Tests.Main` | Minimal `fmt-test` executable entry point. |
-| `LeanFmt.Tests.Run` | Minimal `leanfmtTest` executable entry point for `lake test`. |
+| `LeanFmt.Tests.Run` | Minimal `testSuite` executable entry point for `lake test`. |
 | `LeanFmt.Tests.Suite` | Root of the test library, containing unit-style formatter checks grouped into syntax-tree, basic formatting, expression/renderer, control-flow, collection/declaration, and CLI/architecture suites. |
 
 Every imported test module is rooted at `LeanFmt.Tests`. A downstream package may
