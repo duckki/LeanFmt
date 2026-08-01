@@ -3144,7 +3144,11 @@ def basicFunRule : LineBreakRule :=
   {
     name := "basicFun"
     useExistingBreaks := fun _ _ => true
-    inheritBase := fun _ _ => true
+    inheritBase :=
+      fun _ segment =>
+        match segment.parent with
+        | .node .patternLambda _ => false
+        | _ => true
     breakPoints := basicFunBreaks
   }
 

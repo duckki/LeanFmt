@@ -1313,6 +1313,17 @@ also stays attached to `=>`, and its nested body owns subsequent breaks.
 
 Equation-style declaration arms follow the same alternative layout.
 
+A pattern lambda uses its own physical start as the arm base. When `fun` starts
+between indentation boundaries, as after an opening parenthesis, the arms round
+up to the next boundary rather than inheriting the enclosing expression's base:
+
+```lean
+applyHandler
+  (fun
+    | .none => defaultValue
+    | .some value => process value)
+```
+
 Alternative patterns are grouped as peers before rendering, like operands in
 an infix chain. This lets multiple `|` patterns wrap in a balanced layout at
 the arm base instead of inheriting accidental nesting from the raw parser

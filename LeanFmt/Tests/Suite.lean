@@ -6731,6 +6731,23 @@ def assertPatternLambdaApplicationArgumentStaysAttached (env : Lean.Environment)
       "pattern-lambda-application-argument-formatted.lean" { lineWidth := 70 }
   assertEq "pattern lambda application argument is idempotent"
     result.formatted formattedAgain
+  let parenthesizedSource :=
+    "def parenthesizedPatternLambda :=\n"
+    ++ "  wrapper firstArgument\n"
+    ++ "    (fun\n"
+    ++ "    | false => falseCase\n"
+    ++ "    | true => trueCase)\n"
+  let parenthesizedExpected :=
+    "def parenthesizedPatternLambda :=\n"
+    ++ "  wrapper firstArgument\n"
+    ++ "    (fun\n"
+    ++ "      | false => falseCase\n"
+    ++ "      | true => trueCase)\n"
+  let parenthesizedFormatted ←
+    Formatter.formatSourceWithEnv env parenthesizedSource
+      "parenthesized-pattern-lambda.lean" { lineWidth := 70 }
+  assertEq "parenthesized pattern lambda rounds its physical base indentation"
+    parenthesizedExpected parenthesizedFormatted
 
 def assertProofAfterSemicolonIndentsFromIntroducer (env : Lean.Environment)
     : IO Unit := do
