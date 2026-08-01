@@ -192,7 +192,6 @@ structure LineBreakRule where
   atomic : Bool := false
   formatOriginalChildLeadingBoundary : RuleContext → Segment → Nat → Bool :=
     fun _ _ _ => false
-  keepLeadingSuffixBeforeForcedComment : RuleContext → Segment → Bool := fun _ _ => false
   keepPrefixWithChildFirstLine : RuleContext → Segment → Nat → Bool := fun _ _ _ => false
   useExistingBreaks : RuleContext → Segment → Bool := fun _ _ => false
   mandatory : RuleContext → Segment → Bool := fun _ _ => false
@@ -479,12 +478,6 @@ def suffixEligibleToken (token : SyntaxTree.Token) : Bool :=
   suffixKeywordLexeme token.lexeme
   || suffixDelimiterLexeme token.lexeme
   || suffixOperatorLexeme token.lexeme
-
-def suffixCanFollowMultilineChild (token : SyntaxTree.Token) : Bool :=
-  suffixKeywordLexeme token.lexeme
-  || suffixClosingDelimiterLexeme token.lexeme
-  || suffixOperatorLexeme token.lexeme
-  || lexemeIn token.lexeme [",", ";"]
 
 inductive SuffixTokenAction where
   | skip
@@ -1590,16 +1583,6 @@ def pipeProjRule : LineBreakRule :=
 def signatureRule : LineBreakRule :=
   {
     name := "signature"
-    keepLeadingSuffixBeforeForcedComment := fun _ _ => true
-    flow :=
-      fun context _ =>
-        match context.ancestors with
-        | parent :: _ =>
-            parent.nodeKind? == some .definition
-            || parent.rawKind? == some `Lean.Parser.Command.theorem
-            || parent.rawKind? == some `lemma
-            || parent.rawKind? == some `group
-        | _ => false
     inheritBase := fun _ _ => true
     breakPoints := signatureBreaks
   }

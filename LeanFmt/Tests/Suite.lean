@@ -5136,31 +5136,56 @@ def assertDeclarationTypeBreak (env : Lean.Environment) : IO Unit := do
   let formatted ← Formatter.formatSourceWithEnv env source "declaration-type-break.lean"
   assertEq "declaration type break" expected formatted
 
-def assertDeclarationColonStaysWithBindersBeforeResultComment (env : Lean.Environment)
+def assertDeclarationColonBeforeDetachedResultComment (env : Lean.Environment)
     : IO Unit := do
   let source :=
-    "theorem declarationColonBeforeResultComment\n"
-    ++ "    (argument : VeryLongArgumentTypeWithEnoughCharactersForLayoutTesting)\n"
-    ++ "    :\n"
-    ++ "    -- Explain the result type.\n"
-    ++ "    True := by\n"
+    "theorem declarationColonBeforeDetachedResultComment\n"
+    ++ "    (argument : VeryLongArgumentTypeWithEnoughCharactersForLayoutTesting) :\n"
+    ++ "      -- Explain the result type.\n"
+    ++ "      True := by\n"
     ++ "  trivial\n"
   let expected :=
-    "theorem declarationColonBeforeResultComment\n"
-    ++ "    (argument : VeryLongArgumentTypeWithEnoughCharactersForLayoutTesting) :\n"
-    ++ "    -- Explain the result type.\n"
-    ++ "    True := by\n"
+    "theorem declarationColonBeforeDetachedResultComment\n"
+    ++ "    (argument : VeryLongArgumentTypeWithEnoughCharactersForLayoutTesting)\n"
+    ++ "    :\n"
+    ++ "      -- Explain the result type.\n"
+    ++ "      True := by\n"
     ++ "  trivial\n"
   let formatted ←
     Formatter.formatSourceWithEnv env source
-      "declaration-colon-before-result-comment.lean"
-  assertEq "declaration colon stays with binders before a result comment"
-    expected formatted
+      "declaration-colon-detached-result-comment.lean"
+  assertEq "declaration colon precedes a detached result comment" expected formatted
   let formattedAgain ←
     Formatter.formatSourceWithEnv env formatted
-      "declaration-colon-before-result-comment-formatted.lean"
-  assertEq "declaration colon before result comment is idempotent"
-    formatted formattedAgain
+      "declaration-colon-detached-result-comment-formatted.lean"
+  assertEq "detached declaration result comment is idempotent" formatted formattedAgain
+
+def assertDeclarationColonKeepsAttachedResultComment (env : Lean.Environment)
+    : IO Unit := do
+  let source :=
+    "theorem declarationColonWithAttachedResultComment\n"
+    ++ "    (argument : VeryLongArgumentTypeWithEnoughCharactersForLayoutTesting)\n"
+    ++ "    : -- Explain the result type.\n"
+    ++ "      True := by\n"
+    ++ "  trivial\n"
+  let expected :=
+    "theorem declarationColonWithAttachedResultComment\n"
+    ++ "    (argument : VeryLongArgumentTypeWithEnoughCharactersForLayoutTesting)\n"
+    ++ "    : -- Explain the result type.\n"
+    ++ "      True := by\n"
+    ++ "  trivial\n"
+  let formatted ←
+    Formatter.formatSourceWithEnv env source
+      "declaration-colon-attached-result-comment.lean"
+  assertEq "declaration colon keeps an attached result comment" expected formatted
+  assertTextContains "declaration colon and attached comment share one line"
+    formatted ": -- Explain the result type.\n"
+  assertTextLacks "declaration colon does not detach from its attached comment"
+    formatted ":\n    -- Explain the result type."
+  let formattedAgain ←
+    Formatter.formatSourceWithEnv env formatted
+      "declaration-colon-attached-result-comment-formatted.lean"
+  assertEq "attached declaration result comment is idempotent" formatted formattedAgain
 
 def assertImplicitBinderPreservesTightBraces (env : Lean.Environment) : IO Unit := do
   let source := "def implicitBinder {ObjectRef : Type} : Type := ObjectRef\n"
@@ -10283,7 +10308,8 @@ def runExpressionAndRendererTests (env : Lean.Environment) : IO Unit := do
   assertTheoremParenthesizedLetKeepsValueSuffix env
   assertLetBodyAfterInfixClosesLetLayout env
   assertDeclarationTypeBreak env
-  assertDeclarationColonStaysWithBindersBeforeResultComment env
+  assertDeclarationColonBeforeDetachedResultComment env
+  assertDeclarationColonKeepsAttachedResultComment env
   assertImplicitBinderPreservesTightBraces env
   assertExplicitBinderTypeBreak env
   assertGroupedBinderIdentifiersFlow env

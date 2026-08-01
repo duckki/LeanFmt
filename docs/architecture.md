@@ -354,8 +354,6 @@ structure LineBreakRule where
   atomic : Bool := false
   formatOriginalChildLeadingBoundary
     : RuleContext -> Segment -> Nat -> Bool := fun _ _ _ => false
-  keepLeadingSuffixBeforeForcedComment
-    : RuleContext -> Segment -> Bool := fun _ _ => false
   keepPrefixWithChildFirstLine
     : RuleContext -> Segment -> Nat -> Bool := fun _ _ _ => false
   useExistingBreaks : RuleContext -> Segment -> Bool := fun _ _ => false
@@ -411,11 +409,6 @@ Rule methods mean:
   boundary and rebases the island's internal source layout to its formatted start
   column. Transparent wrappers use this for later children, so a source newline inside
   a type specification cannot detach its term from the preceding `:`.
-- `keepLeadingSuffixBeforeForcedComment`: when a flow child begins with a suffix token
-  immediately followed by a comment that forces a line break, keep the fitting suffix
-  on the preceding line instead of breaking both before and after it. Declaration
-  signatures use this to keep `:` with their final binder without making rules inspect
-  comment trivia.
 - `keepPrefixWithChildFirstLine`: at a selected child boundary, when the child can format
   its first line beside the already-rendered prefix, delegate wrapping to that child
   rather than taking the boundary immediately before it. Such a rule requires a

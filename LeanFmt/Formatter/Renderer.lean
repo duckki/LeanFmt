@@ -1251,15 +1251,6 @@ def commentForcesBreakAt
       SpaceRules.commentForcesLineBreak originalTrivia
   | none => false
 
-def treeStartsWithSuffixBeforeForcedComment (source : String) (tree : SyntaxTree.Tree)
-    : Bool :=
-  match tree.tokens.toList.filter (SyntaxTree.tokenComesFromSource source) with
-  | first :: second :: _ =>
-      LineBreakRules.suffixCanFollowMultilineChild first
-      && SpaceRules.commentForcesLineBreak
-          (SyntaxTree.sourceText source first.span.stop second.span.start)
-  | _ => false
-
 def normalizeBreakPoints
     (segment : LineBreakRules.Segment)
     (breakPoints : List LineBreakRules.BreakPoint)
@@ -1677,7 +1668,6 @@ def FlowRenderContext.stateForForcedNestedChild?
     (flow : FlowRenderContext) (state : RenderState) (index : Nat)
     (breakAfterPreviousChild : Bool)
     (childFit : LayoutProbe) (pieceFit : LayoutProbe)
-    (leadingSuffixPrecedesForcedComment : Bool)
     (keepPrefixWithChildFirstLine : Bool)
     : Option RenderState :=
   match flow.breakAt? index with
@@ -1689,8 +1679,6 @@ def FlowRenderContext.stateForForcedNestedChild?
           some
           <| state.withPendingIndent
               (state.currentIndent + breakPoint.indentLevels * indentationSpaces)
-      else if leadingSuffixPrecedesForcedComment then
-        none
       else if keepPrefixWithChildFirstLine then
         none
       else if breakAfterPreviousChild
@@ -2302,10 +2290,6 @@ mutual
             else
               flow.measurePiece state index
           let childFirstLineFits := flow.childFirstLineFits state index childContext child
-          let leadingSuffixPrecedesForcedComment :=
-            flow.rule.keepLeadingSuffixBeforeForcedComment state.context flow.segment
-            && childFirstLineFits
-            && treeStartsWithSuffixBeforeForcedComment state.source child
           let keepPrefixWithChildFirstLine :=
             flow.rule.keepPrefixWithChildFirstLine state.context flow.segment index
             && (childFirstLineFits
@@ -2319,8 +2303,7 @@ mutual
             renderFlowChildren rendered flow (index + 1)
               (renderedTreeIsMultiline before rendered child)
           match flow.stateForForcedNestedChild? state index breakAfterPreviousChild
-                  childFit pieceFit leadingSuffixPrecedesForcedComment
-                  keepPrefixWithChildFirstLine with
+                  childFit pieceFit keepPrefixWithChildFirstLine with
           | some state => renderNestedAndContinue state
           | none =>
               if segmentHasRuleSourceBreaks state.source childContext childSegment then

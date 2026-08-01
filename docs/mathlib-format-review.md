@@ -261,12 +261,10 @@ Representative cases:
 - `Mathlib/Logic/Function/Basic.lean:1252`
 - `Mathlib/RepresentationTheory/Rep/Basic.lean:789`
 
-When the following syntax is an intervening comment, `:` should remain
-attached to the final binder instead of becoming a separator-only line.
-
-The declaration rule now marks the colon as a leading suffix, and the renderer
-keeps that suffix with the preceding line before applying the comment-forced
-break.
+The separator-only line is the correct structural formatting. The declaration
+colon retains its ordinary breakpoint, and the following comment and result
+type use the result indentation. An author who wants the comment closer to the
+separator can write it on the colon's line as `: -- comment`.
 
 ### 6. Custom declaration modifiers detach
 
@@ -378,9 +376,9 @@ were rerun as the fixes progressed.
 
 ### Phase 1: low-risk syntax-boundary fixes (completed)
 
-1. Fixed issue 5 by keeping a declaration `:` with the last binder when the next
-   emission is an intervening comment, reusing the renderer's general comment
-   boundary behavior without file- or declaration-name checks.
+1. Resolved issue 5 by retaining the declaration's ordinary break before `:`.
+   Comments on the following line use the result indentation; comments explicitly
+   attached as `: -- comment` remain on the separator line.
 2. Fixed issue 8 by regrouping the `let` fallback separator with its owning
    fallback syntax and giving that syntax an explicit low-risk line-break rule.
 3. Fixed issue 6 by making command modifiers and the following extensible command

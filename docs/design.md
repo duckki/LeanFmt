@@ -505,13 +505,14 @@ def lookupVariableValue? (variableValues : VariableValues) (name : Name)
   body
 ```
 
-If a comment intervenes before the result type, a fitting `:` remains attached
-to the final binder rather than becoming a line by itself:
+An author may attach a result comment to the declaration colon. The ordinary
+signature break may move the complete `: -- comment` suffix to a continuation
+line, but the formatter does not split the colon from that comment:
 
 ```lean
-theorem projective_of_lifting_property (h : LiftingProperty P) :
-    -- The lifting property makes `P` projective.
-    Projective R P := by
+theorem projective_of_lifting_property (h : LiftingProperty P)
+    : -- The lifting property makes `P` projective.
+      Projective R P := by
   ...
 ```
 
