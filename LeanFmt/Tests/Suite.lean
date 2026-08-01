@@ -2488,7 +2488,7 @@ def assertProofBodyUntouched (env : Lean.Environment) : IO Unit := do
   let formatted ← Formatter.formatSourceWithEnv env source "proof-body-untouched.lean"
   assertEq "proof body untouched" source formatted
 
-def assertAttachedProofLambdaKeepsFittingLayout (env : Lean.Environment) : IO Unit := do
+def assertAttachedProofLambdaUsesStructuralLayout (env : Lean.Environment) : IO Unit := do
   let source :=
     "def attachedProofLambdaKeepsFittingLayout :=\n"
     ++ "  Nat.strongRec fun n ↦\n"
@@ -2497,11 +2497,26 @@ def assertAttachedProofLambdaKeepsFittingLayout (env : Lean.Environment) : IO Un
     ++ "    | 1 => fun _ => one\n"
     ++ "    | k + 2 => fun hk => by\n"
     ++ "      convert! prime_pow_mul ((k + 2) / p ^ t) p t hp _ htp (hk _ (Nat.div_lt_of_lt_mul _)) using 1\n"
+  let expected :=
+    "def attachedProofLambdaKeepsFittingLayout :=\n"
+    ++ "  Nat.strongRec\n"
+    ++ "    fun n ↦\n"
+    ++ "      match n with\n"
+    ++ "      | 0 => fun _ => zero\n"
+    ++ "      | 1 => fun _ => one\n"
+    ++ "      | k + 2 =>\n"
+    ++ "          fun hk => by\n"
+    ++ "            convert! prime_pow_mul ((k + 2) / p ^ t) p t hp _ htp (hk _ (Nat.div_lt_of_lt_mul _)) using 1\n"
   let result ←
     Formatter.formatSourceWithEnvDetailed env source
       "attached-proof-lambda-fit.lean" { lineWidth := 100 }
-  assertTrue "fitting attached proof lambda does not fall back" (!result.fellBack)
-  assertEq "fitting attached proof lambda retains its layout" source result.formatted
+  assertTrue "structural attached proof lambda does not fall back" (!result.fellBack)
+  assertEq "attached proof lambda uses surrounding rules" expected result.formatted
+  let formattedAgain ←
+    Formatter.formatSourceWithEnv env result.formatted
+      "attached-proof-lambda-fit-formatted.lean" { lineWidth := 100 }
+  assertEq "structural attached proof lambda is idempotent"
+    result.formatted formattedAgain
 
 def assertMovedProofLayoutKeepsFittingContinuation (env : Lean.Environment)
     : IO Unit := do
@@ -2752,9 +2767,10 @@ def assertProofApplicationFollowsMovedInlineAnchor (env : Lean.Environment)
     ++ "      homEquiv_unit :=\n"
     ++ "        fun {X Y g} =>\n"
     ++ "          hom_ext\n"
-    ++ "          <| LinearMap.ext fun x => by\n"
-    ++ "            dsimp\n"
-    ++ "            rfl\n"
+    ++ "          <| LinearMap.ext\n"
+    ++ "              fun x => by\n"
+    ++ "                dsimp\n"
+    ++ "                rfl\n"
     ++ "      homEquiv_counit := value\n"
     ++ "    }\n"
   let result ←
@@ -2762,7 +2778,7 @@ def assertProofApplicationFollowsMovedInlineAnchor (env : Lean.Environment)
       "proof-application-after-moved-inline-anchor.lean" { lineWidth := 100 }
   assertTrue "proof application after moved inline anchor does not fall back"
     (!result.fellBack)
-  assertEq "proof application follows its moved inline anchor" expected result.formatted
+  assertEq "proof application uses its moved structural anchor" expected result.formatted
   assertTrue "proof application after moved inline anchor preserves code"
     (← codePreservedIgnoringWhitespace env source result.formatted)
   let formattedAgain ←
@@ -7555,6 +7571,78 @@ def assertAnonymousConstructorBreakBalanced (env : Lean.Environment) : IO Unit :
       "anonymous-constructor-inline-proof.lean" { lineWidth := 98 }
   assertEq "inline proof constructor breaks structurally"
     inlineProofExpected inlineProofFormatted
+  let nestedInlineProofSource :=
+    "def carrier :=\n"
+    ++ "  fun i =>\n"
+    ++ "    (longFunctionNameWithEnoughCharactersToBreak\n"
+    ++ "        ⟨\n"
+    ++ "            first i,\n"
+    ++ "            ⟨second i, by exact proof⟩,\n"
+    ++ "            ⟨third i, by exact proof⟩,\n"
+    ++ "            ⟨fourth, proof⟩\n"
+    ++ "          ⟩\n"
+    ++ "      : Target)\n"
+  let nestedInlineProofExpected :=
+    "def carrier :=\n"
+    ++ "  fun i =>\n"
+    ++ "    (longFunctionNameWithEnoughCharactersToBreak\n"
+    ++ "        ⟨\n"
+    ++ "          first i,\n"
+    ++ "          ⟨second i, by exact proof⟩,\n"
+    ++ "          ⟨third i, by exact proof⟩,\n"
+    ++ "          ⟨fourth, proof⟩\n"
+    ++ "        ⟩\n"
+    ++ "      : Target)\n"
+  let nestedInlineProofFormatted ←
+    Formatter.formatSourceWithEnv env nestedInlineProofSource
+      "anonymous-constructor-nested-inline-proofs.lean" { lineWidth := 60 }
+  assertEq "inline proofs do not preserve unbalanced constructor indentation"
+    nestedInlineProofExpected nestedInlineProofFormatted
+  assertTrue "balanced inline-proof constructor preserves code"
+    (← codePreservedIgnoringWhitespace env nestedInlineProofSource
+        nestedInlineProofFormatted)
+  let nestedInlineProofFormattedAgain ←
+    Formatter.formatSourceWithEnv env nestedInlineProofFormatted
+      "anonymous-constructor-nested-inline-proofs-formatted.lean" { lineWidth := 60 }
+  assertEq "balanced inline-proof constructor is idempotent"
+    nestedInlineProofFormatted nestedInlineProofFormattedAgain
+  let pipedConstructorSource :=
+    "def constructorAfterPipe :=\n"
+    ++ "  fun q =>\n"
+    ++ "    ⟨(first q : First),\n"
+    ++ "      second\n"
+    ++ "      <|\n"
+    ++ "    ⟨firstLongArgument, secondLongArgument, thirdLongArgument, fourthLongArgument, by\n"
+    ++ "      exact proof⟩\n"
+    ++ "    ⟩\n"
+  let pipedConstructorExpected :=
+    "def constructorAfterPipe :=\n"
+    ++ "  fun q =>\n"
+    ++ "    ⟨\n"
+    ++ "      (first q : First),\n"
+    ++ "      second\n"
+    ++ "      <| ⟨\n"
+    ++ "        firstLongArgument,\n"
+    ++ "        secondLongArgument,\n"
+    ++ "        thirdLongArgument,\n"
+    ++ "        fourthLongArgument,\n"
+    ++ "        by\n"
+    ++ "          exact proof\n"
+    ++ "      ⟩\n"
+    ++ "    ⟩\n"
+  let pipedConstructorFormatted ←
+    Formatter.formatSourceWithEnv env pipedConstructorSource
+      "anonymous-constructor-after-pipe.lean" { lineWidth := 60 }
+  assertEq "constructor rules surround a nested protected proof"
+    pipedConstructorExpected pipedConstructorFormatted
+  assertTrue "structural piped constructor preserves code"
+    (← codePreservedIgnoringWhitespace env pipedConstructorSource
+        pipedConstructorFormatted)
+  let pipedConstructorFormattedAgain ←
+    Formatter.formatSourceWithEnv env pipedConstructorFormatted
+      "anonymous-constructor-after-pipe-formatted.lean" { lineWidth := 60 }
+  assertEq "structural piped constructor is idempotent"
+    pipedConstructorFormatted pipedConstructorFormattedAgain
   let movedProofLayoutSource :=
     "def movedInlineProofLayout :=\n"
     ++ "  Fork.IsLimit.mk' _ fun s =>\n"
@@ -10227,7 +10315,7 @@ def runBasicFormattingTests (env : Lean.Environment) : IO Unit := do
   assertAbbrevStructureValueKeepsWhereSuffix env
   assertWhereFinallyKeepsHeaderAndProofBody env
   assertProofBodyUntouched env
-  assertAttachedProofLambdaKeepsFittingLayout env
+  assertAttachedProofLambdaUsesStructuralLayout env
   assertMovedProofLayoutKeepsFittingContinuation env
   assertMovedProofBodiesKeepRelativeIndentation env
   assertMovedChildrenUseLogicalLayoutBases env

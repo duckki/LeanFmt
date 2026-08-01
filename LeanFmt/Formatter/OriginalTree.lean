@@ -332,15 +332,12 @@ private def isProofLayoutIsland (tree : SyntaxTree.Tree) : Bool :=
                     && treeHasInternalLineBreakTrivia previousArgument)
             || laterArgumentHasProofLambda (argument :: previous) rest
       match children.toList.drop 1 with
-      | [] => false
-      | first :: rest =>
-          isProofLambdaTree first || laterArgumentHasProofLambda [first] rest
+      | [] | [_] => false
+      | first :: rest => laterArgumentHasProofLambda [first] rest
   | .node (.raw `Lean.Parser.Command.declValEqns) _ =>
       containsProofTree tree
   | .node (.raw `Lean.Parser.Term.structInst) _ =>
       containsProofTree tree
-  | .node (.raw `Lean.Parser.Term.anonymousCtor) _ =>
-      containsProofTree tree && treeHasInternalLineBreakTrivia tree
   | .node (.raw `«term{_}») _ =>
       containsProofTree tree
   | .node (.raw `Lean.Parser.Command.whereStructInst) _ =>

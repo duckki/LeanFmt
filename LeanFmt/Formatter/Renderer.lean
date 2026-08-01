@@ -765,6 +765,27 @@ def treeSourceHasLineStructure (source : String) (tree : SyntaxTree.Tree) : Bool
         (SyntaxTree.sourceText source firstToken.span.start lastToken.span.stop)
   | _, _ => false
 
+private partial def treeContainsMultilineOriginalEmission
+    (source : String) (tree : SyntaxTree.Tree)
+    : Bool :=
+  match OriginalTree.classify? tree with
+  | some classification =>
+      treeSourceHasLineStructure source tree
+      || (classification.isProof
+          && tree.firstToken?.any
+              fun token => SpaceRules.hasLineStructure token.leading.text)
+  | none =>
+      match tree with
+      | .node _ children => children.any (treeContainsMultilineOriginalEmission source)
+      | _ => false
+
+private def segmentContainsMultilineOriginalEmission
+    (source : String) (segment : LineBreakRules.Segment)
+    : Bool :=
+  segment.indexes.any
+    fun index =>
+      (segment.child? index).any (treeContainsMultilineOriginalEmission source)
+
 def childHasPriorContent (segment : LineBreakRules.Segment) (index : Nat) : Bool :=
   segment.indexes.any
     fun childIndex =>
@@ -1223,6 +1244,7 @@ def breakPointPreservesTightTokenBoundary
       && !SpaceRules.preservesTightDotSpacing left right
       && !SpaceRules.preservesTightQuotedNameSpacing left right
       && !(left.span.stop == right.span.start
+            && !LineBreakRules.suffixOpeningDelimiterLexeme left.lexeme
             && SpaceRules.preservesTightPostfixSpacing right)
   | none => true
 
@@ -1370,7 +1392,10 @@ partial def segmentAllowsLayoutWithoutRuleBreaks
           || !treeSourceHasLineStructure source segment.parent
       | none =>
           let rule := LineBreakRules.formattingRuleFor segment.parent
-          if rule.mandatory context segment then
+          let breakPoints := ruleBreakPoints context segment rule
+          if rule.mandatory context segment
+              || (breakPoints.any (·.indentLevels == 0)
+                  && segmentContainsMultilineOriginalEmission source segment) then
             false
           else
             match segment.singleChild? with

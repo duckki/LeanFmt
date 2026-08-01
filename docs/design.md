@@ -1441,6 +1441,10 @@ closing delimiter break together.
 ]
 ```
 
+A protected proof body does not protect its surrounding anonymous constructor.
+When the proof retains a source line break, the constructor still applies its
+balanced item and closing-delimiter breaks around that proof.
+
 For generated two-operand notation, a comma-like trailing separator remains
 attached to the first operand and the continuation starts after it:
 
