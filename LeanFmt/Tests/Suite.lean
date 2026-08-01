@@ -4746,7 +4746,8 @@ def assertApplicationFitsBeforeSourceBreaks (env : Lean.Environment) : IO Unit :
     Formatter.formatSourceWithEnv env source "application-source-breaks.lean"
   assertEq "application fits before source breaks" expected formatted
 
-def assertNamedArgumentBalancesMultilineValue (env : Lean.Environment) : IO Unit := do
+def assertNamedArgumentKeepsClosingDelimiterAttached (env : Lean.Environment)
+    : IO Unit := do
   let source :=
     "def namedArgumentClosing : Nat :=\n"
     ++ "  Nat.recOn\n"
@@ -4761,18 +4762,46 @@ def assertNamedArgumentBalancesMultilineValue (env : Lean.Environment) : IO Unit
     ++ "  Nat.recOn\n"
     ++ "    (motive :=\n"
     ++ "      fun n =>\n"
-    ++ "        Nat\n"
-    ++ "    )\n"
+    ++ "        Nat)\n"
     ++ "    0\n"
     ++ "    fun _ ih => ih\n"
   let formatted ← Formatter.formatSourceWithEnv env source "multiline-named-argument.lean"
-  assertEq "named argument closing delimiter returns to its opening column"
+  assertEq "named argument closing delimiter stays attached to its value"
     expected formatted
   assertTrue "multiline named argument preserves code"
     (← codePreservedIgnoringWhitespace env source formatted)
   let formattedAgain ←
     Formatter.formatSourceWithEnv env formatted "multiline-named-argument-formatted.lean"
   assertEq "multiline named argument formatting is idempotent" formatted formattedAgain
+  let commentedSource :=
+    "def commentedNamedArgument : Nat :=\n"
+    ++ "  Nat.recOn\n"
+    ++ "    (motive :=\n"
+    ++ "      fun n =>\n"
+    ++ "        Nat -- result type\n"
+    ++ "      )\n"
+    ++ "    0\n"
+    ++ "    fun _ ih => ih\n"
+  let commentedExpected :=
+    "def commentedNamedArgument : Nat :=\n"
+    ++ "  Nat.recOn\n"
+    ++ "    (motive :=\n"
+    ++ "      fun n =>\n"
+    ++ "        Nat -- result type\n"
+    ++ "    )\n"
+    ++ "    0\n"
+    ++ "    fun _ ih => ih\n"
+  let commentedFormatted ←
+    Formatter.formatSourceWithEnv env commentedSource "commented-named-argument.lean"
+  assertEq "comment-forced named argument close returns to its opening column"
+    commentedExpected commentedFormatted
+  assertTrue "commented named argument preserves code"
+    (← codePreservedIgnoringWhitespace env commentedSource commentedFormatted)
+  let commentedAgain ←
+    Formatter.formatSourceWithEnv env commentedFormatted
+      "commented-named-argument-formatted.lean"
+  assertEq "commented named argument formatting is idempotent"
+    commentedFormatted commentedAgain
 
 def assertNestedApplicationHonorsSourceBreaks (env : Lean.Environment) : IO Unit := do
   let source :=
@@ -10218,7 +10247,7 @@ def runExpressionAndRendererTests (env : Lean.Environment) : IO Unit := do
   assertSelfFormattingRulePriorities env
   assertApplicationFlow env
   assertApplicationFitsBeforeSourceBreaks env
-  assertNamedArgumentBalancesMultilineValue env
+  assertNamedArgumentKeepsClosingDelimiterAttached env
   assertNestedApplicationHonorsSourceBreaks env
   assertApplicationCommentBreakAvoidsOverflowAfterOuterShift env
   assertApplicationArgumentUsesHeadAnchorAfterTypeBreak env

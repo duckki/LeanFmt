@@ -423,7 +423,10 @@ Rule methods mean:
   it existed in the source. A comment at that boundary still activates the break, so
   its continuation indentation is structural. Refutable `let` fallback clauses use
   this to keep `|` with the fallback's first term; annotated declarations use it only
-  between a modifier container and its extensible command.
+  between a modifier container and its extensible command. Named arguments use the
+  same contract at their closing-delimiter boundary: `)` remains a tight suffix when
+  it fits, while a forced comment or failed fit activates the existing base-aligned
+  closing breakpoint.
 - `mandatory`: returned breaks are structural and are applied without a flat attempt.
 - `flow`: returned breaks are candidates; flat layout is tried first, then accepted
   source breaks, then computed wrapping. If the accepted source layout still overflows,

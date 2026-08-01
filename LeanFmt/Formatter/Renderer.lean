@@ -851,8 +851,8 @@ partial def probeLayoutWithoutRuleBreaks?
                       let rendered :=
                         state.emitOriginalTree child
                           (formatLeadingBoundary :=
-                            formatOriginalChildLeadingBoundary
-                              state.context segment index)
+                            formatOriginalChildLeadingBoundary state.context segment index
+                          )
                           (classification? := some classification)
                       if layoutProbeHasNotOverflowed rendered then some rendered else none
                   | none =>

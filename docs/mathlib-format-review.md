@@ -21,6 +21,21 @@ eight files without exposing a logical layout error. The quantum run produced
 no formatting diff. No formatter exception or material performance regression
 was observed in any of the three projects.
 
+Post-fix verification at leanfmt commit `0722403` remained clean:
+
+- `graphql-lean`: the initial 265-job build took 56 seconds, the three formatter
+  batches took 11, 12, and 7 seconds, and the post-format build took 31 seconds.
+  The same eight files changed, with no new formatting family or exception. Its
+  optional cache command was unavailable and was skipped.
+- `quantum-computing-lean`: the Lake cache phase took 16 seconds, the initial
+  2,653-job build took 42 seconds, formatting took 17 seconds, and the final
+  build took 2 seconds. Formatting produced no diff.
+- Targeted Mathlib checks took 8 seconds for
+  `Mathlib/FieldTheory/SplittingField/Construction.lean` and 5 seconds for
+  `Mathlib/GroupTheory/GroupAction/SubMulAction/OfFixingSubgroup.lean`. Both
+  passed preservation, missing-rule, overflow, fallback, and idempotency checks.
+  These targeted runs intentionally skipped the already-completed full builds.
+
 ### Follow-up rule families
 
 The follow-up review found the families below. A fix should describe a general
@@ -41,9 +56,10 @@ code.
 
 The first three are bounded consistency fixes. Indexed notation should be
 recognized from its parsed delimiter shape rather than a generated parser name.
-A named argument owns both the break before its value and the return of its
-closing delimiter. A low-priority pipe owns the first line of its right operand,
-consistently across `by`, `do`, `calc`, and `have` starts.
+A named argument owns the break before its value, while its closing delimiter is
+a tight suffix of that value unless a comment forces a new line. A low-priority
+pipe owns the first line of its right operand, consistently across `by`, `do`,
+`calc`, and `have` starts.
 
 ### Deferred layout-base proposals
 

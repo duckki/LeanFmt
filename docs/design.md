@@ -814,19 +814,20 @@ argument, including structured arguments such as `let`, `if`, `match`, and
 structure instances. No special-case preference between parent and child
 breaks is needed.
 
-A multiline named argument balances its delimiters around the value. The value
-starts one level inside the opening parenthesis, while the closing parenthesis
-returns to the opening column:
+A multiline named argument keeps its closing parenthesis attached to the final
+line of the value:
 
 ```lean
 Nat.recOn
   (motive :=
     fun n =>
-      Nat
-  )
+      Nat)
   0
   fun _ ih => ih
 ```
+
+When a trailing line comment prevents attachment, the closing parenthesis moves
+to a new line at the opening parenthesis's column.
 
 Projection chains do not break before a dot. The application around a
 projection may still wrap:

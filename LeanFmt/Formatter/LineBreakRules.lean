@@ -2343,7 +2343,8 @@ def typeAscriptionRule : LineBreakRule :=
 def namedArgumentRule : LineBreakRule :=
   {
     name := "namedArgument"
-    useExistingBreaks := fun _ _ => true
+    keepPrefixWithChildFirstLine := fun _ _ index => index == 4
+    flow := fun _ _ => true
     breakPoints := namedArgumentBreaks
   }
 
