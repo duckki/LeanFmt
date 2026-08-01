@@ -30,7 +30,7 @@ code.
 
 | Family | Intended owner | Risk | Status |
 | --- | --- | --- | --- |
-| Explicitly named indexed infix notation such as `->e[phi]` can detach its closing `]` | Syntax-tree grouping | Low | Planned |
+| Explicitly named indexed infix notation such as `->e[phi]` can detach its closing `]` | Syntax-tree grouping | Low | Resolved |
 | A multiline named argument can leave its closing `)` at the value body's indentation | Line-break rules | Low | Planned |
 | A low-priority `<|` can detach from the first line of a `have` right operand | Line-break rules | Low | Planned |
 | Protected multiline `fun` operands retain stale indentation after their parent moves | Original-tree layout planning | High | Proposed below |

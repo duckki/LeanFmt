@@ -449,13 +449,16 @@ partial def collectParserPrecedenceFacts
 
 /-! ## Logical regrouping -/
 
-partial def directLeafAtom? : Tree → Bool
-  | .leaf token => token.role == .atom
+private partial def directLeafAtomToken? : Tree → Option Token
+  | .leaf token => if token.role == .atom then some token else none
   | .node (.raw `null) children =>
       match children.toList with
-      | [child] => directLeafAtom? child
-      | _ => false
-  | _ => false
+      | [child] => directLeafAtomToken? child
+      | _ => none
+  | _ => none
+
+def directLeafAtom? (tree : Tree) : Bool :=
+  (directLeafAtomToken? tree).isSome
 
 def isBinaryInfixRawNode (kind : SyntaxNodeKind) (children : Array Tree) : Bool :=
   let hasLeftOperand := children[0]?.any fun child => child.firstToken?.isSome
@@ -469,25 +472,26 @@ def isBinaryInfixRawNode (kind : SyntaxNodeKind) (children : Array Tree) : Bool 
       | some operator => directLeafAtom? operator
       | none => false
 
-private def stringContainsSubstring (text pattern : String) : Bool :=
-  match text.splitOn pattern with
-  | _ :: _ :: _ => true
-  | _ => false
-
-private def isGeneratedIndexedInfixKind (kind : SyntaxNodeKind) : Bool :=
-  let name := toString kind
-  (name.startsWith "«term" || stringContainsSubstring name ".«term")
-  && stringContainsSubstring name "[_]"
-  && name.endsWith "_»"
-
-private def isGeneratedIndexedInfixRawNode (kind : SyntaxNodeKind) (children : Array Tree)
+private def isIndexedInfixRawNode (kind : SyntaxNodeKind) (children : Array Tree)
     : Bool :=
   let hasLeftOperand := children[0]?.any fun child => child.firstToken?.isSome
+  let hasIndex := children[2]?.any fun child => child.firstToken?.isSome
   let hasRightOperand := children[4]?.any fun child => child.firstToken?.isSome
-  isGeneratedIndexedInfixKind kind
+  kind != `null
+  && kind != `Lean.Parser.Term.app
   && children.size == 5
   && hasLeftOperand
+  && hasIndex
   && hasRightOperand
+  && match children[1]?, children[3]? with
+      | some operator, some closing =>
+          match directLeafAtomToken? operator, directLeafAtomToken? closing with
+          | some operator, some closing =>
+              operator.lexeme != "["
+              && operator.lexeme.endsWith "["
+              && closing.lexeme == "]"
+          | _, _ => false
+      | _, _ => false
 
 def appendApplicationArgumentChildren (argumentContainer : Tree) : Array Tree :=
   match argumentContainer with
@@ -1463,7 +1467,7 @@ def regroupRawNode
     .node (.raw kind) (regroupCommandInWrapperChildren children)
   else if kind == `Lean.Parser.Term.binderTactic then
     .node (.infixChain kind) (regroupBinderTacticChildren children)
-  else if isGeneratedIndexedInfixRawNode kind children then
+  else if isIndexedInfixRawNode kind children then
     .node (.indexedInfix kind) children
   else if isBinaryInfixRawNode kind children then
     match children[0]?, children[1]?, children[2]? with

@@ -8901,14 +8901,15 @@ def assertBracketedNotationRulesKeepDelimitersAttached : IO Unit := do
         `«term_→ₗ[_]_»,
         `«term_≃ₗ[_]_»,
         `«term_→ₐ[_]_»,
-        `ProbabilityTheory.«term_=ᵐ[_]_»
+        `ProbabilityTheory.«term_=ᵐ[_]_»,
+        `«MulActionHomLocal≺»
       ] do
     let indexedRelation :=
       SyntaxTree.regroupTree
       <| SyntaxTree.Tree.node (.raw kind)
           #[
             .leaf (syntheticAtomToken "lhs"),
-            .leaf (syntheticAtomToken "→ₗ["),
+            .leaf (syntheticAtomToken "→ₑ["),
             .leaf (syntheticAtomToken "index"),
             .leaf (syntheticAtomToken "]"),
             .leaf (syntheticAtomToken "rhs")
@@ -8923,6 +8924,18 @@ def assertBracketedNotationRulesKeepDelimitersAttached : IO Unit := do
       (rule.breakPoints {} segment
         == [{ index := 1, indentLevels := 1 }, { index := 4, indentLevels := 1 }])
     assertTrue s!"indexed notation operands flow: {kind}" (rule.flow {} segment)
+  let ordinaryBracketedTerm :=
+    SyntaxTree.regroupTree
+    <| SyntaxTree.Tree.node (.raw `explicitBracketedTerm)
+        #[
+          .leaf (syntheticAtomToken "lhs"),
+          .leaf (syntheticAtomToken "["),
+          .leaf (syntheticAtomToken "index"),
+          .leaf (syntheticAtomToken "]"),
+          .leaf (syntheticAtomToken "rhs")
+        ]
+  assertTrue "a bare opening bracket is not an indexed infix operator"
+    (!ordinaryBracketedTerm.containsNodeKind (.indexedInfix `explicitBracketedTerm))
 
 def assertLakeDslFormatting : IO Unit := do
   let env ← SyntaxTree.importEnvironment #[{ module := `Lake }]
