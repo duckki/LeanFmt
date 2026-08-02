@@ -2015,14 +2015,10 @@ mutual
                           none
                     | none => none
                   let targetColumn :=
-                    let mayOutdentPastCurrentLine :=
-                      emitOriginal
-                      || childRule.atomic
-                      || match child with
-                          | .leaf _ => true
-                          | _ => false
+                    let singleTokenRecovery := child.singleToken?.isSome
+                    let atomicRecovery := childRule.atomic || singleTokenRecovery
                     let canUseSourceColumn :=
-                      childRule.atomic
+                      atomicRecovery
                       || LineBreakRules.treeStartsWithOpeningDelimiter child
                     let parentRelativeColumn :=
                       sourceLayoutStart?.map (·.2)
@@ -2030,14 +2026,15 @@ mutual
                           (shiftColumnByAnchor state.sourceLayoutBaseColumn
                             state.outputLayoutBaseColumn sourceColumn)
                     let minimumRecoveryColumn :=
-                      max (max 1 state.outputLayoutBaseColumn)
-                        (desiredIndent - indentationSpaces)
+                      if singleTokenRecovery then
+                        desiredIndent - indentationSpaces
+                      else if childRule.atomic then
+                        max (max 1 state.outputLayoutBaseColumn)
+                          (desiredIndent - indentationSpaces)
+                      else
+                        desiredIndent
                     let fitsAt column :=
-                      (emitOriginal
-                        || (childRule.atomic && minimumRecoveryColumn <= column)
-                        || (!childRule.atomic
-                            && (mayOutdentPastCurrentLine
-                                || max 1 state.outputLayoutBaseColumn <= column)))
+                      (emitOriginal || minimumRecoveryColumn <= column)
                       && column + firstLineWidth <= state.options.lineWidth
                     match renderedParentRelativeColumn? with
                     | some renderedParentRelativeColumn =>

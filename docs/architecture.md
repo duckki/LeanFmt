@@ -904,8 +904,10 @@ indentation would create an otherwise avoidable overflow, the renderer first kee
 source column translated by the parent layout's movement. When a source-broken
 application begins with an unbreakable qualified head and that parent-relative column
 still overflows, the renderer may use the original absolute source column as a final
-fitting candidate. Single tokens, atomic rules, projection-chain heads, multiline atomic
-tokens, and quotation islands use the same mechanism. Standalone comment trivia does not
+fitting candidate. Structural multi-token children never recover past a pending base
+selected by their parent rule; they use their own break rules or accept the resulting
+overflow. Single tokens, atomic rules, multiline atomic tokens, and quotation islands may
+still use the source-column mechanism. Standalone comment trivia does not
 make an otherwise valid structural layout fail its fit probe: the comment follows the
 surrounding code's indentation even when the unchanged comment text then exceeds the line
 limit. If reformatted code makes an attached line comment overflow, the renderer moves the

@@ -1425,8 +1425,7 @@ def assertQuotationIslandRetainsFittingSourceIndent (env : Lean.Environment)
   assertTrue "quotation island source-indent fallback fits"
     (Formatter.linesFit formatted 100)
 
-def assertMultitokenChildRetainsFittingSourceColumn (env : Lean.Environment)
-    : IO Unit := do
+def assertMultitokenChildKeepsStructuralBase (env : Lean.Environment) : IO Unit := do
   let source :=
     "instance (i j : J) :\n"
     ++ "    PresheafedSpace.IsOpenImmersion\n"
@@ -1436,15 +1435,13 @@ def assertMultitokenChildRetainsFittingSourceColumn (env : Lean.Environment)
   let expected :=
     "instance (i j : J)\n"
     ++ "    : PresheafedSpace.IsOpenImmersion\n"
-    ++ "      (D.toLocallyRingedSpaceGlueData.toSheafedSpaceGlueData.toPresheafedSpaceGlueData.toGlueData.f\n"
-    ++ "        i j) := by\n"
+    ++ "        (D.toLocallyRingedSpaceGlueData.toSheafedSpaceGlueData.toPresheafedSpaceGlueData.toGlueData.f\n"
+    ++ "          i j) := by\n"
     ++ "  exact proof\n"
   let formatted ←
     Formatter.formatSourceWithEnv env source "fitting-multitoken-child-column.lean"
       { lineWidth := 100 }
-  assertEq "multitoken child keeps its fitting source column" expected formatted
-  assertTrue "multitoken child source-column fallback fits"
-    (Formatter.linesFit formatted 100)
+  assertEq "multitoken child keeps its structural base" expected formatted
 
 def assertOverflowRecoveryKeepsNestedCommandIndent (env : Lean.Environment)
     : IO Unit := do
@@ -6858,6 +6855,23 @@ def assertLambdaBodyUsesOperandAnchor (env : Lean.Environment) : IO Unit := do
     Formatter.formatSourceWithEnv env source "lambda-body-operand-anchor.lean"
   assertEq "lambda body uses operand anchor" expected formatted
 
+def assertLambdaBodyOverflowKeepsStructuralBase (env : Lean.Environment) : IO Unit := do
+  let source :=
+    "def longLambdaBase :=\n"
+    ++ "  CircleIntegrable.finsum\n"
+    ++ "    (fun _ ↦\n"
+    ++ "    ((analyticOnNhd_id.sub analyticOnNhd_const).meromorphicOn.circleIntegrable_log_norm).const_smul)\n"
+  let expected :=
+    "def longLambdaBase :=\n"
+    ++ "  CircleIntegrable.finsum\n"
+    ++ "    (fun _ ↦\n"
+    ++ "      ((analyticOnNhd_id.sub\n"
+    ++ "          analyticOnNhd_const).meromorphicOn.circleIntegrable_log_norm).const_smul)\n"
+  let formatted ←
+    Formatter.formatSourceWithEnv env source "lambda-body-overflow-structural-base.lean"
+      { lineWidth := 100 }
+  assertEq "lambda body overflow keeps its structural base" expected formatted
+
 def assertLambdaBinderSequenceBreaksBetweenBinders (env : Lean.Environment)
     : IO Unit := do
   let source :=
@@ -10556,7 +10570,7 @@ def runBasicFormattingTests (env : Lean.Environment) : IO Unit := do
   assertProofIslandUsesStructuralIndent env
   assertProofIslandFitIncludesParentSuffix env
   assertQuotationIslandRetainsFittingSourceIndent env
-  assertMultitokenChildRetainsFittingSourceColumn env
+  assertMultitokenChildKeepsStructuralBase env
   assertOverflowRecoveryKeepsNestedCommandIndent env
   assertFittingTrailingLineCommentStaysAttached env
   assertAnonymousConstructorAfterListKeepsSpace env
@@ -10759,6 +10773,7 @@ def runControlFlowTests (env : Lean.Environment) : IO Unit := do
   assertNestedMatchAfterLambdaAlignsWithMatch env
   assertPrefixedMatchAlternativesAlignWithMatch env
   assertLambdaBodyUsesOperandAnchor env
+  assertLambdaBodyOverflowKeepsStructuralBase env
   assertLambdaBinderSequenceBreaksBetweenBinders env
   assertLambdaKeepsAttachedBlockIntroducers env
   assertPatternLambdaApplicationArgumentStaysAttached env
