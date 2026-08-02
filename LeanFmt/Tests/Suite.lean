@@ -496,6 +496,27 @@ def assertInlineSyntaxCommentKeepsSurroundingIndent (env : Lean.Environment)
     source result.formatted
   assertTrue "inline multiline doc comment preserves code"
     (← codePreservedIgnoringWhitespace env source result.formatted)
+  let detachedSource :=
+    "#project_note\n"
+    ++ "/--\n"
+    ++ "nightly note\n"
+    ++ "Body lines move with the opening delimiter.\n"
+    ++ "-/\n"
+  let detachedExpected :=
+    "#project_note\n"
+    ++ "  /--\n"
+    ++ "  nightly note\n"
+    ++ "  Body lines move with the opening delimiter.\n"
+    ++ "  -/\n"
+  let detachedResult ←
+    Formatter.formatSourceWithEnvDetailed env detachedSource
+      "detached-multiline-doc-comment.lean"
+  assertTrue "detached multiline doc comment does not fall back"
+    (!detachedResult.fellBack)
+  assertEq "detached multiline doc comment moves every physical line"
+    detachedExpected detachedResult.formatted
+  assertTrue "detached multiline doc comment preserves code"
+    (← codePreservedIgnoringWhitespace env detachedSource detachedResult.formatted)
 
 def assertAtomicTokenRetainsFittingSourceColumn (env : Lean.Environment) : IO Unit := do
   let firstLine := "\"" ++ String.ofList (List.replicate 98 'x')

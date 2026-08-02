@@ -786,8 +786,9 @@ that boundary's output column is final; original-tree emission rebases only the 
 source slice and must not apply the source-to-output shift to the boundary again.
 A multiline syntax-owned module or declaration comment stores part of its text inside a
 token rather than trivia. Both ordinary token emission and original-tree emission apply
-the same source-to-output column shift to that token's continuation lines, without
-changing non-comment lexemes or inter-token trivia.
+the same source-to-output column shift to every physical comment line, including a line
+whose indentation is stored between two comment tokens, without changing non-comment
+lexemes or unrelated inter-token trivia.
 A protected subtree that begins on a new source line inherits the source-to-output
 layout-base translation established by its enclosing formatted segment. The output-side anchor is
 the column where that segment actually starts, including when a child that began a source

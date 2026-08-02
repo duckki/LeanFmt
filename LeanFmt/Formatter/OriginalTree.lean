@@ -81,8 +81,12 @@ private def rebaseTreeText
     | [] => parts
     | token :: rest =>
         let trivia := SyntaxTree.sourceText source previous.span.stop token.span.start
+        let splitsCommentAcrossLines :=
+          SpaceRules.hasLineStructure trivia
+          && SpaceRules.isCommentLexeme previous.lexeme
+          && SpaceRules.isCommentLexeme token.lexeme
         let trivia :=
-          if rebaseTrivia then
+          if rebaseTrivia || splitsCommentAcrossLines then
             rebaseTextIndent sourceColumn targetColumn trivia
           else
             trivia
