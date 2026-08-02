@@ -8561,6 +8561,38 @@ def assertFormattingExceptionChecks (env : Lean.Environment) : IO Unit := do
           match exception with
           | .lineOverflow _ => true
           | _ => false)
+  let syntaxCommentBody := String.ofList (List.replicate (Formatter.maxLineWidth - 7) 'x')
+  let syntaxCommentSource :=
+    "mutual\n\n/-- " ++ syntaxCommentBody ++ " -/\ndef documented : Nat := 0\nend\n"
+  let syntaxCommentFormatted :=
+    "mutual\n\n  /-- " ++ syntaxCommentBody ++ " -/\n  def documented : Nat := 0\nend\n"
+  let syntaxCommentSourceModule ←
+    SyntaxTree.parseModuleStringWithEnv env syntaxCommentSource
+      "syntax-comment-overflow-source.lean"
+  let syntaxCommentFormattedModule ←
+    SyntaxTree.parseModuleStringWithEnv env syntaxCommentFormatted
+      "syntax-comment-overflow-formatted.lean"
+  assertTrue "unchanged syntax comment may follow its logical indentation"
+    (!(Formatter.Diagnostics.formattingExceptions
+        syntaxCommentSourceModule syntaxCommentFormattedModule).any
+        fun exception =>
+          match exception with
+          | .lineOverflow _ => true
+          | _ => false)
+  let changedSyntaxCommentFormatted :=
+    "mutual\n\n  /-- y"
+    ++ syntaxCommentBody.drop 1
+    ++ " -/\n  def documented : Nat := 0\nend\n"
+  let changedSyntaxCommentFormattedModule ←
+    SyntaxTree.parseModuleStringWithEnv env changedSyntaxCommentFormatted
+      "changed-syntax-comment-overflow-formatted.lean"
+  assertTrue "changed syntax comment overflow remains actionable"
+    ((Formatter.Diagnostics.formattingExceptions
+        syntaxCommentSourceModule changedSyntaxCommentFormattedModule).any
+      fun exception =>
+        match exception with
+        | .lineOverflow _ => true
+        | _ => false)
   let proofOverflow :=
     "theorem preservedProofOverflow : True := by\n"
     ++ "  have veryLongProofName := "

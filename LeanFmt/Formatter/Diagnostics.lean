@@ -584,12 +584,17 @@ def sourceCommentLineTexts (moduleTree : SyntaxTree.Module) : List String :=
 def commentOnlyOverflowMatchesSource
     (formattedMap : SyntaxTree.SourcePositionMap)
     (formattedTokens : List SyntaxTree.Token)
+    (formattedSyntaxCommentSpans : List SyntaxTree.Span)
     (sourceCommentLineTexts : List String)
     (occurrence : OverflowOccurrence)
     : Bool :=
   let lineStart := formattedMap.fileMap.lineStart occurrence.line
+  let contentStart :=
+    positionAfter lineStart
+      (occurrence.text.takeWhile SpaceRules.isHorizontalWhitespace).toString
   let contentStop := positionAfter lineStart occurrence.text.trimAsciiEnd.toString
-  !formattedTokens.any (tokenIntersects lineStart contentStop)
+  (!formattedTokens.any (tokenIntersects lineStart contentStop)
+    || formattedSyntaxCommentSpans.any (spanCovers contentStart contentStop))
   && sourceCommentLineTexts.contains occurrence.text.trimAscii.toString
 
 def atomicSyntaxSourceLineOverflowed
@@ -657,6 +662,7 @@ def formattingExceptions (sourceModule formattedModule : SyntaxTree.Module)
       let formattedAtomicSpans := indivisibleOverflowSpans formattedModule.tree
       let formattedUnbreakableOriginalSpans :=
         unbreakableOriginalSpans formattedModule.tree
+      let formattedSyntaxCommentSpans := formattedModule.tree.syntaxCommentSpans
       let sourceOverflowTexts :=
         (overflowOccurrencesWith sourceModule options false).map
           fun occurrence =>
@@ -668,7 +674,7 @@ def formattingExceptions (sourceModule formattedModule : SyntaxTree.Module)
                 formattedUnbreakableOriginalSpans occurrence options.lineWidth
               || sourceOverflowTexts.contains occurrence.text.trimAscii
               || commentOnlyOverflowMatchesSource formattedMap formattedTokens
-                  sourceCommentLineTexts occurrence
+                  formattedSyntaxCommentSpans sourceCommentLineTexts occurrence
               || isolatedTokenSourceLineOverflowed sourceMap formattedMap
                   sourceTokens formattedTokens occurrence options.lineWidth then
             none
