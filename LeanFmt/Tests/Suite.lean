@@ -4085,9 +4085,9 @@ def assertCalcLayoutIslandAfterNestedInfix (env : Lean.Environment) : IO Unit :=
     ++ "  (firstFunction <| c.sizeUpTo i).trans\n"
     ++ "  <| secondFunction\n"
     ++ "  <| calc\n"
-    ++ "       c.sizeUpTo i + c.blocksFun i = c.sizeUpTo (i + 1) := (c.sizeUpTo_succ i.2).symm\n"
-    ++ "       _ ≤ c.sizeUpTo c.length := monotone_sum_take _ i.2\n"
-    ++ "       _ = n := c.sizeUpTo_length\n"
+    ++ "      c.sizeUpTo i + c.blocksFun i = c.sizeUpTo (i + 1) := (c.sizeUpTo_succ i.2).symm\n"
+    ++ "      _ ≤ c.sizeUpTo c.length := monotone_sum_take _ i.2\n"
+    ++ "      _ = n := c.sizeUpTo_length\n"
   let result ←
     Formatter.formatSourceWithEnvDetailed env source
       "calc-layout-island-after-nested-infix.lean"
@@ -4100,6 +4100,30 @@ def assertCalcLayoutIslandAfterNestedInfix (env : Lean.Environment) : IO Unit :=
     Formatter.formatSourceWithEnv env result.formatted
       "calc-layout-island-after-nested-infix-formatted.lean"
   assertEq "calc after nested infix is idempotent" result.formatted formattedAgain
+
+def assertDetachedCalcUsesRenderedIntroducerBase (env : Lean.Environment) : IO Unit := do
+  let source :=
+    "def detachedCalcAfterLongAssignmentName : VeryLongResultTypeNameForLayoutTesting := calc\n"
+    ++ "  left = middle := proofOne\n"
+    ++ "  _ = right := proofTwo\n"
+  let expected :=
+    "def detachedCalcAfterLongAssignmentName\n"
+    ++ "    : VeryLongResultTypeNameForLayoutTesting :=\n"
+    ++ "  calc\n"
+    ++ "    left = middle := proofOne\n"
+    ++ "    _ = right := proofTwo\n"
+  let result ←
+    Formatter.formatSourceWithEnvDetailed env source
+      "detached-calc-rendered-introducer-base.lean" { lineWidth := 80 }
+  assertTrue "detached calc does not fall back" (!result.fellBack)
+  assertEq "detached calc steps use the rendered introducer base"
+    expected result.formatted
+  assertTrue "detached calc preserves code"
+    (← codePreservedIgnoringWhitespace env source result.formatted)
+  let formattedAgain ←
+    Formatter.formatSourceWithEnv env result.formatted
+      "detached-calc-rendered-introducer-base-formatted.lean" { lineWidth := 80 }
+  assertEq "detached calc is idempotent" result.formatted formattedAgain
 
 def assertLowPriorityPipeCalcKeepsIndentedOperand (env : Lean.Environment) : IO Unit := do
   let source :=
@@ -8644,6 +8668,30 @@ def assertFormattingExceptionChecks (env : Lean.Environment) : IO Unit := do
           match exception with
           | .lineOverflow _ => true
           | _ => false)
+  let calcStep := String.ofList (List.replicate (Formatter.maxLineWidth - 20) 'x')
+  let fittingCalc :=
+    "def fittingCalcOverflow := calc\n" ++ "  " ++ calcStep ++ " = right := proof\n"
+  let movedCalc :=
+    "def fittingCalcOverflow :=\n"
+    ++ "  calc\n"
+    ++ "    "
+    ++ calcStep
+    ++ " = right := proof\n"
+  let fittingCalcModule ←
+    SyntaxTree.parseModuleStringWithEnv env fittingCalc
+      "fitting-calc-overflow-source.lean"
+  let movedCalcModule ←
+    SyntaxTree.parseModuleStringWithEnv env movedCalc "moved-calc-overflow.lean"
+  assertTrue "calc row fits before structural movement"
+    (Formatter.linesFit fittingCalc Formatter.maxLineWidth)
+  assertTrue "structurally moved calc row demonstrates an unbreakable overflow"
+    (!Formatter.linesFit movedCalc Formatter.maxLineWidth)
+  assertTrue "moved calc row does not report actionable overflow"
+    (!(Formatter.Diagnostics.formattingExceptions fittingCalcModule movedCalcModule).any
+        fun exception =>
+          match exception with
+          | .lineOverflow _ => true
+          | _ => false)
   let fittingProofLayout :=
     "def movedProofLayout (n : Nat) :=\n"
     ++ "  Nat.recOn n default fun n Y =>\n"
@@ -10595,6 +10643,7 @@ def runBasicFormattingTests (env : Lean.Environment) : IO Unit := do
   assertProofValuesRemainLayoutIslands env
   assertOriginalLayoutValueHonorsDeclarationBreak env
   assertCalcLayoutIslandAfterNestedInfix env
+  assertDetachedCalcUsesRenderedIntroducerBase env
   assertLowPriorityPipeCalcKeepsIndentedOperand env
   assertLowPriorityPipeAlignsBindingOperands env
   assertMovedInlineCalcKeepsContinuationLayout env

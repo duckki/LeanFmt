@@ -516,7 +516,7 @@ def LayoutIslandKind.prefersParentRelativeColumn : LayoutIslandKind → Bool
   | _ => false
 
 def LayoutIslandKind.hasUnbreakableLineLayout : LayoutIslandKind → Bool
-  | .proof | .proofLayout | .proofWidgetsJsx => true
+  | .proof | .proofLayout | .calc | .proofWidgetsJsx => true
   | _ => false
 
 def LayoutIslandKind.isProof : LayoutIslandKind → Bool
@@ -670,7 +670,7 @@ private def emitRebased? (request : EmissionRequest) (tree : SyntaxTree.Tree)
               else
                 request.currentIndent + indentationSpaces
             else if calcLayout then
-              (request.segmentIndentation + 1) * indentationSpaces
+              (leadingColumn / indentationSpaces + 1) * indentationSpaces
             else if usesPendingIndent then
               leadingColumn
             else
@@ -775,11 +775,22 @@ private def emitRebased? (request : EmissionRequest) (tree : SyntaxTree.Tree)
         else
           some continuationColumns
     | some continuationColumns, none => some continuationColumns
-    | none, some targetColumn => some (sourceColumn, targetColumn)
+    | none, some targetColumn =>
+        if calcLayout then
+          (sourceContinuationIndent? sourceText).map
+            fun sourceIndent =>
+              (sourceIndent, (targetColumn / indentationSpaces + 1) * indentationSpaces)
+        else
+          some (sourceColumn, targetColumn)
     | none, none =>
-        targetColumn?.map
-          fun targetColumn =>
-            (sourceColumn, targetColumn)
+        if calcLayout then
+          (sourceContinuationIndent? sourceText).map
+            fun sourceIndent =>
+              (sourceIndent, (leadingColumn / indentationSpaces + 1) * indentationSpaces)
+        else
+          targetColumn?.map
+            fun targetColumn =>
+              (sourceColumn, targetColumn)
   let sourceText :=
     match classification? with
     | some .syntaxComment =>

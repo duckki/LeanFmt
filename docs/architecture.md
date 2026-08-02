@@ -878,7 +878,9 @@ claim that boundary with `formatOriginalChildLeadingBoundary`; the renderer then
 the boundary whitespace and the island preserves only its internal relative layout.
 `calc` is the deliberate exception: it always delegates its leading boundary to ordinary
 formatting while preserving the relative layout of its steps. A parent break can therefore
-produce `<| calc` without teaching an infix rule about `calc` tokens or source trivia.
+produce `<| calc` without teaching an infix rule about `calc` tokens or source trivia. Its
+step floor is one indentation level beneath the line containing the rendered `calc`, not
+beneath the parent segment's earlier source base.
 The low-priority infix rule likewise owns the first line of an ordinary right operand.
 Layout-sensitive binding expressions such as `let` and `have` instead require start
 alignment: the infix rule introduces an indented operand boundary after the operator,
