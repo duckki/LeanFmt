@@ -280,11 +280,31 @@ def normalizeBlockCommentIndent (openingColumn : Nat) (comment : String) : Strin
               s!"{relativeIndent}:{stripped}"
       String.intercalate "\n" (first :: normalizedRest)
 
+def normalizeSyntaxCommentIndent (comment : String) : String :=
+  match (SpaceRules.normalizeLineEndings comment).splitOn "\n" with
+  | [] | [_] => comment
+  | first :: rest =>
+      let continuationIndent? := OriginalTree.sourceContinuationIndent? comment
+      let normalizedRest :=
+        rest.map
+          fun line =>
+            if line.isEmpty then
+              ""
+            else
+              let stripped := SpaceRules.stripLeadingHorizontalWhitespace line
+              let indentation := line.length - stripped.length
+              let relativeIndent := indentation - continuationIndent?.getD indentation
+              s!"{relativeIndent}:{stripped}"
+      String.intercalate "\n" (first :: normalizedRest)
+
 def preservationComment (openingColumn : Nat) (comment : String) : PreservationFragment :=
   if comment.startsWith "/-" then
     .comment comment (normalizeBlockCommentIndent openingColumn comment)
   else
     .comment comment comment
+
+def preservationSyntaxComment (comment : String) : PreservationFragment :=
+  .comment comment (normalizeSyntaxCommentIndent comment)
 
 def columnAfterText (column : Nat) (text : String) : Nat :=
   text.toList.foldl
@@ -343,7 +363,7 @@ def preservationFragments (moduleTree : SyntaxTree.Module) : List PreservationFr
                 (leading.foldl (fun fragments fragment => fragments.push fragment)
                     fragments)
                   |>.push
-                <| preservationComment commentColumn commentText
+                <| preservationSyntaxComment commentText
               (fragments, span.stop, columnAfterText commentColumn commentText)
           | none =>
               let leadingText :=

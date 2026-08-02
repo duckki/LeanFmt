@@ -588,6 +588,24 @@ def assertInlineSyntaxCommentKeepsSurroundingIndent (env : Lean.Environment)
     (!detachedResult.fellBack)
   assertEq "detached multiline doc comment moves every physical line"
     detachedExpected detachedResult.formatted
+  let movedInlineSource :=
+    "#project_note /-- https://github.com/leanprover/lean4/pull/4096\n"
+    ++ "the continuation starts at the command base\n"
+    ++ "-/\n"
+  let movedInlineExpected :=
+    "#project_note\n"
+    ++ "  /-- https://github.com/leanprover/lean4/pull/4096\n"
+    ++ "  the continuation starts at the command base\n"
+    ++ "  -/\n"
+  let movedInlineResult ←
+    Formatter.formatSourceWithEnvDetailed env movedInlineSource
+      "moved-inline-multiline-doc-comment.lean" { lineWidth := 50 }
+  assertTrue "moved inline multiline doc comment does not fall back"
+    (!movedInlineResult.fellBack)
+  assertEq "moved inline multiline doc comment rebases its continuation margin"
+    movedInlineExpected movedInlineResult.formatted
+  assertTrue "moved inline multiline doc comment preserves code"
+    (← codePreservedIgnoringWhitespace env movedInlineSource movedInlineResult.formatted)
   assertTrue "detached multiline doc comment preserves code"
     (← codePreservedIgnoringWhitespace env detachedSource detachedResult.formatted)
 

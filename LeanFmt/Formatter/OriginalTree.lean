@@ -63,6 +63,28 @@ private def rebaseTextIndent (sourceColumn targetColumn : Nat) (text : String) :
     | first :: rest =>
         String.intercalate "\n" <| first :: rebaseLines sourceColumn targetColumn rest
 
+def sourceContinuationIndent? (text : String) : Option Nat :=
+  (SpaceRules.normalizeLineEndings text).splitOn "\n"
+  |>.drop 1
+  |>.foldl
+      (fun minimum? line =>
+        let indentation := (leadingWhitespace line).length
+        if indentation == line.length then
+          minimum?
+        else
+          match minimum? with
+          | some minimum => some (min minimum indentation)
+          | none => some indentation)
+      none
+
+private def rebaseMultilineSourceSlice (targetColumn : Nat) (text : String) : String :=
+  match (SpaceRules.normalizeLineEndings text).splitOn "\n" with
+  | [] | [_] => text
+  | first :: rest =>
+      let sourceContinuationColumn := (sourceContinuationIndent? text).getD targetColumn
+      String.intercalate "\n"
+      <| first :: rebaseLines sourceContinuationColumn targetColumn rest
+
 private def rebaseTokenLexeme (sourceColumn targetColumn : Nat) (token : SyntaxTree.Token)
     : String :=
   if SpaceRules.isCommentLexeme token.lexeme
@@ -121,7 +143,7 @@ private def rebaseTreeText
           | .sourceToken token =>
               rebaseTokenLexeme (sourceMap.columnAt token.span.start) outputColumn token
           | .syntaxComment span =>
-              rebaseTextIndent (sourceMap.columnAt span.start) outputColumn
+              rebaseMultilineSourceSlice outputColumn
                 (SyntaxTree.sourceText source span.start span.stop)
         loop span.stop (columnAfterAppend outputColumn text) (text :: trivia :: parts)
           rest
@@ -163,20 +185,6 @@ private def fittingTargetColumn
     let roundedReduction :=
       ((overflow + indentationSpaces - 1) / indentationSpaces) * indentationSpaces
     targetColumn - min (targetColumn - sourceColumn) roundedReduction
-
-private def continuationIndent? (text : String) : Option Nat :=
-  (SpaceRules.normalizeLineEndings text).splitOn "\n"
-  |>.drop 1
-  |>.foldl
-      (fun minimum? line =>
-        let indentation := (leadingWhitespace line).length
-        if indentation == line.length then
-          minimum?
-        else
-          match minimum? with
-          | some minimum => some (min minimum indentation)
-          | none => some indentation)
-      none
 
 private def currentLineAfterAppend (currentLine text : String) : String :=
   if text.contains '\n' || text.contains '\r' then
@@ -646,7 +654,7 @@ private def emitRebased? (request : EmissionRequest) (tree : SyntaxTree.Tree)
     if !inlineMultilineLayoutIsland then
       none
     else
-      match continuationIndent? sourceText, request.lastToken? with
+      match sourceContinuationIndent? sourceText, request.lastToken? with
       | some sourceIndent, some leftToken =>
           let sourceAnchor := request.sourceMap.columnAt leftToken.span.start
           let outputAnchor := lineWidth request.currentLine - leftToken.lexeme.length
@@ -777,7 +785,7 @@ private def emitRebased? (request : EmissionRequest) (tree : SyntaxTree.Tree)
     | some .syntaxComment =>
         let outputColumn :=
           lineWidth <| currentLineAfterAppend request.currentLine leading
-        rebaseTextIndent sourceColumn outputColumn sourceText
+        rebaseMultilineSourceSlice outputColumn sourceText
     | _ =>
         match sourceTextRebase? with
         | some (sourceIndent, targetIndent) =>
