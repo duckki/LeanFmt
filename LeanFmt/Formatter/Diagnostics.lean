@@ -234,12 +234,19 @@ def SyntaxSignature.isEmptyNull : SyntaxSignature → Bool
   | .node `null children => children.isEmpty
   | _ => false
 
+def isSyntaxCommentKind (kind : SyntaxNodeKind) : Bool :=
+  kind == `Lean.Parser.Command.moduleDoc || kind == `Lean.Parser.Command.docComment
+
 partial def syntaxSignature : Syntax → SyntaxSignature
   | .missing => .missing
   | .atom _ value => .atom value
   | .ident _ rawValue value _ => .ident rawValue.toString value
   | .node _ kind children =>
-      .node kind <| (children.map syntaxSignature).filter fun child => !child.isEmptyNull
+      if isSyntaxCommentKind kind then
+        .node kind #[]
+      else
+        .node kind
+        <| (children.map syntaxSignature).filter fun child => !child.isEmptyNull
 
 partial def takeLineCommentAux (reversed : List Char) : List Char → List Char × List Char
   | [] => (reversed.reverse, [])
@@ -310,9 +317,6 @@ partial def commentFragmentsAux (column : Nat) (reversed : List PreservationFrag
 def commentFragments (trivia : String) (startColumn : Nat := 0)
     : List PreservationFragment :=
   commentFragmentsAux startColumn [] trivia.toList
-
-def isSyntaxCommentKind (kind : SyntaxNodeKind) : Bool :=
-  kind == `Lean.Parser.Command.moduleDoc || kind == `Lean.Parser.Command.docComment
 
 partial def syntaxCommentSpans : SyntaxTree.Tree → List SyntaxTree.Span
   | .missing | .leaf _ => []

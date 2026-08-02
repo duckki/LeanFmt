@@ -784,6 +784,10 @@ renderer state. When the renderer reaches a recognized proof or attribute node, 
 applies that plan. If the renderer has already formatted the boundary before an island,
 that boundary's output column is final; original-tree emission rebases only the island's
 source slice and must not apply the source-to-output shift to the boundary again.
+A multiline syntax-owned module or declaration comment stores part of its text inside a
+token rather than trivia. Both ordinary token emission and original-tree emission apply
+the same source-to-output column shift to that token's continuation lines, without
+changing non-comment lexemes or inter-token trivia.
 A protected subtree that begins on a new source line inherits the source-to-output
 layout-base translation established by its enclosing formatted segment. The output-side anchor is
 the column where that segment actually starts, including when a child that began a source
@@ -934,7 +938,9 @@ convergence and shared pipeline phases live under `Formatter.Internal`.
 ### Preservation-check limitation: layout-sensitive elaboration
 
 The preservation check is necessary but not complete. It compares code-token/comment
-fragments and a source-info-stripped syntax signature. Lean elaboration can still change
+fragments and a source-info-stripped syntax signature. Syntax-owned module and declaration
+comments delegate their contents to comment fragments, which preserve text and relative
+indentation while permitting a uniform column shift. Lean elaboration can still change
 when formatting changes layout-sensitive source positions that are not represented in
 that signature.
 

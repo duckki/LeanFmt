@@ -159,6 +159,13 @@ def shiftCommentLineIndent (sourceIndent targetIndent : Nat) (line : String) : S
     let leadingLength := line.length - (stripLeadingHorizontalWhitespace line).length
     (line.drop (min (sourceIndent - targetIndent) leadingLength)).toString
 
+def reindentCommentLexeme (text : String) (sourceIndent targetIndent : Nat) : String :=
+  match (normalizeLineEndings text).splitOn "\n" with
+  | [] => ""
+  | firstLine :: rest =>
+      String.intercalate "\n"
+      <| firstLine :: rest.map (shiftCommentLineIndent sourceIndent targetIndent)
+
 def reindentCommentLines (indent : String) : Nat → Nat → List String → List String
   | _, _, [] => []
   | blockCommentDepth, blockSourceIndent, line :: rest =>

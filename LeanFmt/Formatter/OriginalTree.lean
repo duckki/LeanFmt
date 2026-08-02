@@ -63,20 +63,36 @@ private def rebaseTextIndent (sourceColumn targetColumn : Nat) (text : String) :
     | first :: rest =>
         String.intercalate "\n" <| first :: rebaseLines sourceColumn targetColumn rest
 
+private def rebaseTokenLexeme (sourceColumn targetColumn : Nat) (token : SyntaxTree.Token)
+    : String :=
+  if SpaceRules.isCommentLexeme token.lexeme
+      && SpaceRules.hasLineStructure token.lexeme then
+    SpaceRules.reindentCommentLexeme token.lexeme sourceColumn targetColumn
+  else
+    token.lexeme
+
 private def rebaseTreeText
     (source : String) (tree : SyntaxTree.Tree)
     (sourceColumn targetColumn : Nat)
+    (rebaseTrivia : Bool := true)
     : String :=
   let rec loop (previous : SyntaxTree.Token) (parts : List String)
       : List SyntaxTree.Token → List String
     | [] => parts
     | token :: rest =>
         let trivia := SyntaxTree.sourceText source previous.span.stop token.span.start
-        let trivia := rebaseTextIndent sourceColumn targetColumn trivia
-        loop token (token.lexeme :: trivia :: parts) rest
+        let trivia :=
+          if rebaseTrivia then
+            rebaseTextIndent sourceColumn targetColumn trivia
+          else
+            trivia
+        let lexeme := rebaseTokenLexeme sourceColumn targetColumn token
+        loop token (lexeme :: trivia :: parts) rest
   match tree.tokens.toList with
   | [] => ""
-  | first :: rest => String.join <| (loop first [first.lexeme] rest).reverse
+  | first :: rest =>
+      let firstLexeme := rebaseTokenLexeme sourceColumn targetColumn first
+      String.join <| (loop first [firstLexeme] rest).reverse
 
 private def fittingTargetColumn
     (source : String) (tree : SyntaxTree.Tree) (sourceText : String)
@@ -727,7 +743,12 @@ private def emitRebased? (request : EmissionRequest) (tree : SyntaxTree.Tree)
           sourceText
         else
           rebaseTreeText request.source tree sourceIndent targetIndent
-    | none => sourceText
+    | none =>
+        if sourceColumn == leadingColumn then
+          sourceText
+        else
+          rebaseTreeText request.source tree sourceColumn leadingColumn
+            (rebaseTrivia := false)
   some
     {
       text := leading ++ sourceText

@@ -550,6 +550,12 @@ def RenderState.emitToken (state : RenderState) (token : SyntaxTree.Token)
   else
     let whitespace := state.defaultWhitespace token preserveLines
     let state := state.appendTriviaOutput whitespace
+    let lexeme :=
+      if SpaceRules.isCommentLexeme token.lexeme && hasLineBreakChar token.lexeme then
+        SpaceRules.reindentCommentLexeme token.lexeme
+          (state.sourceMap.columnAt token.span.start) (lineWidth state.currentLine)
+      else
+        token.lexeme
     let introducedAtomicOverflow :=
       match state.pendingIndent? with
       | none => false
@@ -571,7 +577,7 @@ def RenderState.emitToken (state : RenderState) (token : SyntaxTree.Token)
           else
             false
     {
-      state.appendOutput token.lexeme with
+      state.appendOutput lexeme with
         introducedAtomicOverflowCount :=
           state.introducedAtomicOverflowCount + if introducedAtomicOverflow then 1 else 0
         lastToken? := some token

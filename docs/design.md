@@ -222,7 +222,9 @@ without a matching `on` marker preserves the rest of the file.
 
 Line comments, block comments, nested block comments, and doc comments keep
 their text. leanfmt cleans surrounding whitespace and reindents comment trivia
-when a containing construct moves.
+when a containing construct moves. When a multiline module or declaration doc
+comment moves, every line shifts with its opening delimiter so internal relative
+indentation remains unchanged.
 
 ```lean
 -- module comment
@@ -240,7 +242,8 @@ def answer : Nat := 0 -- trailing comment
 ```
 
 Comment contents are not wrapped or rewritten. Module and declaration documentation
-comments retain their exact internal whitespace and line shape.
+comments retain their line shape and their exact internal whitespace relative to the
+opening delimiter.
 
 ## Token spacing
 

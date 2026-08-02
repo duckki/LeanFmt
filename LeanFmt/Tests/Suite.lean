@@ -433,6 +433,30 @@ def assertMovedStandaloneCommentsKeepSiblingIndent (env : Lean.Environment)
     blockCommentExpected blockCommentFormatted
   assertTrue "moved block comment preserves code"
     (← codePreservedIgnoringWhitespace env blockCommentSource blockCommentFormatted)
+  let docCommentSource :=
+    "mutual\n"
+    ++ "\n"
+    ++ "/-- The bound on the number of polynomials used to describe the constructible set appearing in the\n"
+    ++ "case of `C : R → R[X₁, ..., Xₘ]` with a complexity bound. -/\n"
+    ++ "def numBound (k : Nat) : Nat → Nat\n"
+    ++ "  | 0 => k\n"
+    ++ "  | n + 1 => numBound k n\n"
+    ++ "end\n"
+  let docCommentExpected :=
+    "mutual\n"
+    ++ "\n"
+    ++ "  /-- The bound on the number of polynomials used to describe the constructible set appearing in the\n"
+    ++ "  case of `C : R → R[X₁, ..., Xₘ]` with a complexity bound. -/\n"
+    ++ "  def numBound (k : Nat) : Nat → Nat\n"
+    ++ "    | 0 => k\n"
+    ++ "    | n + 1 => numBound k n\n"
+    ++ "end\n"
+  let docCommentFormatted ←
+    Formatter.formatSourceWithEnv env docCommentSource "moved-multiline-doc-comment.lean"
+  assertEq "multiline doc comment moves with its mutual declaration"
+    docCommentExpected docCommentFormatted
+  assertTrue "moved multiline doc comment preserves code"
+    (← codePreservedIgnoringWhitespace env docCommentSource docCommentFormatted)
   let matchArmSource :=
     "def commentFitDoesNotOutdentCode value := Id.run do\n"
     ++ "  let rec\n"
@@ -8241,6 +8265,10 @@ def assertFormattingExceptionChecks (env : Lean.Environment) : IO Unit := do
       "/--\n  keep  spaces -/\ndef value := 0\n"
   assertTrue "declaration-doc whitespace is preserved"
     (!declarationDocWhitespacePreserved)
+  assertTrue "uniform declaration-doc movement preserves relative whitespace"
+    (← codePreservedIgnoringWhitespace env
+        "mutual\n\n/-- keep\nrelative indentation -/\ndef value := 0\nend\n"
+        "mutual\n\n  /-- keep\n  relative indentation -/\n  def value := 0\nend\n")
   let nestedBlockCommentWhitespacePreserved ← codePreservedIgnoringWhitespace env
       "def value := /- outer /- keep  spaces -/ comment -/ 0\n"
       "def value := /- outer /- keep spaces -/ comment -/ 0\n"
