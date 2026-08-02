@@ -457,6 +457,79 @@ def assertMovedStandaloneCommentsKeepSiblingIndent (env : Lean.Environment)
     docCommentExpected docCommentFormatted
   assertTrue "moved multiline doc comment preserves code"
     (← codePreservedIgnoringWhitespace env docCommentSource docCommentFormatted)
+  let constructorCommentSource :=
+    "mutual\n"
+    ++ "\n"
+    ++ "inductive Coefficient where\n"
+    ++ "  /-- A coefficient can also record rational coefficients.\n"
+    ++ "  In this case the denominator is stored separately. -/\n"
+    ++ "  | rational : Coefficient\n"
+    ++ "end\n"
+  let constructorCommentExpected :=
+    "mutual\n"
+    ++ "\n"
+    ++ "  inductive Coefficient where\n"
+    ++ "  /-- A coefficient can also record rational coefficients.\n"
+    ++ "  In this case the denominator is stored separately. -/\n"
+    ++ "  | rational : Coefficient\n"
+    ++ "end\n"
+  let constructorCommentResult ←
+    Formatter.formatSourceWithEnvDetailed env constructorCommentSource
+      "moved-constructor-doc-comment.lean"
+  assertTrue "constructor doc comment does not fall back"
+    (!constructorCommentResult.fellBack)
+  assertEq "constructor doc comment preserves one common physical-line base"
+    constructorCommentExpected constructorCommentResult.formatted
+  assertTrue "constructor doc comment preserves code"
+    (← codePreservedIgnoringWhitespace env constructorCommentSource
+        constructorCommentResult.formatted)
+  let protectedSource :=
+    "mutual\n"
+    ++ "\n"
+    ++ "/-- A declaration containing quoted syntax. -/\n"
+    ++ "meta inductive ProtectedCoefficient where\n"
+    ++ "  /-- A constructor containing quoted syntax.\n"
+    ++ "  Its continuation keeps the constructor base. -/\n"
+    ++ "  | rational (_ : `(Nat) = `(Nat)) : ProtectedCoefficient\n"
+    ++ "end\n"
+  let protectedModule ←
+    SyntaxTree.parseModuleStringWithEnv env protectedSource
+      "protected-nested-doc-comment.lean"
+  let protectedDeclaration ←
+    match findTreeNode? (.raw `Lean.Parser.Command.declaration) protectedModule.tree with
+    | some tree => pure tree
+    | none => throw <| IO.userError "expected a protected declaration tree"
+  assertTrue "quotation declaration uses original-layout emission"
+    (Formatter.OriginalTree.classify? protectedDeclaration == some .definitionQuotation)
+  let protectedEmission? :=
+    Formatter.OriginalTree.emit?
+      {
+        source := protectedSource
+        sourceMap := SyntaxTree.SourcePositionMap.ofString protectedSource
+        currentLine := ""
+        currentIndent := 0
+        lastToken? := none
+        formattedLeadingWhitespace? := some "\n  "
+        pendingLeadingWhitespace? := none
+        segmentIndentation := 0
+        sourceLayoutBaseColumn := 0
+        outputLayoutBaseColumn := 0
+        lineWidth := Formatter.maxLineWidth
+        lineFitSuffixWidth := 0
+      }
+      protectedDeclaration (some .definitionQuotation)
+  let protectedEmission ←
+    match protectedEmission? with
+    | some emission => pure emission
+    | none => throw <| IO.userError "expected protected declaration emission"
+  let protectedExpected :=
+    "\n  /-- A declaration containing quoted syntax. -/\n"
+    ++ "meta inductive ProtectedCoefficient where\n"
+    ++ "  /-- A constructor containing quoted syntax.\n"
+    ++ "  Its continuation keeps the constructor base. -/\n"
+    ++ "  | rational (_ : `(Nat) = `(Nat)) : ProtectedCoefficient"
+  assertEq "nested syntax comment uses its own rendered opening column"
+    protectedExpected protectedEmission.text
   let matchArmSource :=
     "def commentFitDoesNotOutdentCode value := Id.run do\n"
     ++ "  let rec\n"

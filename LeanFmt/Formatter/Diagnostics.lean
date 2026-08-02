@@ -234,15 +234,12 @@ def SyntaxSignature.isEmptyNull : SyntaxSignature → Bool
   | .node `null children => children.isEmpty
   | _ => false
 
-def isSyntaxCommentKind (kind : SyntaxNodeKind) : Bool :=
-  kind == `Lean.Parser.Command.moduleDoc || kind == `Lean.Parser.Command.docComment
-
 partial def syntaxSignature : Syntax → SyntaxSignature
   | .missing => .missing
   | .atom _ value => .atom value
   | .ident _ rawValue value _ => .ident rawValue.toString value
   | .node _ kind children =>
-      if isSyntaxCommentKind kind then
+      if SyntaxTree.isSyntaxCommentKind kind then
         .node kind #[]
       else
         .node kind
@@ -318,22 +315,13 @@ def commentFragments (trivia : String) (startColumn : Nat := 0)
     : List PreservationFragment :=
   commentFragmentsAux startColumn [] trivia.toList
 
-partial def syntaxCommentSpans : SyntaxTree.Tree → List SyntaxTree.Span
-  | .missing | .leaf _ => []
-  | tree@(.node (.raw kind) children) =>
-      if isSyntaxCommentKind kind then
-        treeSpan? tree |>.toList
-      else
-        children.toList.flatMap syntaxCommentSpans
-  | .node _ children => children.toList.flatMap syntaxCommentSpans
-
 def commentSpanForToken? (spans : List SyntaxTree.Span) (token : SyntaxTree.Token)
     : Option SyntaxTree.Span :=
   spans.find? fun span => span.start <= token.span.start && token.span.stop <= span.stop
 
 def preservationFragments (moduleTree : SyntaxTree.Module) : List PreservationFragment :=
   let tokens := (sourceLexicalTokens moduleTree).toList
-  let syntaxCommentSpans := syntaxCommentSpans moduleTree.tree
+  let syntaxCommentSpans := moduleTree.tree.syntaxCommentSpans
   let (fragments, consumedUntil, consumedColumn) :=
     tokens.foldl
       (fun (fragments, consumedUntil, consumedColumn) token =>

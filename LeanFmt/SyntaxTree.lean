@@ -114,6 +114,9 @@ inductive Tree where
   | node (kind : NodeKind) (children : Array Tree)
 deriving BEq, Inhabited, Repr
 
+def isSyntaxCommentKind (kind : SyntaxNodeKind) : Bool :=
+  kind == `Lean.Parser.Command.moduleDoc || kind == `Lean.Parser.Command.docComment
+
 namespace Tree
 
 private partial def appendTokens (tokens : Array Token) : Tree → Array Token
@@ -202,6 +205,17 @@ partial def firstNodeChildCount? (target : NodeKind) : Tree → Option Nat
 
 def firstInfixChainChildCount? (kind : SyntaxNodeKind) (tree : Tree) : Option Nat :=
   firstNodeChildCount? (.infixChain kind) tree
+
+partial def syntaxCommentSpans : Tree → List Span
+  | .missing | .leaf _ => []
+  | tree@(.node (.raw kind) children) =>
+      if isSyntaxCommentKind kind then
+        match tree.firstToken?, tree.lastToken? with
+        | some first, some last => [{ start := first.span.start, stop := last.span.stop }]
+        | _, _ => []
+      else
+        children.toList.flatMap syntaxCommentSpans
+  | .node _ children => children.toList.flatMap syntaxCommentSpans
 
 end Tree
 

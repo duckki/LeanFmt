@@ -71,41 +71,74 @@ private def rebaseTokenLexeme (sourceColumn targetColumn : Nat) (token : SyntaxT
   else
     token.lexeme
 
+private inductive RebaseUnit where
+  | sourceToken (token : SyntaxTree.Token)
+  | syntaxComment (span : SyntaxTree.Span)
+
+private def RebaseUnit.span : RebaseUnit → SyntaxTree.Span
+  | .sourceToken token => token.span
+  | .syntaxComment span => span
+
+private partial def rebaseUnits
+    : List SyntaxTree.Token → List SyntaxTree.Span → List RebaseUnit
+  | [], _ => []
+  | token :: tokens, [] => .sourceToken token :: rebaseUnits tokens []
+  | token :: tokens, span :: spans =>
+      if span.stop <= token.span.start then
+        rebaseUnits (token :: tokens) spans
+      else if span.start == token.span.start then
+        let remaining := tokens.dropWhile fun token => token.span.stop <= span.stop
+        .syntaxComment span :: rebaseUnits remaining spans
+      else
+        .sourceToken token :: rebaseUnits tokens (span :: spans)
+
+private def columnAfterAppend (column : Nat) (text : String) : Nat :=
+  if SpaceRules.hasLineStructure text then
+    lineWidth <| charsAfterLastNewline text
+  else
+    column + lineWidth text
+
 private def rebaseTreeText
-    (source : String) (tree : SyntaxTree.Tree)
+    (source : String) (sourceMap : SyntaxTree.SourcePositionMap)
+    (tree : SyntaxTree.Tree)
     (sourceColumn targetColumn : Nat)
     (rebaseTrivia : Bool := true)
     : String :=
-  let rec loop (previous : SyntaxTree.Token) (parts : List String)
-      : List SyntaxTree.Token → List String
+  let rec loop (cursor : String.Pos.Raw) (outputColumn : Nat) (parts : List String)
+      : List RebaseUnit → List String
     | [] => parts
-    | token :: rest =>
-        let trivia := SyntaxTree.sourceText source previous.span.stop token.span.start
-        let splitsCommentAcrossLines :=
-          SpaceRules.hasLineStructure trivia
-          && SpaceRules.isCommentLexeme previous.lexeme
-          && SpaceRules.isCommentLexeme token.lexeme
+    | unit :: rest =>
+        let span := unit.span
+        let trivia := SyntaxTree.sourceText source cursor span.start
         let trivia :=
-          if rebaseTrivia || splitsCommentAcrossLines then
+          if rebaseTrivia then
             rebaseTextIndent sourceColumn targetColumn trivia
           else
             trivia
-        let lexeme := rebaseTokenLexeme sourceColumn targetColumn token
-        loop token (lexeme :: trivia :: parts) rest
-  match tree.tokens.toList with
+        let outputColumn := columnAfterAppend outputColumn trivia
+        let text :=
+          match unit with
+          | .sourceToken token =>
+              rebaseTokenLexeme (sourceMap.columnAt token.span.start) outputColumn token
+          | .syntaxComment span =>
+              rebaseTextIndent (sourceMap.columnAt span.start) outputColumn
+                (SyntaxTree.sourceText source span.start span.stop)
+        loop span.stop (columnAfterAppend outputColumn text) (text :: trivia :: parts)
+          rest
+  match rebaseUnits tree.tokens.toList tree.syntaxCommentSpans with
   | [] => ""
-  | first :: rest =>
-      let firstLexeme := rebaseTokenLexeme sourceColumn targetColumn first
-      String.join <| (loop first [firstLexeme] rest).reverse
+  | units@(first :: _) =>
+      String.join <| (loop first.span.start targetColumn [] units).reverse
 
 private def fittingTargetColumn
-    (source : String) (tree : SyntaxTree.Tree) (sourceText : String)
+    (source : String) (sourceMap : SyntaxTree.SourcePositionMap)
+    (tree : SyntaxTree.Tree) (sourceText : String)
     (sourceColumn targetColumn lineWidthLimit suffixWidth : Nat)
     : Nat :=
   if targetColumn <= sourceColumn then
     targetColumn
   else
-    let rebasedText := rebaseTreeText source tree sourceColumn targetColumn
+    let rebasedText := rebaseTreeText source sourceMap tree sourceColumn targetColumn
     let sourceLines := (SpaceRules.normalizeLineEndings sourceText).splitOn "\n"
     let rebasedLines := (SpaceRules.normalizeLineEndings rebasedText).splitOn "\n"
     let rec maximumOverflow (lineIndex maximum : Nat) : List String → List String → Nat
@@ -308,8 +341,7 @@ private def isCommentSensitiveMatchExpr : SyntaxTree.Tree → Bool
   | _ => false
 
 private def isSyntaxCommentTree : SyntaxTree.Tree → Bool
-  | .node (.raw `Lean.Parser.Command.moduleDoc) _ => true
-  | .node (.raw `Lean.Parser.Command.docComment) _ => true
+  | .node (.raw kind) _ => SyntaxTree.isSyntaxCommentKind kind
   | _ => false
 
 private partial def containsProofTree : SyntaxTree.Tree → Bool
@@ -658,7 +690,7 @@ private def emitRebased? (request : EmissionRequest) (tree : SyntaxTree.Tree)
           some
             (
               sourceIndent,
-              fittingTargetColumn request.source tree sourceText
+              fittingTargetColumn request.source request.sourceMap tree sourceText
                 sourceIndent targetIndent request.lineWidth
                 request.lineFitSuffixWidth
             )
@@ -709,8 +741,8 @@ private def emitRebased? (request : EmissionRequest) (tree : SyntaxTree.Tree)
     if quotation && !inlineMultilineLayoutIsland then
       targetColumn?.map
         fun targetColumn =>
-          fittingTargetColumn request.source tree sourceText sourceColumn
-            targetColumn request.lineWidth request.lineFitSuffixWidth
+          fittingTargetColumn request.source request.sourceMap tree sourceText
+            sourceColumn targetColumn request.lineWidth request.lineFitSuffixWidth
     else
       targetColumn?
   let leading :=
@@ -741,18 +773,27 @@ private def emitRebased? (request : EmissionRequest) (tree : SyntaxTree.Tree)
           fun targetColumn =>
             (sourceColumn, targetColumn)
   let sourceText :=
-    match sourceTextRebase? with
-    | some (sourceIndent, targetIndent) =>
-        if sourceIndent == targetIndent then
-          sourceText
-        else
-          rebaseTreeText request.source tree sourceIndent targetIndent
-    | none =>
-        if sourceColumn == leadingColumn || !originalLeadingHasLineStructure then
-          sourceText
-        else
-          rebaseTreeText request.source tree sourceColumn leadingColumn
-            (rebaseTrivia := false)
+    match classification? with
+    | some .syntaxComment =>
+        let outputColumn :=
+          lineWidth <| currentLineAfterAppend request.currentLine leading
+        rebaseTextIndent sourceColumn outputColumn sourceText
+    | _ =>
+        match sourceTextRebase? with
+        | some (sourceIndent, targetIndent) =>
+            if sourceIndent == targetIndent then
+              sourceText
+            else
+              rebaseTreeText request.source request.sourceMap tree sourceIndent
+                targetIndent
+        | none =>
+            let outputColumn :=
+              lineWidth <| currentLineAfterAppend request.currentLine leading
+            if sourceColumn == outputColumn || !originalLeadingHasLineStructure then
+              sourceText
+            else
+              rebaseTreeText request.source request.sourceMap tree sourceColumn
+                outputColumn (rebaseTrivia := false)
   some
     {
       text := leading ++ sourceText
