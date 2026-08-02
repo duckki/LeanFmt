@@ -1,6 +1,11 @@
 import Lean
 
 syntax (name := projectSyntax) "project_syntax" : term
+elab (name := projectNoteCommand) "#project_note " (docComment)? : command =>
+  pure ()
+
+elab (name := projectNoteTactic) "#project_note " (docComment)? : tactic =>
+  pure ()
 
 namespace BigOperators
 

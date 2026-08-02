@@ -744,7 +744,7 @@ private def emitRebased? (request : EmissionRequest) (tree : SyntaxTree.Tree)
         else
           rebaseTreeText request.source tree sourceIndent targetIndent
     | none =>
-        if sourceColumn == leadingColumn then
+        if sourceColumn == leadingColumn || !originalLeadingHasLineStructure then
           sourceText
         else
           rebaseTreeText request.source tree sourceColumn leadingColumn

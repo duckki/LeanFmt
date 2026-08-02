@@ -478,6 +478,25 @@ def assertMovedStandaloneCommentsKeepSiblingIndent (env : Lean.Environment)
   assertTrue "moved match-arm comment preserves code"
     (← codePreservedIgnoringWhitespace env matchArmSource matchArmFormatted)
 
+def assertInlineSyntaxCommentKeepsSurroundingIndent (env : Lean.Environment)
+    : IO Unit := do
+  let source :=
+    "example : True := by\n"
+    ++ "  #project_note /-- The first line follows the syntax prefix.\n"
+    ++ "  Continuation lines stay at the surrounding tactic indentation. -/\n"
+    ++ "  trivial\n"
+  let moduleTree ←
+    SyntaxTree.parseModuleStringWithEnv env source "inline-multiline-doc-comment.lean"
+  assertTrue "project note token parses in the imported project environment"
+    (moduleTree.tokens.any fun token => token.lexeme == "#project_note")
+  let result ←
+    Formatter.formatSourceWithEnvDetailed env source "inline-multiline-doc-comment.lean"
+  assertTrue "inline multiline doc comment does not fall back" (!result.fellBack)
+  assertEq "inline multiline doc comment keeps its surrounding base indentation"
+    source result.formatted
+  assertTrue "inline multiline doc comment preserves code"
+    (← codePreservedIgnoringWhitespace env source result.formatted)
+
 def assertAtomicTokenRetainsFittingSourceColumn (env : Lean.Environment) : IO Unit := do
   let firstLine := "\"" ++ String.ofList (List.replicate 98 'x')
   let source :=
@@ -10417,6 +10436,7 @@ def runBasicFormattingTests (env : Lean.Environment) : IO Unit := do
   assertDefinitionSourceBreakAfterAssignOverridesFlat env
 
 def runExpressionAndRendererTests (env : Lean.Environment) : IO Unit := do
+  assertInlineSyntaxCommentKeepsSurroundingIndent env
   assertLeadingParserArgumentsFlow env
   assertDoIfLetBindUsesConditionalBase env
   assertGeneratedPairBreakMovesAfterComma env
