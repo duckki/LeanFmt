@@ -647,8 +647,8 @@ def doIfLetBindRule : LineBreakRule :=
 
 /-! ### Shared wrapper and context rules -/
 
-def singletonArrayItemWrapper (context : RuleContext) (segment : Segment) : Bool :=
-  (parentIsRawKind context `«term[_]» || parentIsRawKind context `«term#[_,]»)
+def singletonDelimitedItemWrapper (context : RuleContext) (segment : Segment) : Bool :=
+  context.parentRawKind?.any SyntaxTree.isDelimitedCollectionKind
   && segmentContentCount segment == 1
 
 def rawKindIsQuantifier (kind : Lean.SyntaxNodeKind) : Bool :=
@@ -774,7 +774,7 @@ def parentIsBinderDefaultWrapper (context : RuleContext) : Bool :=
 
 def nullInheritBase (context : RuleContext) (segment : Segment) : Bool :=
   defaultInheritBase context segment
-  || singletonArrayItemWrapper context segment
+  || singletonDelimitedItemWrapper context segment
   || (segment.singleChild?.any
         fun (_, child) =>
           treeIsRawKind child `Lean.Elab.ConfigEval.configEntries)

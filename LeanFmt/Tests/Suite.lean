@@ -4214,6 +4214,35 @@ def assertHaveProofAfterInfixPreservesLayout (env : Lean.Environment) : IO Unit 
     Formatter.formatSourceWithEnv env formatted "have-proof-after-infix-formatted.lean"
   assertEq "have proof after infix is idempotent" formatted formattedAgain
 
+def assertSingletonDelimitedHaveInheritsCollectionBase (env : Lean.Environment)
+    : IO Unit := do
+  let source :=
+    "structure SingletonHaveWrapper where\n"
+    ++ "  value : Nat\n\n"
+    ++ "def singletonCtorHave : SingletonHaveWrapper :=\n"
+    ++ "  ⟨have : Nat :=\n"
+    ++ "    firstFunction firstArgument secondArgument\n"
+    ++ "  secondFunction\n"
+    ++ "  <| thirdFunction this⟩\n"
+  let expected :=
+    "structure SingletonHaveWrapper where\n"
+    ++ "  value : Nat\n\n"
+    ++ "def singletonCtorHave : SingletonHaveWrapper :=\n"
+    ++ "  ⟨have : Nat := firstFunction firstArgument secondArgument\n"
+    ++ "  secondFunction <| thirdFunction this⟩\n"
+  let result ←
+    Formatter.formatSourceWithEnvDetailed env source
+      "singleton-delimited-have-base.lean" { lineWidth := 60 }
+  assertTrue "singleton delimited have does not fall back" (!result.fellBack)
+  assertEq "singleton delimited have inherits the collection base"
+    expected result.formatted
+  assertTrue "singleton delimited have preserves code"
+    (← codePreservedIgnoringWhitespace env source result.formatted)
+  let formattedAgain ←
+    Formatter.formatSourceWithEnv env result.formatted
+      "singleton-delimited-have-base-formatted.lean" { lineWidth := 60 }
+  assertEq "singleton delimited have is idempotent" result.formatted formattedAgain
+
 def assertAbsoluteValueDelimitersStayAttached (env : Lean.Environment) : IO Unit := do
   let source :=
     "notation \"|\" x \"|\" => x\n\n"
@@ -10449,6 +10478,7 @@ def runBasicFormattingTests (env : Lean.Environment) : IO Unit := do
   assertExplicitLambdaKeepsPrefixMarker env
   assertHaveTermFormatting env
   assertHaveProofAfterInfixPreservesLayout env
+  assertSingletonDelimitedHaveInheritsCollectionBase env
   assertAbsoluteValueDelimitersStayAttached env
   assertSymmetricDelimitersStayAttachedAcrossPasses env
   assertGeneratedPostfixMarkersStayAttached env
