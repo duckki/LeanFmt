@@ -635,9 +635,10 @@ Rules and regroupings should preserve these cross-syntax relationships:
   application line.
 - An intrinsically multiline comment makes its renderer tree boundary structural even
   when no syntax rule owns that exact source gap. This is independent of syntax kind:
-  the renderer derives indentation from the surrounding tree, shifts the complete
-  comment by the same boundary-column delta, and applies that indentation to the token
-  after the comment. A flow parent cannot flatten away this physical break.
+  the renderer derives indentation from the surrounding tree, shifts multiline comment
+  continuations by the difference between the comment opener's source and rendered
+  columns, and separately applies the tree indentation to the token after the comment.
+  A flow parent cannot flatten away this physical break.
 - Line comments force the token after the comment onto a new line, but may remain
   attached to preceding code while that complete line fits. Block comments force a
   break only when their own text contains a newline. A one-line block comment may flow

@@ -444,13 +444,18 @@ def WhitespaceState.defaultWhitespace (state : WhitespaceState) (token : SyntaxT
                   state.pendingCommandBoundary?
           else
             whitespaceForPendingBoundary trivia indentation state.pendingCommandBoundary?
+        else if state.movePendingCommentAfterToken then
+          let boundaryTrivia :=
+            state.movePendingCommentAfterTokenIfFits <| SpaceRules.cleanTrivia trivia
+          let sourceCommentColumn :=
+            SpaceRules.firstCommentColumn? trivia
+            <| state.sourceMap.columnAt left.span.stop
+          let targetCommentColumn :=
+            SpaceRules.firstCommentColumn? boundaryTrivia <| lineWidth state.currentLine
+          SpaceRules.commentTriviaForTreeBoundary boundaryTrivia
+            (sourceCommentColumn.getD 0) (targetCommentColumn.getD 0) indentation
         else
-          (if state.movePendingCommentAfterToken then
-              SpaceRules.commentTriviaForTreeBoundary trivia indentation
-            else
-              whitespaceForPendingBoundary trivia indentation
-                state.pendingCommandBoundary?)
-          |> state.movePendingCommentAfterTokenIfFits
+          whitespaceForPendingBoundary trivia indentation state.pendingCommandBoundary?
     | none, some indent =>
         let indent := state.indentForMultilineToken token indent
         let indentation := spaces indent

@@ -274,31 +274,42 @@ def commentTriviaForBreakWithFollowingIndent (text commentIndent followingIndent
 def commentTriviaForBreak (text indent : String) : String :=
   commentTriviaForBreakWithFollowingIndent text indent indent
 
-def alignCommentBoundaryLines (sourceIndent : Nat) (indent : String)
+def firstCommentColumn? (text : String) (firstLineColumn : Nat) : Option Nat :=
+  let rec firstCommentOffset? (offset : Nat) : List Char → Option Nat
+    | '-' :: '-' :: _ | '/' :: '-' :: _ => some offset
+    | _ :: rest => firstCommentOffset? (offset + 1) rest
+    | [] => none
+  let rec loop (firstLine : Bool) : List String → Option Nat
+    | [] => none
+    | line :: rest =>
+        match firstCommentOffset? 0 line.toList with
+        | some offset => some <| if firstLine then firstLineColumn + offset else offset
+        | none => loop false rest
+  loop true <| (normalizeLineEndings text).splitOn "\n"
+
+def alignCommentBoundaryLines (sourceIndent targetIndent : Nat) (followingIndent : String)
     : List String → List String
   | [] => []
   | [line] =>
       let stripped := stripLeadingHorizontalWhitespace line
       [if stripped.isEmpty then
-        indent
+        followingIndent
       else
-        shiftCommentLineIndent sourceIndent indent.length line]
+        shiftCommentLineIndent sourceIndent targetIndent line]
   | line :: rest =>
-      shiftCommentLineIndent sourceIndent indent.length line
-      :: alignCommentBoundaryLines sourceIndent indent rest
+      shiftCommentLineIndent sourceIndent targetIndent line
+      :: alignCommentBoundaryLines sourceIndent targetIndent followingIndent rest
 
-def commentTriviaForTreeBoundary (text indent : String) : String :=
+def commentTriviaForTreeBoundary (text : String)
+    (sourceCommentColumn targetCommentColumn : Nat) (followingIndent : String)
+    : String :=
   match (cleanTrivia text).splitOn "\n" with
-  | [] => "\n" ++ indent
+  | [] => "\n" ++ followingIndent
   | firstLine :: rest =>
-      let sourceIndent :=
-        match rest.getLast? with
-        | some lastLine =>
-            let stripped := stripLeadingHorizontalWhitespace lastLine
-            if stripped.isEmpty then lastLine.length else 0
-        | none => 0
       String.intercalate "\n"
-      <| firstLine :: alignCommentBoundaryLines sourceIndent indent rest
+      <| firstLine
+          :: alignCommentBoundaryLines sourceCommentColumn targetCommentColumn
+              followingIndent rest
 
 def moveLeadingCommentAfterToken? (text : String) : Option String :=
   match (normalizeLineEndings text).splitOn "\n" with

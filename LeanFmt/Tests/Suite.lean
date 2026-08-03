@@ -1480,6 +1480,27 @@ def assertBlockCommentBoundaries (env : Lean.Environment) : IO Unit := do
   assertTrue "multiline block comment preserves code"
     (← codePreservedIgnoringWhitespace env multilineSource multilineFormatted)
 
+  let inlineMultilineSource :=
+    "def inlineMultilineBlockComment :=\n"
+    ++ "  ⟨/- first comment line\n"
+    ++ "  second comment line -/\n"
+    ++ "  fun value => value⟩\n"
+  let inlineMultilineExpected :=
+    "def inlineMultilineBlockComment :=\n"
+    ++ "  ⟨/- first comment line\n"
+    ++ "  second comment line -/\n"
+    ++ "    fun value => value⟩\n"
+  let inlineMultilineResult ←
+    Formatter.formatSourceWithEnvDetailed env inlineMultilineSource
+      "inline-multiline-block-comment-boundary.lean" { lineWidth := 70 }
+  assertTrue "inline multiline block comment does not fall back"
+    !inlineMultilineResult.fellBack
+  assertEq "inline multiline block comment retains relative continuation indentation"
+    inlineMultilineExpected inlineMultilineResult.formatted
+  assertTrue "inline multiline block comment preserves code"
+    (← codePreservedIgnoringWhitespace env inlineMultilineSource
+        inlineMultilineResult.formatted)
+
   let fittingAgain ←
     Formatter.formatSourceWithEnv env fittingFormatted
       "fitting-single-line-block-comment-formatted.lean" { lineWidth := 70 }
@@ -1499,6 +1520,11 @@ def assertBlockCommentBoundaries (env : Lean.Environment) : IO Unit := do
       "multiline-block-comment-boundary-formatted.lean" { lineWidth := 70 }
   assertEq "multiline block comment boundary is idempotent"
     multilineFormatted multilineAgain
+  let inlineMultilineAgain ←
+    Formatter.formatSourceWithEnv env inlineMultilineResult.formatted
+      "inline-multiline-block-comment-boundary-formatted.lean" { lineWidth := 70 }
+  assertEq "inline multiline block comment boundary is idempotent"
+    inlineMultilineResult.formatted inlineMultilineAgain
 
 def assertProofIslandUsesStructuralIndent (env : Lean.Environment) : IO Unit := do
   let source :=
