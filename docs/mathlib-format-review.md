@@ -6,6 +6,127 @@ It is a point-in-time work list, not part of the normative formatting style.
 
 ## Current status: 2026-08-02
 
+### Working-tree validation after `61d472a`
+
+Four low-risk consistency fixes were validated in the working tree after
+`61d472a`. Core postfix indexing and generated prefix-index syntax now use one
+delimiter-shape rule: breaks are available inside the index and after the
+closing delimiter, but never before the closing `]`. Core `#[...]` arrays now
+retain balanced existing layouts for both singleton and multi-item forms. The
+opening-delimiter suffix classifier now implements its stated suffix semantics,
+so a prefixed opener such as `#[` does not lose the structural break before an
+item beginning with `(`. Authored trailing line comments now remain attached to
+their code even when the complete line exceeds the configured width; this
+removes width-dependent comment relocation from the renderer and leaves comment
+attachment to the parsed/source structure. None of these changes adds a rule
+API or syntax decision to the renderer.
+
+The complete local gate passed: build, tests, development linter, fixture
+regeneration and dry check, self-formatting, code preservation, actionable
+overflow, missing-rule, fallback, idempotency, and `git diff --check`. Fresh
+external validation then passed for `graphql-lean` and
+`quantum-computing-lean` without a `--jobs` override. In the final fresh run,
+GraphQL's initial build took 57 seconds, its formatter batches took 11, 12, and
+7 seconds, and its post-format build took 24 seconds. Five files changed only
+at the already intended parenthesized multiline proof-argument boundary.
+Quantum's cache, initial build, formatting, and post-format build took 16, 42,
+16, and 3 seconds respectively and produced no diff. The combined run took 257
+seconds.
+
+The full Mathlib run used the exact `v4.32.0` commit
+`81a5d257c8e410db227a6665ed08f64fea08e997`, selected the 8,264 tracked Lean
+files under `Mathlib`, set the line width to 100, and did not pass `--jobs`.
+The Lake cache restored 7,970 artifacts in 11 seconds, and the cached
+pre-format build passed all 8,654 jobs in 5 seconds. All 83 formatter batches
+were exercised. Code preservation, missing-rule, fallback, and idempotency
+counts were zero throughout.
+
+Four batches required acceptance of overflow-only diagnostics. Two are the
+previously recorded correctly indented lines in
+`Mathlib/AlgebraicGeometry/Gluing.lean:119` and
+`Mathlib/AlgebraicGeometry/StructureSheaf.lean:426`. Two are the expected
+consequence of preserving authored trailing comments:
+`Mathlib/Tactic/FBinop.lean:225` is 101 columns and
+`Mathlib/Tactic/GCongr/Core.lean:820` is 104 columns. Both comments remain
+attached to the code they qualify and begin at the correct logical
+indentation. Formatter batches were generally 31 to 59 seconds, with isolated
+87-, 95-, 90-, and 76-second outliers at batches 13, 22, 51, and 63. There was
+no increasing trend, worker failure, or memory pressure.
+
+The first complete post-format build passed all 8,654 jobs in 3,351 seconds.
+After the array fixes, a complete 83-batch rerun and complete build also passed.
+The final reviewed executable then exercised all 83 batches once more from
+batch 1 without repeating the already clean pre-format build. Formatter batches
+took 3,071 seconds in aggregate, with a 35-second median, 45-second 90th
+percentile, and 58-second maximum at the known heavy batch 47. There was no
+increasing trend, worker failure, or memory pressure. The complete post-format
+build passed in 6 seconds, and the final invocation took 3,090 seconds.
+
+The final formatted tree changed 7,524 files, with 310,983 insertions and
+270,934 deletions, and `git diff --check` passed. The indexed `MDiff[...]`
+representative keeps its closing bracket attached and gives the following
+operand its ordinary continuation. The three semantic `shake: keep` import
+comments remain attached to their imports. The multi-item `#[...]` in
+`Mathlib/Tactic/CategoryTheory/Elementwise.lean:159` now breaks after the
+prefixed opener, indents its first tuple item, and closes at the array base.
+
+Three independent final reviews covered the implementation, targeted delimiter
+and comment cases, and a broad Mathlib sample. The targeted review found no
+issue. The broad review confirmed the new array and indexed layouts and
+reproduced only the existing high-risk protected-body rebasing family recorded
+below. The implementation review found a separator-classification mismatch, a
+generated three-child delimiter wrapper that could be misclassified as a
+prefix-index application, and two test gaps. Those were corrected with the
+existing rule APIs before the final external runs. The final implementation
+requires a following operand for generated prefix-index dispatch and uses the
+same lexeme-based trailing-separator classification as breakpoint
+normalization.
+
+### Full validation at `61d472a`
+
+The current revision was validated from a fresh checkout of Mathlib `v4.32.0`
+at commit `81a5d257c8e410db227a6665ed08f64fea08e997`. The run used the Lake cache,
+selected only the 8,264 tracked `.lean` files under `Mathlib`, set the line width
+to 100, and did not pass `--jobs`. Cache restoration took 41 seconds and the
+cached pre-format build passed all 8,654 jobs in 4 seconds.
+
+All 83 formatter batches were exercised. Code preservation, missing-rule,
+fallback, and idempotency counts were zero throughout. Two batches stopped on
+accepted indentation-induced line overflows: a 101-column qualified projection
+in `Mathlib/AlgebraicGeometry/Gluing.lean:119` and a 104-column protected proof
+line in `Mathlib/AlgebraicGeometry/StructureSheaf.lean:426`. The run resumed
+after each diagnostic so the remaining corpus was still covered. Formatter
+batches took 3,565 seconds in aggregate, with a 37-second median, 59-second
+90th percentile, and 104-second maximum at batch 47. The isolated slow batches
+did not form an increasing trend, and there was no worker failure or memory
+pressure.
+
+The complete post-format build passed all 8,654 jobs in 3,362 seconds. The
+formatted tree changed 7,525 files, with 310,964 insertions and 270,916
+deletions; `git diff --check` passed. Eight independent domain reviews found no
+code-preservation issue, but confirmed that the corpus is not visually
+release-ready. The open general families are:
+
+- protected parenthesized `by` bodies can retain the shell column after the
+  shell moves; 27 examples were found across the reviewed domains;
+- `calc` rows can still use either the `calc` column or a preceding proof body's
+  column instead of one shared row base;
+- standalone `<|` and its operand can detach from their governing application;
+- branch bodies, inline record fields, and nested attribute children can retain
+  an obsolete source or opener column;
+- declaration-result comments and continued line comments can consume or lose
+  their pending structural indentation;
+- semantic trailing comments such as `shake: keep` can detach from the import
+  they qualify;
+- indexed delimiter groups can separate a closing `]` and then over-indent the
+  following argument.
+
+These findings are evidence for the existing syntax-grouping, protected-layout,
+and continuation-base work. They should not be addressed with path-specific
+rules or new rule APIs.
+
+### Earlier validation and fixes
+
 The complete Mathlib validation baseline used leanfmt commit `3f3bd05` against
 Mathlib `v4.32.0`. The final invocation resumed at batch 75 after the preceding
 batches had passed. Batches 75 through 83 took 31 to 42 seconds each and passed
@@ -56,12 +177,14 @@ build took 2 seconds. The combined run took 231 seconds. Both formatted
 checkouts were byte-clean, and independent diff reviews found no formatting
 regression.
 
-The current revision also resolves parenthesized multiline proof arguments. The
-syntax tree already kept each `by` shell structural and protected only its proof
-body; the missing invariant was in flow rendering. A fitting multiline
-original-layout child no longer makes its complete flow segment count as flat,
-and an existing boundary before that child is taken. Directly attached bodies
-with no such boundary remain attached. This adds no rule API or syntax-specific
+The current revision resolves the boundary before a parenthesized multiline
+proof argument in the focused representative. The syntax tree already kept each
+`by` shell structural and protected only its proof body; the missing invariant
+was in flow rendering. A fitting multiline original-layout child no longer
+makes its complete flow segment count as flat, and an existing boundary before
+that child is taken. The full-corpus review above shows that this is only the
+shell-level part of the invariant: protected proof bodies can still retain the
+shell's column after the shell moves. This adds no rule API or syntax-specific
 renderer check.
 
 Fresh validation passed without a `--jobs` override. GraphQL's initial build
@@ -81,12 +204,18 @@ replayed and built successfully in 5 seconds with only accepted lints.
 | A multiline syntax comment moved from inline to block layout rebases only its opening line | `Mathlib/Tactic/NormNum/Pow.lean:282` | Original-tree source-slice planning | Medium | Resolved by `8ca47da` |
 | A detached `calc` keeps its steps at their old source base | `Mathlib/Data/List/Perm/Basic.lean:219` | Syntax grouping and original-tree planning | High | Resolved by `9d6eada` |
 | A moved structural, multi-token child can recover an obsolete source column | `Mathlib/Analysis/SpecialFunctions/Integrability/LogMeromorphic.lean:186` | Renderer structural-floor invariant | Medium | Resolved by `e7ba1a3` |
-| Parenthesized multiline proof arguments remain attached to an application prefix | `Mathlib/Analysis/BoxIntegral/Partition/Split.lean:155` | Generic flow fit and protected-child boundaries | High | Resolved |
-| A moved `fun`, tactic quotation, or protected body without a parent boundary does not follow its introducer | `Mathlib/RingTheory/WittVector/Basic.lean:85` | Syntax grouping and original-tree planning | High | Open |
+| Parenthesized multiline proof arguments remain attached to an application prefix | `Mathlib/Analysis/BoxIntegral/Partition/Split.lean:155`; `Mathlib/AlgebraicGeometry/Gluing.lean:644` | Generic flow fit and protected-child rebasing | High | Partially resolved: the shell breaks correctly, but protected bodies still retain the shell column |
+| A moved `fun`, tactic quotation, or protected body without a parent boundary does not follow its introducer | `Mathlib/Data/Nat/Bitwise.lean:260`; `Mathlib/RingTheory/WittVector/Basic.lean:85`; `Mathlib/Tactic/Linter/MinImports.lean:104`; `Mathlib/Tactic/MinImports.lean:170` | Syntax grouping and original-tree planning | High | Open |
 | A standalone `<\|` does not establish the base of its protected operand | `Mathlib/Topology/Sheaves/CommRingCat.lean:311` | Line-break rules and original-tree planning | High | Open |
 | Application siblings or declaration-field bodies inherit a preceding token column | `Mathlib/Geometry/Manifold/MFDeriv/SpecificFunctions.lean:277`; `Mathlib/Algebra/Order/Monoid/Defs.lean:28` | Syntax grouping and line-break rules | High | Open |
 | A line comment after a standalone declaration `:` consumes the pending result indentation | `Mathlib/Algebra/Module/Projective.lean:281` | Generic comment-boundary handling | Medium | Open |
 | A source-preserved line-comment continuation can detach from its first physical line | `Mathlib/Algebra/ContinuedFractions/Computation/Basic.lean:193` | Syntax grouping and original-tree source slices | Medium | Open |
+| `calc` rows can disagree on their shared continuation base | `Mathlib/Analysis/InnerProductSpace/Projection/Basic.lean:362` | Original-tree planning and renderer continuation bases | High | Open |
+| A branch body can remain aligned with its branch header | `Mathlib/Algebra/BigOperators/Fin.lean:632` | Syntax grouping and original-tree planning | High | Open |
+| Inline record and attribute children can inherit the opener's source column | `Mathlib/Lean/Meta/RefinedDiscrTree/Basic.lean:169`; `Mathlib/Algebra/Group/Submonoid/Membership.lean:553` | Syntax grouping and continuation-base planning | High | Open |
+| An indexed delimiter group can detach its closing bracket | `Mathlib/Geometry/Manifold/VectorBundle/Hom.lean:97` | Shape-based line-break dispatch | Medium | Resolved in the working tree after `61d472a` by a general delimiter-shape rule |
+| A prefixed array opener can stay attached to a multiline parenthesized item | `Mathlib/Tactic/CategoryTheory/Elementwise.lean:159` | Delimiter classification and collection breaks | Low | Resolved in the working tree after `61d472a` by applying opening-delimiter suffix semantics consistently |
+| A semantic trailing comment can detach from its command | `Mathlib/Condensed/EffectiveEpi.lean:11` | Comment attachment and command grouping | Medium | Resolved in the working tree after `61d472a` by preserving authored attachment |
 
 These are governing-layout failures, not requests for syntax-specific rule
 exceptions. Mathlib paths are regression inputs only. Long unbreakable lines and
