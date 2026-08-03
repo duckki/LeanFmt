@@ -268,11 +268,48 @@ def commentTriviaForBreakWithFollowingIndent (text commentIndent followingIndent
       if (stripLeadingHorizontalWhitespace lastLine).isEmpty then
         String.intercalate "\n" <| (followingIndent :: rest).reverse
       else
-        adjusted ++ "\n" ++ followingIndent
+        (adjusted.dropEndWhile isHorizontalWhitespace).toString ++ "\n" ++ followingIndent
   | [] => "\n" ++ followingIndent
 
 def commentTriviaForBreak (text indent : String) : String :=
   commentTriviaForBreakWithFollowingIndent text indent indent
+
+def alignCommentBoundaryLines (sourceIndent : Nat) (indent : String)
+    : List String → List String
+  | [] => []
+  | [line] =>
+      let stripped := stripLeadingHorizontalWhitespace line
+      [if stripped.isEmpty then
+        indent
+      else
+        shiftCommentLineIndent sourceIndent indent.length line]
+  | line :: rest =>
+      shiftCommentLineIndent sourceIndent indent.length line
+      :: alignCommentBoundaryLines sourceIndent indent rest
+
+def commentTriviaForTreeBoundary (text indent : String) : String :=
+  match (cleanTrivia text).splitOn "\n" with
+  | [] => "\n" ++ indent
+  | firstLine :: rest =>
+      let sourceIndent :=
+        match rest.getLast? with
+        | some lastLine =>
+            let stripped := stripLeadingHorizontalWhitespace lastLine
+            if stripped.isEmpty then lastLine.length else 0
+        | none => 0
+      String.intercalate "\n"
+      <| firstLine :: alignCommentBoundaryLines sourceIndent indent rest
+
+def moveLeadingCommentAfterToken? (text : String) : Option String :=
+  match (normalizeLineEndings text).splitOn "\n" with
+  | firstLine :: commentLine :: rest =>
+      let comment := stripLeadingHorizontalWhitespace commentLine
+      if (stripLeadingHorizontalWhitespace firstLine).isEmpty
+          && (comment.startsWith "--" || comment.startsWith "/-") then
+        some <| " " ++ String.intercalate "\n" (comment :: rest)
+      else
+        none
+  | _ => none
 
 def cleanFinalTrivia (text : String) : String :=
   cleanTrivia text

@@ -1393,6 +1393,113 @@ def assertCommentAfterOpeningDelimiterPreserved (env : Lean.Environment) : IO Un
   assertTrue "commented delimiter preserves code and the comment"
     (← codePreservedIgnoringWhitespace env source result.formatted)
 
+def assertCommentForcedParenthesizedBodyBoundary (env : Lean.Environment) : IO Unit := do
+  let source :=
+    "def parenthesizedDoBody :=\n"
+    ++ "  liftCoreM do (\n"
+    ++ "  -- Preserve this comment with the parenthesized body.\n"
+    ++ "  (do\n"
+    ++ "    let value := 0\n"
+    ++ "    pure value))\n"
+  let expected :=
+    "def parenthesizedDoBody :=\n"
+    ++ "  liftCoreM do\n"
+    ++ "    ( -- Preserve this comment with the parenthesized body.\n"
+    ++ "      (do\n"
+    ++ "        let value := 0\n"
+    ++ "        pure value))\n"
+  let formatted ←
+    Formatter.formatSourceWithEnv env source "line-comment-after-moved-opener.lean"
+  assertEq "line comment occupies the moved opener line" expected formatted
+  assertTrue "line comment after moved opener preserves code"
+    (← codePreservedIgnoringWhitespace env source formatted)
+  let formattedAgain ←
+    Formatter.formatSourceWithEnv env formatted
+      "line-comment-after-moved-opener-formatted.lean"
+  assertEq "line comment after moved opener is idempotent" formatted formattedAgain
+
+def assertBlockCommentBoundaries (env : Lean.Environment) : IO Unit := do
+  let fittingSource :=
+    "def singleLineBlockCommentFits := wrapper (/- note -/ value)\n"
+  let fittingFormatted ←
+    Formatter.formatSourceWithEnv env fittingSource
+      "fitting-single-line-block-comment.lean" { lineWidth := 70 }
+  assertEq "single-line block comment does not force a fitting tree to break"
+    fittingSource fittingFormatted
+  assertTrue "fitting single-line block comment preserves code"
+    (← codePreservedIgnoringWhitespace env fittingSource fittingFormatted)
+
+  let overflowingSource :=
+    "def singleLineBlockCommentBreaks :=\n"
+    ++ "  wrapper firstArgument (/- note -/ secondArgumentWithEnoughCharacters)\n"
+  let overflowingExpected :=
+    "def singleLineBlockCommentBreaks :=\n"
+    ++ "  wrapper firstArgument\n"
+    ++ "    (/- note -/ secondArgumentWithEnoughCharacters)\n"
+  let overflowingFormatted ←
+    Formatter.formatSourceWithEnv env overflowingSource
+      "overflowing-single-line-block-comment.lean" { lineWidth := 70 }
+  assertEq "single-line block comment allows an ordinary fitting break"
+    overflowingExpected overflowingFormatted
+  assertTrue "broken single-line block comment preserves code"
+    (← codePreservedIgnoringWhitespace env overflowingSource overflowingFormatted)
+
+  let longCommentSource :=
+    "def longSingleLineBlockCommentBreaks :=\n"
+    ++ "  wrapper (/- This block comment consumes most of the available line. -/ followingValueWithEnoughCharacters)\n"
+  let longCommentExpected :=
+    "def longSingleLineBlockCommentBreaks :=\n"
+    ++ "  wrapper\n"
+    ++ "    (/- This block comment consumes most of the available line. -/\n"
+    ++ "      followingValueWithEnoughCharacters)\n"
+  let longCommentFormatted ←
+    Formatter.formatSourceWithEnv env longCommentSource
+      "long-single-line-block-comment.lean" { lineWidth := 70 }
+  assertEq "long single-line block comment breaks before its following token"
+    longCommentExpected longCommentFormatted
+  assertTrue "long single-line block comment preserves code"
+    (← codePreservedIgnoringWhitespace env longCommentSource longCommentFormatted)
+
+  let multilineSource :=
+    "def multilineBlockCommentBoundary :=\n"
+    ++ "  wrapper (\n"
+    ++ "  /- first comment line\n"
+    ++ "  second comment line -/\n"
+    ++ "  value)\n"
+  let multilineExpected :=
+    "def multilineBlockCommentBoundary :=\n"
+    ++ "  wrapper\n"
+    ++ "    ( /- first comment line\n"
+    ++ "      second comment line -/\n"
+    ++ "      value)\n"
+  let multilineFormatted ←
+    Formatter.formatSourceWithEnv env multilineSource
+      "multiline-block-comment-boundary.lean" { lineWidth := 70 }
+  assertEq "multiline block comment establishes the indented tree boundary"
+    multilineExpected multilineFormatted
+  assertTrue "multiline block comment preserves code"
+    (← codePreservedIgnoringWhitespace env multilineSource multilineFormatted)
+
+  let fittingAgain ←
+    Formatter.formatSourceWithEnv env fittingFormatted
+      "fitting-single-line-block-comment-formatted.lean" { lineWidth := 70 }
+  assertEq "fitting single-line block comment is idempotent" fittingFormatted fittingAgain
+  let overflowingAgain ←
+    Formatter.formatSourceWithEnv env overflowingFormatted
+      "overflowing-single-line-block-comment-formatted.lean" { lineWidth := 70 }
+  assertEq "broken single-line block comment is idempotent"
+    overflowingFormatted overflowingAgain
+  let longCommentAgain ←
+    Formatter.formatSourceWithEnv env longCommentFormatted
+      "long-single-line-block-comment-formatted.lean" { lineWidth := 70 }
+  assertEq "long single-line block comment break is idempotent"
+    longCommentFormatted longCommentAgain
+  let multilineAgain ←
+    Formatter.formatSourceWithEnv env multilineFormatted
+      "multiline-block-comment-boundary-formatted.lean" { lineWidth := 70 }
+  assertEq "multiline block comment boundary is idempotent"
+    multilineFormatted multilineAgain
+
 def assertProofIslandUsesStructuralIndent (env : Lean.Environment) : IO Unit := do
   let source :=
     "def shiftedRewriteRules :=\n"
@@ -5434,14 +5541,13 @@ def assertDeclarationColonBeforeDetachedResultComment (env : Lean.Environment)
   let source :=
     "theorem declarationColonBeforeDetachedResultComment\n"
     ++ "    (argument : VeryLongArgumentTypeWithEnoughCharactersForLayoutTesting) :\n"
-    ++ "      -- Explain the result type.\n"
-    ++ "      True := by\n"
+    ++ "    -- Explain the result type.\n"
+    ++ "    True := by\n"
     ++ "  trivial\n"
   let expected :=
     "theorem declarationColonBeforeDetachedResultComment\n"
     ++ "    (argument : VeryLongArgumentTypeWithEnoughCharactersForLayoutTesting)\n"
-    ++ "    :\n"
-    ++ "      -- Explain the result type.\n"
+    ++ "    : -- Explain the result type.\n"
     ++ "      True := by\n"
     ++ "  trivial\n"
   let formatted ←
@@ -10799,6 +10905,8 @@ def runBasicFormattingTests (env : Lean.Environment) : IO Unit := do
   assertLeadingCommentsPreserved env
   assertTrailingLineCommentPreserved env
   assertCommentAfterOpeningDelimiterPreserved env
+  assertBlockCommentBoundaries env
+  assertCommentForcedParenthesizedBodyBoundary env
   assertProofIslandUsesStructuralIndent env
   assertProofIslandFitIncludesParentSuffix env
   assertQuotationIslandRetainsFittingSourceIndent env

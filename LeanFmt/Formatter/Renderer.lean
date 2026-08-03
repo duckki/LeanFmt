@@ -159,6 +159,7 @@ structure RenderState where
   pendingIndent? : Option Nat := none
   pendingCommandBoundary? : Option CommandBoundarySpacing := none
   preserveNextStandaloneCommentIndent : Bool := false
+  movePendingCommentAfterToken : Bool := false
   segmentBaseColumn : Nat := 0
   segmentIndentation : Nat := 0
   sourceLayoutBaseColumn : Nat := 0
@@ -181,6 +182,7 @@ structure WhitespaceState where
   pendingIndent? : Option Nat
   pendingCommandBoundary? : Option CommandBoundarySpacing
   preserveNextStandaloneCommentIndent : Bool
+  movePendingCommentAfterToken : Bool
 
 def RenderState.whitespaceState (state : RenderState) : WhitespaceState :=
   {
@@ -192,6 +194,7 @@ def RenderState.whitespaceState (state : RenderState) : WhitespaceState :=
     pendingIndent? := state.pendingIndent?
     pendingCommandBoundary? := state.pendingCommandBoundary?
     preserveNextStandaloneCommentIndent := state.preserveNextStandaloneCommentIndent
+    movePendingCommentAfterToken := state.movePendingCommentAfterToken
   }
 
 structure SegmentBase where
@@ -396,6 +399,21 @@ def WhitespaceState.indentForMultilineToken
   else
     desiredIndent
 
+def WhitespaceState.movePendingCommentAfterTokenIfFits
+    (state : WhitespaceState) (whitespace : String)
+    : String :=
+  if !state.movePendingCommentAfterToken then
+    whitespace
+  else
+    match SpaceRules.moveLeadingCommentAfterToken? whitespace with
+    | some moved =>
+        let firstLineWidth := (firstLineAppendWidth moved).1
+        if lineWidth state.currentLine + firstLineWidth <= state.options.lineWidth then
+          moved
+        else
+          whitespace
+    | none => whitespace
+
 def WhitespaceState.defaultWhitespace (state : WhitespaceState) (token : SyntaxTree.Token)
     (preserveLines : Bool := false)
     : String :=
@@ -427,7 +445,12 @@ def WhitespaceState.defaultWhitespace (state : WhitespaceState) (token : SyntaxT
           else
             whitespaceForPendingBoundary trivia indentation state.pendingCommandBoundary?
         else
-          whitespaceForPendingBoundary trivia indentation state.pendingCommandBoundary?
+          (if state.movePendingCommentAfterToken then
+              SpaceRules.commentTriviaForTreeBoundary trivia indentation
+            else
+              whitespaceForPendingBoundary trivia indentation
+                state.pendingCommandBoundary?)
+          |> state.movePendingCommentAfterTokenIfFits
     | none, some indent =>
         let indent := state.indentForMultilineToken token indent
         let indentation := spaces indent
@@ -550,6 +573,7 @@ def RenderState.emitToken (state : RenderState) (token : SyntaxTree.Token)
         pendingIndent? := none
         pendingCommandBoundary? := none
         preserveNextStandaloneCommentIndent := false
+        movePendingCommentAfterToken := false
     }
 
 def RenderState.withPendingIndent (state : RenderState) (indent : Nat) : RenderState :=
@@ -557,9 +581,18 @@ def RenderState.withPendingIndent (state : RenderState) (indent : Nat) : RenderS
     state with
       pendingIndent? := some indent
       pendingCommandBoundary? := none
+      movePendingCommentAfterToken := false
       tailIndentation? := none
       segmentBaseColumn := indent
       segmentIndentation := indentationLevelForColumn indent
+  }
+
+def RenderState.withCommentBoundaryIndent
+    (state : RenderState) (indent : Nat) (moveCommentAfterToken : Bool)
+    : RenderState :=
+  {
+    state.withPendingIndent indent with
+      movePendingCommentAfterToken := moveCommentAfterToken
   }
 
 def breakIndent (baseColumn baseIndentation : Nat)
@@ -725,6 +758,7 @@ def RenderState.emitOriginalTree
           lastToken? := some emission.lastToken
           pendingIndent? := none
           pendingCommandBoundary? := none
+          movePendingCommentAfterToken := false
           preserveNextStandaloneCommentIndent :=
             emission.preserveNextStandaloneCommentIndent
       }
@@ -898,6 +932,7 @@ def WhitespaceState.afterToken (state : WhitespaceState) (token : SyntaxTree.Tok
     state with
       lastToken? := some token
       pendingIndent? := none
+      movePendingCommentAfterToken := false
   }
 
 def WhitespaceState.afterFlatTreeForSuffix
@@ -1033,6 +1068,7 @@ def RenderState.firstLineOfOriginalTree (state : RenderState) (tree : SyntaxTree
             lastToken? := some lastToken
             pendingIndent? := none
             pendingCommandBoundary? := none
+            movePendingCommentAfterToken := false
         },
         stopped
       )
@@ -1054,6 +1090,7 @@ partial def renderFirstLineOfTree (state : RenderState) (tree : SyntaxTree.Tree)
               lastToken? := some token
               pendingIndent? := none
               pendingCommandBoundary? := none
+              movePendingCommentAfterToken := false
           },
           stopped
         )
@@ -1245,6 +1282,25 @@ def commentForcesBreakAt
       SpaceRules.commentForcesLineBreak originalTrivia
   | none => false
 
+def treeContainsCommentForcedBreak (source : String) (tree : SyntaxTree.Tree) : Bool :=
+  let rec loop : Option SyntaxTree.Token → List SyntaxTree.Token → Bool
+    | _, [] => false
+    | none, token :: rest => loop (some token) rest
+    | some previous, token :: rest =>
+        let trivia := SyntaxTree.sourceText source previous.span.stop token.span.start
+        SpaceRules.commentForcesLineBreak trivia || loop (some token) rest
+  loop none <| tree.tokens.toList.filter (SyntaxTree.tokenComesFromSource source)
+
+def commentTriviaBeforeTree? (state : RenderState) (tree : SyntaxTree.Tree)
+    : Option String := do
+  let left ← state.lastToken?
+  let right ← tree.firstToken?
+  let trivia := SyntaxTree.sourceText state.source left.span.stop right.span.start
+  if SpaceRules.hasCommentStart trivia then
+    some trivia
+  else
+    none
+
 def normalizeBreakPoints
     (segment : LineBreakRules.Segment)
     (breakPoints : List LineBreakRules.BreakPoint)
@@ -1416,6 +1472,7 @@ def RenderState.commitLayoutProbe (state : RenderState) (probe : LayoutProbe)
           pendingCommandBoundary? := rendered.pendingCommandBoundary?
           preserveNextStandaloneCommentIndent :=
             rendered.preserveNextStandaloneCommentIndent
+          movePendingCommentAfterToken := rendered.movePendingCommentAfterToken
       }
 
 def measureLayout
@@ -1685,6 +1742,7 @@ def FlowRenderContext.stateForForcedNestedChild?
               || commentForcesBreakAt state.source flow.segment index
               || (treeContainsMultilineOriginalEmission state.source child
                   && !childFit.flat)
+              || treeContainsCommentForcedBreak state.source child
               || (breakPoint.indentLevels == 0 && !pieceFit.flat)
               || !pieceFit.fits then
         some <| flow.withBreak state breakPoint
@@ -1844,7 +1902,8 @@ mutual
       if probe.acceptedForRule isFlow breakPoints
           && (!isFlow
               || probe.flat
-              || !segmentContainsMultilineOriginalEmission state.source segment)
+              || (!segmentContainsMultilineOriginalEmission state.source segment
+                  && !treeContainsCommentForcedBreak state.source segment.parent))
           && (!keepsPrefixWithChildFirstLine || probe.flat)
           && !hasRetainedSourceBreak then
         state.commitLayoutProbe probe
@@ -1924,6 +1983,29 @@ mutual
     let startAlignment := childRule.startAlignment childContext childSegment
     let suffixStop := suffixStop?.getD segment.stop
     let lineFitSuffix := lineFitSuffixForChild state segment index suffixStop child
+    let firstToken? := SyntaxTree.Tree.firstToken? child
+    let commentTrivia? := commentTriviaBeforeTree? state child
+    let commentForcesBreak := commentTrivia?.any SpaceRules.commentForcesLineBreak
+    let inlineCommentNeedsBreak :=
+      if state.pendingIndent?.isSome || commentForcesBreak || commentTrivia?.isNone then
+        false
+      else
+        let probe :=
+          { state with context := childContext, lineFitSuffixWidth := lineFitSuffix }
+        let (rendered, _) := renderFirstLineOfTree probe child
+        !renderedCandidateFits probe rendered
+    let state :=
+      if state.pendingIndent?.isSome
+          || (!commentForcesBreak && !inlineCommentNeedsBreak) then
+        state
+      else
+        let indent :=
+          if firstToken?.any
+              fun token => SpaceRules.isDelimiterCloserToken token.lexeme then
+            state.segmentBaseIndent
+          else
+            state.segmentBaseIndent + indentationSpaces
+        state.withCommentBoundaryIndent indent commentForcesBreak
     let state :=
       if inheritsBase || startAlignment == .none then
         state
@@ -1940,7 +2022,6 @@ mutual
         let naturalStartColumn := state.segmentStartColumn childSegment
         let alignedStartColumn := indentationPastColumn naturalStartColumn
         state.appendOutput <| spaces (alignedStartColumn - naturalStartColumn)
-    let firstToken? := SyntaxTree.Tree.firstToken? child
     let sourceLeading :=
       match state.lastToken?, firstToken? with
       | some leftToken, some firstToken =>

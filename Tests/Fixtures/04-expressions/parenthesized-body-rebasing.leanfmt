@@ -1,0 +1,15 @@
+def parenthesizedDoBody :=
+  liftCoreM do (
+  -- Preserve this comment with the parenthesized body.
+  (do
+    let value := 0
+    pure value))
+-----------------------------------------------------------------------------------------
+-- leanfmt: expected output below (DO NOT EDIT)
+-----------------------------------------------------------------------------------------
+def parenthesizedDoBody :=
+  liftCoreM do
+    ( -- Preserve this comment with the parenthesized body.
+      (do
+        let value := 0
+        pure value))

@@ -496,6 +496,9 @@ Key fields:
 - `currentLine` avoids repeatedly scanning `output` for the current line.
 - `lastToken?` lets the renderer ask space rules for inter-token whitespace.
 - `pendingIndent?` records a scheduled newline before the next emitted token.
+- The pending whitespace state can mark a comment-created tree boundary. This lets
+  the renderer move the leading comment beside the preceding token when that line
+  fits while retaining the boundary indentation for the token after the comment.
 - `segmentBaseColumn` and `segmentIndentation` are the current segment's physical and
   logical bases.
 - `sourceLayoutBaseColumn` and `outputLayoutBaseColumn` map the nearest enclosing
@@ -630,14 +633,19 @@ Rules and regroupings should preserve these cross-syntax relationships:
   application argument that starts with a delimiter followed by a line comment retains
   its argument break so the delimiter and comment do not migrate onto the preceding
   application line.
-- An intrinsically multiline comment at an ordinary rule breakpoint makes that
-  renderer boundary structural. This is independent of syntax kind: the renderer
-  applies the rule's indentation to both the intervening comment and the following
-  token. Line comments force the token after the comment onto a new line, but remain
+- An intrinsically multiline comment makes its renderer tree boundary structural even
+  when no syntax rule owns that exact source gap. This is independent of syntax kind:
+  the renderer derives indentation from the surrounding tree, shifts the complete
+  comment by the same boundary-column delta, and applies that indentation to the token
+  after the comment. A flow parent cannot flatten away this physical break.
+- Line comments force the token after the comment onto a new line, but may remain
   attached to preceding code while that complete line fits. Block comments force a
-  break only when their own text contains a newline; a one-line block comment may flow
+  break only when their own text contains a newline. A one-line block comment may flow
   inline, with its internal text preserved and only surrounding horizontal trivia
-  normalized. Syntax-specific rules do not inspect comment text or source spacing.
+  normalized; width pressure may still activate the enclosing tree's ordinary break
+  or break between the comment and its following token. Syntax-specific rules do not
+  inspect comment text or source spacing, and comments are not added to the syntax
+  tree as layout nodes.
 
 This separation lets rules say "this boundary may follow source layout" without letting
 source indentation leak into renderer state.

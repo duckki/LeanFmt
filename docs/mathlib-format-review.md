@@ -4,7 +4,46 @@ This document records the visual review of a complete Mathlib formatting run so
 the remaining layout work can be addressed without repeating the corpus review.
 It is a point-in-time work list, not part of the normative formatting style.
 
-## Current status: 2026-08-02
+## Current status: 2026-08-03
+
+### Comment-created tree boundaries after `6f705af`
+
+The working tree now treats line comments and multiline block comments as
+source trivia with intrinsic, non-removable breaks. The renderer establishes a
+generic tree boundary from that break, rebases the complete comment and its
+following token to the surrounding tree indentation, and may move the leading
+comment beside the preceding token when that complete line fits. Comments are
+not added to the syntax tree, and no syntax-specific line-break rule or new rule
+API was introduced. Single-line block comments remain inline when the complete
+tree fits; ordinary width pressure may break the enclosing tree or the boundary
+between the comment and its following token.
+
+The complete local gate passed, including build, tests, development linter,
+fixture regeneration and dry check, self-formatting, code preservation,
+actionable overflow, missing-rule, fallback, idempotency, and the final
+`git diff --check`. A fresh targeted validation at Mathlib `v4.32.0` passed for
+`Mathlib/Algebra/Module/Projective.lean`, and the formatted module rebuilt
+successfully. The detached result comment now formats as
+`: -- then P is projective.` with the result type indented below the comment.
+The build reported only the accepted long proof line at line 156. A full
+Mathlib rerun has not yet been performed for this working-tree change.
+
+Fresh combined validation also passed for `graphql-lean` and
+`quantum-computing-lean` without a `--jobs` override. GraphQL's optional cache
+was unavailable; its uncached initial build took 71 seconds, formatter batches
+took 13, 13, and 7 seconds, and its post-format build took 27 seconds. Five
+files changed by 36 insertions and 18 deletions, solely to move multiline
+parenthesized proof arguments onto their ordinary application continuation;
+the proof bodies and token sequence were unchanged. Quantum's cache, initial
+build, formatter batch, and post-format build took 15, 47, 18, and 3 seconds,
+and its formatted tree had no diff. Both projects reported zero code-change,
+overflow, missing-rule, fallback, and idempotency exceptions.
+
+The combined run took 296 seconds, 39 seconds above the prior 257-second
+baseline. Formatter work increased only from 30 to 33 seconds for GraphQL and
+from 16 to 18 seconds for Quantum. The remaining increase was build, clone, or
+local Lake-package setup variance, with no increasing batch trend, worker
+failure, or memory pressure.
 
 ### Working-tree validation after `61d472a`
 
@@ -493,14 +532,14 @@ receive one child level.
 
 Status: resolved.
 
-The declaration type separator may be emitted on a line by itself when a
-comment precedes the result type:
+An intrinsic comment break between the declaration type separator and result
+type establishes the result continuation. When the complete comment line fits,
+the renderer moves the detached comment beside the separator:
 
 ```lean
     (h ...)
-    :
-    -- then `P` is projective.
-    Projective R P := by
+    : -- then `P` is projective.
+      Projective R P := by
 ```
 
 Representative cases:
@@ -510,10 +549,9 @@ Representative cases:
 - `Mathlib/Logic/Function/Basic.lean:1252`
 - `Mathlib/RepresentationTheory/Rep/Basic.lean:789`
 
-The separator-only line is the correct structural formatting. The declaration
-colon retains its ordinary breakpoint, and the following comment and result
-type use the result indentation. An author who wants the comment closer to the
-separator can write it on the colon's line as `: -- comment`.
+The declaration colon retains its ordinary breakpoint. Comment trivia owns its
+physical newline, and the renderer applies the result indentation to the token
+after it without requiring a comment-sensitive declaration rule.
 
 ### 6. Custom declaration modifiers detach
 

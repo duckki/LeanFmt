@@ -513,9 +513,10 @@ def lookupVariableValue? (variableValues : VariableValues) (name : Name)
   body
 ```
 
-An author may attach a result comment to the declaration colon. The ordinary
-signature break may move the complete `: -- comment` suffix to a continuation
-line, but the formatter does not split the colon from that comment:
+An author may attach a result comment to the declaration colon. A detached line
+comment between the colon and result type moves beside the colon when the
+complete `: -- comment` line fits. The comment's own newline then establishes
+the indented result continuation:
 
 ```lean
 theorem projective_of_lifting_property (h : LiftingProperty P)
@@ -523,6 +524,13 @@ theorem projective_of_lifting_property (h : LiftingProperty P)
       Projective R P := by
   ...
 ```
+
+Comments immediately inside a delimiter follow the same boundary behavior. A
+line comment or multiline block comment may move beside the opening delimiter;
+its intrinsic newline establishes the body indentation. A single-line block
+comment remains ordinary inline trivia while the complete tree fits. Under
+width pressure, the renderer may use the enclosing tree's ordinary break and,
+when needed, break between the comment and its following token.
 
 Long function return types break before arrows:
 
