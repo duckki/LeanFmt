@@ -555,11 +555,13 @@ the current line and pending boundary state, then records two facts from that on
   layout owned by an opaque or already-broken nested child without activating this
   segment's own break points.
 
-Ordinary indented flow may retain the fitting first line of such a nested layout, as in
-`f (by` followed by a multiline proof. A zero-indentation flow boundary separates peer
-pieces: if the following piece is not flat, the renderer takes the boundary. This is why
-a multiline command moves below its annotation without classifying every multiline
-application as flat.
+When a flow segment contains a multiline protected child, the complete segment is not
+accepted as flat merely because the preserved lines fit. Computed flow then takes an
+available boundary before that child, so a parenthesized multiline proof argument moves
+below the application prefix. A directly attached body with no boundary before its
+introducer remains attached. Zero-indentation flow boundaries apply the same invariant to
+peer pieces, which is why a multiline command moves below its annotation without
+classifying every multiline application as flat.
 
 This separation keeps line-width and nested-layout decisions in the renderer. Rules
 return only break opportunities and do not need access to either fact.
@@ -820,6 +822,9 @@ structurally when doing so removes an avoidable overflow. Each structural path r
 the rule's breakpoints because protected-source emission intentionally does not prepare
 them. This lets established collection, field, and nested-expression rules establish a
 parse-safe block base without adding syntax decisions to original-source emission.
+For flow rules, a multiline protected child likewise prevents acceptance of the whole
+segment's fitting multiline probe. When the rule exposes a boundary before that child,
+computed flow takes it and renders the complete child from the selected continuation base.
 
 When a multiline proof or
 quotation begins inline, its later source lines use the introducer's source-to-output

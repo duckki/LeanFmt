@@ -2902,6 +2902,35 @@ def assertMovedInlineProofBodiesRemainParseable (env : Lean.Environment) : IO Un
   assertEq "inline multiline declaration proof is idempotent"
     declarationResult.formatted declarationAgain
 
+def assertMultilineProtectedApplicationArgumentsBreakFromParent (env : Lean.Environment)
+    : IO Unit := do
+  let source :=
+    "def protectedProofArguments :=\n"
+    ++ "  applyArguments firstArgument (by\n"
+    ++ "      exact firstProof) (by\n"
+    ++ "      exact secondProof)\n"
+  let expected :=
+    "def protectedProofArguments :=\n"
+    ++ "  applyArguments firstArgument\n"
+    ++ "    (by\n"
+    ++ "      exact firstProof)\n"
+    ++ "    (by\n"
+    ++ "      exact secondProof)\n"
+  let result ←
+    Formatter.formatSourceWithEnvDetailed env source
+      "multiline-protected-application-arguments.lean" { lineWidth := 100 }
+  assertTrue "multiline protected application arguments do not fall back"
+    (!result.fellBack)
+  assertEq "multiline protected application arguments use their argument base"
+    expected result.formatted
+  assertTrue "multiline protected application arguments preserve code"
+    (← codePreservedIgnoringWhitespace env source result.formatted)
+  let formattedAgain ←
+    Formatter.formatSourceWithEnv env result.formatted
+      "multiline-protected-application-arguments-formatted.lean" { lineWidth := 100 }
+  assertEq "multiline protected application arguments are idempotent"
+    result.formatted formattedAgain
+
 def assertProofApplicationFollowsMovedInlineAnchor (env : Lean.Environment)
     : IO Unit := do
   let source :=
@@ -3817,9 +3846,11 @@ def assertDeclarationValueWithNestedProofBreaksAfterAssignment (env : Lean.Envir
     ++ "          window := { schema := schema, selectionSet := left ++ [selection] },\n"
     ++ "          initial := .object []\n"
     ++ "        } :=\n"
-    ++ "  stateEquivalent_of_append_single_selection_noop hleft (by\n"
+    ++ "  stateEquivalent_of_append_single_selection_noop hleft\n"
+    ++ "    (by\n"
     ++ "      intro fields\n"
-    ++ "      exact firstProof) (by\n"
+    ++ "      exact firstProof)\n"
+    ++ "    (by\n"
     ++ "      simp [secondProof])\n"
   let formatted ←
     Formatter.formatSourceWithEnv env source
@@ -10619,6 +10650,7 @@ def runBasicFormattingTests (env : Lean.Environment) : IO Unit := do
   assertMovedProofBodiesKeepRelativeIndentation env
   assertMovedChildrenUseLogicalLayoutBases env
   assertMovedInlineProofBodiesRemainParseable env
+  assertMultilineProtectedApplicationArgumentsBreakFromParent env
   assertProofApplicationFollowsMovedInlineAnchor env
   assertNestedProofLayoutFollowsPendingIndent env
   assertMovedProofLayoutIslandKeepsContinuationIndentation env

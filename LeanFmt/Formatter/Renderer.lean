@@ -1697,6 +1697,7 @@ def FlowRenderContext.withBreak
 
 def FlowRenderContext.stateForForcedNestedChild?
     (flow : FlowRenderContext) (state : RenderState) (index : Nat)
+    (child : SyntaxTree.Tree)
     (breakAfterPreviousChild : Bool)
     (childFit : LayoutProbe) (pieceFit : LayoutProbe)
     (keepPrefixWithChildFirstLine : Bool)
@@ -1716,6 +1717,8 @@ def FlowRenderContext.stateForForcedNestedChild?
               || !childFit.fits
               || flow.hasSourceBreakAt index
               || commentForcesBreakAt state.source flow.segment index
+              || (treeContainsMultilineOriginalEmission state.source child
+                  && !childFit.flat)
               || (breakPoint.indentLevels == 0 && !pieceFit.flat)
               || !pieceFit.fits then
         some <| flow.withBreak state breakPoint
@@ -1873,6 +1876,9 @@ mutual
         segment.indexes.any
           fun index => rule.keepPrefixWithChildFirstLine state.context segment index
       if probe.acceptedForRule isFlow breakPoints
+          && (!isFlow
+              || probe.flat
+              || !segmentContainsMultilineOriginalEmission state.source segment)
           && (!keepsPrefixWithChildFirstLine || probe.flat)
           && !hasRetainedSourceBreak then
         state.commitLayoutProbe probe
@@ -2330,7 +2336,7 @@ mutual
                 (some (flow.nextBreakIndex index))
             renderFlowChildren rendered flow (index + 1)
               (renderedTreeIsMultiline before rendered child)
-          match flow.stateForForcedNestedChild? state index breakAfterPreviousChild
+          match flow.stateForForcedNestedChild? state index child breakAfterPreviousChild
                   childFit pieceFit keepPrefixWithChildFirstLine with
           | some state => renderNestedAndContinue state
           | none =>

@@ -56,6 +56,24 @@ build took 2 seconds. The combined run took 231 seconds. Both formatted
 checkouts were byte-clean, and independent diff reviews found no formatting
 regression.
 
+The current revision also resolves parenthesized multiline proof arguments. The
+syntax tree already kept each `by` shell structural and protected only its proof
+body; the missing invariant was in flow rendering. A fitting multiline
+original-layout child no longer makes its complete flow segment count as flat,
+and an existing boundary before that child is taken. Directly attached bodies
+with no such boundary remain attached. This adds no rule API or syntax-specific
+renderer check.
+
+Fresh validation passed without a `--jobs` override. GraphQL's initial build
+took 56 seconds, its formatter batches took 11, 11, and 8 seconds, and its
+post-format build took 24 seconds. Five files changed to put parenthesized proof
+arguments on separate continuation lines; independent review found no logical
+formatting error. Quantum's cache, initial build, formatter, and post-format
+build took 16, 41, 17, and 2 seconds respectively and produced no diff. The
+combined run took 257 seconds. The width-100 Mathlib representative passed
+preservation and idempotency in 7 seconds, then its 1,331-job target graph
+replayed and built successfully in 5 seconds with only accepted lints.
+
 ### Current families
 
 | Family | Representative evidence | Intended owner | Risk | Status |
@@ -63,7 +81,8 @@ regression.
 | A multiline syntax comment moved from inline to block layout rebases only its opening line | `Mathlib/Tactic/NormNum/Pow.lean:282` | Original-tree source-slice planning | Medium | Resolved by `8ca47da` |
 | A detached `calc` keeps its steps at their old source base | `Mathlib/Data/List/Perm/Basic.lean:219` | Syntax grouping and original-tree planning | High | Resolved by `9d6eada` |
 | A moved structural, multi-token child can recover an obsolete source column | `Mathlib/Analysis/SpecialFunctions/Integrability/LogMeromorphic.lean:186` | Renderer structural-floor invariant | Medium | Resolved by `e7ba1a3` |
-| A moved `by`, `fun`, tactic quotation, or other protected body does not follow its introducer | `Mathlib/Analysis/BoxIntegral/Partition/Split.lean:158`; `Mathlib/RingTheory/WittVector/Basic.lean:85` | Syntax grouping and original-tree planning | High | Open |
+| Parenthesized multiline proof arguments remain attached to an application prefix | `Mathlib/Analysis/BoxIntegral/Partition/Split.lean:155` | Generic flow fit and protected-child boundaries | High | Resolved |
+| A moved `fun`, tactic quotation, or protected body without a parent boundary does not follow its introducer | `Mathlib/RingTheory/WittVector/Basic.lean:85` | Syntax grouping and original-tree planning | High | Open |
 | A standalone `<\|` does not establish the base of its protected operand | `Mathlib/Topology/Sheaves/CommRingCat.lean:311` | Line-break rules and original-tree planning | High | Open |
 | Application siblings or declaration-field bodies inherit a preceding token column | `Mathlib/Geometry/Manifold/MFDeriv/SpecificFunctions.lean:277`; `Mathlib/Algebra/Order/Monoid/Defs.lean:28` | Syntax grouping and line-break rules | High | Open |
 | A line comment after a standalone declaration `:` consumes the pending result indentation | `Mathlib/Algebra/Module/Projective.lean:281` | Generic comment-boundary handling | Medium | Open |
@@ -76,14 +95,14 @@ shape is correct.
 
 ### Proposed clean next steps
 
-1. **Regroup protected introducer shells before changing their plans.** Keep
-   `by`, `fun`, tactic quotation, and low-priority infix shells structural, and
-   preserve only the bodies that actually require source layout. The existing
-   shell rule should continue to own the leading boundary. This is the cleanest
-   route to one destination base without token checks in the renderer or a new
-   rule API. It is high risk because changing the current island boundary also
-   changes parent fit probes, so begin with one syntax shape and its focused
-   Mathlib representative.
+1. **Continue protected shells only where no parent boundary exists.** The
+   parenthesized `by` case needed no regrouping because its shell/body ownership
+   was already correct and application flow already exposed the required
+   boundary. For tactic quotation and remaining protected bodies, first verify
+   whether the shell is structural and whether an ordinary parent boundary is
+   available. Regroup only the narrowest body that requires preservation; do not
+   add token checks to the renderer or a new rule API. This remains high risk
+   because changing an island boundary can also change parent fit probes.
 2. **Normalize one peer continuation group in the syntax tree.** Start with the
    application/declaration-field staircase representatives. Peers should expose
    one continuation base to existing rules instead of inheriting the preceding
