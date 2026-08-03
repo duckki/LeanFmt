@@ -380,40 +380,6 @@ def whitespaceForPendingBoundary
     | some .lineBreak => "\n" ++ indentation
     | some .blankLine => "\n\n" ++ indentation
 
-def WhitespaceState.moveOverflowingTrailingLineComment
-    (state : WhitespaceState) (token : SyntaxTree.Token) (whitespace : String)
-    : String :=
-  match (SpaceRules.normalizeLineEndings whitespace).splitOn "\n" with
-  | firstLine :: rest =>
-      let comment := SpaceRules.stripLeadingHorizontalWhitespace firstLine
-      if state.currentLine.isEmpty
-          || rest.isEmpty
-          || !comment.startsWith "--"
-          || state.currentLine.length + firstLine.length <= state.options.lineWidth
-          || state.options.lineWidth < comment.length then
-        whitespace
-      else
-        let desiredIndent := state.pendingIndent?.getD state.currentIndent
-        let sourceIndent? :=
-          state.lastToken?.map
-            fun left =>
-              let trivia :=
-                SyntaxTree.sourceText state.source left.span.stop token.span.start
-              match (SpaceRules.normalizeLineEndings trivia).splitOn "\n" with
-              | sourceFirstLine :: _ =>
-                  state.sourceMap.columnAt left.span.stop
-                  + sourceFirstLine.length
-                  - (SpaceRules.stripLeadingHorizontalWhitespace sourceFirstLine).length
-              | [] => desiredIndent
-        let maximumIndent := state.options.lineWidth - comment.length
-        let commentIndent :=
-          if desiredIndent <= maximumIndent then
-            desiredIndent
-          else
-            min maximumIndent (sourceIndent?.getD maximumIndent)
-        "\n" ++ spaces commentIndent ++ comment ++ "\n" ++ String.intercalate "\n" rest
-  | [] => whitespace
-
 def WhitespaceState.indentForMultilineToken
     (state : WhitespaceState) (token : SyntaxTree.Token) (desiredIndent : Nat)
     : Nat :=
@@ -474,7 +440,7 @@ def WhitespaceState.defaultWhitespace (state : WhitespaceState) (token : SyntaxT
           ""
     | some left, none =>
         SpaceRules.interTokenWhitespace state.source left token preserveLines
-  state.moveOverflowingTrailingLineComment token whitespace
+  whitespace
 
 def RenderState.defaultWhitespace (state : RenderState) (token : SyntaxTree.Token)
     (preserveLines : Bool := false)

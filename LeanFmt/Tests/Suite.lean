@@ -1356,6 +1356,20 @@ def assertTrailingLineCommentPreserved (env : Lean.Environment) : IO Unit := do
   let source := "def answer : Nat := 0 -- trailing comment\n"
   let formatted ← Formatter.formatSourceWithEnv env source "trailing-line-comment.lean"
   assertEq "trailing line comment preserved" source formatted
+  let longSource :=
+    "def answer : Nat := 0 -- an authored trailing comment remains attached even when it is long\n"
+    ++ "\n"
+    ++ "def next : Nat := 1\n"
+  let longExpected :=
+    "def answer : Nat :=\n"
+    ++ "  0 -- an authored trailing comment remains attached even when it is long\n"
+    ++ "\n"
+    ++ "def next : Nat :=\n"
+    ++ "  1\n"
+  let longFormatted ←
+    Formatter.formatSourceWithEnv env longSource "long-trailing-line-comment.lean"
+      { lineWidth := 50 }
+  assertEq "overflowing trailing line comment remains attached" longExpected longFormatted
 
 def assertCommentAfterOpeningDelimiterPreserved (env : Lean.Environment) : IO Unit := do
   let source :=

@@ -241,6 +241,11 @@ A trailing line comment stays on its line:
 def answer : Nat := 0 -- trailing comment
 ```
 
+An authored trailing line comment remains attached when the line is longer than
+the configured width. The formatter may break the surrounding construct at its
+ordinary structural boundaries, but it does not turn the comment into a
+standalone comment.
+
 Comment contents are not wrapped or rewritten. Module and declaration documentation
 comments retain their line shape and their exact internal whitespace relative to the
 opening delimiter.
