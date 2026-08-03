@@ -2006,7 +2006,7 @@ mutual
                       else
                         desiredIndent
                     let fitsAt column :=
-                      (emitOriginal || minimumRecoveryColumn <= column)
+                      minimumRecoveryColumn <= column
                       && column + firstLineWidth <= state.options.lineWidth
                     match renderedParentRelativeColumn? with
                     | some renderedParentRelativeColumn =>

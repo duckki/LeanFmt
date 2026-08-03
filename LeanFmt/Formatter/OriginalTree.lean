@@ -77,6 +77,22 @@ def sourceContinuationIndent? (text : String) : Option Nat :=
           | none => some indentation)
       none
 
+private def treeContinuationIndent?
+    (sourceMap : SyntaxTree.SourcePositionMap) (tree : SyntaxTree.Tree)
+    : Option Nat := do
+  let firstToken ← tree.firstToken?
+  let firstLine := sourceMap.lineNumberAt firstToken.span.start
+  tree.tokens.foldl
+    (fun minimum? token =>
+      if firstLine < sourceMap.lineNumberAt token.span.start then
+        let column := sourceMap.columnAt token.span.start
+        match minimum? with
+        | some minimum => some (min minimum column)
+        | none => some column
+      else
+        minimum?)
+    none
+
 private def rebaseMultilineSourceSlice (targetColumn : Nat) (text : String) : String :=
   match (SpaceRules.normalizeLineEndings text).splitOn "\n" with
   | [] | [_] => text
@@ -253,23 +269,35 @@ private def isBatteriesLibraryNoteSyntaxTree : SyntaxTree.Tree → Bool
       (SyntaxTree.nodeKindName kind).startsWith "Batteries.Util.LibraryNote."
   | _ => false
 
-private def sourceBreakBeforeLexeme (tree : SyntaxTree.Tree) (lexeme : String) : Bool :=
-  let rec loop (started sawBreak : Bool) : List SyntaxTree.Token → Bool
-    | [] => false
-    | token :: rest =>
-        if token.lexeme == lexeme then
-          sawBreak
-        else
-          loop true
-            (sawBreak || (started && SpaceRules.hasLineStructure token.leading.text))
-            rest
-  loop false false tree.tokens.toList
+private def macroPatternHasLineStructure : SyntaxTree.Tree → Bool
+  | .node (.raw `Lean.Parser.Command.macro) children =>
+      match children.findIdx?
+              fun child => LineBreakRules.treeFirstLexeme? child == some "macro",
+            children.findIdx?
+              fun child =>
+                match child with
+                | .node (.raw `Lean.Parser.Command.macroTail) _ => true
+                | _ => false with
+      | some macroIndex, some tailIndex =>
+          let tokens :=
+            List.range' (macroIndex + 1) (tailIndex - (macroIndex + 1))
+            |>.flatMap
+                fun index =>
+                  match children[index]? with
+                  | some child => child.tokens.toList
+                  | none => []
+          (tokens.drop 1).any
+            (fun token => SpaceRules.hasLineStructure token.leading.text)
+          || tokens.dropLast.any
+              fun token => SpaceRules.hasLineStructure token.trailing.text
+      | _, _ => false
+  | _ => false
 
 private def isLayoutSensitiveCommand : SyntaxTree.Tree → Bool
   | .node (.raw `Lean.Parser.Command.syntax) _ => true
   | .node (.raw `Lean.Parser.Command.syntaxAbbrev) _ => true
   | tree@(.node (.raw `Lean.Parser.Command.macro) _) =>
-      sourceBreakBeforeLexeme tree "=>"
+      macroPatternHasLineStructure tree
   | .node (.raw `Lean.Parser.Command.macro_rules) _ => true
   | .node (.raw `Lean.Parser.Command.elab) _ => true
   | .node (.raw `Lean.Parser.Command.elab_rules) _ => true
@@ -516,7 +544,12 @@ def LayoutIslandKind.prefersParentRelativeColumn : LayoutIslandKind → Bool
   | _ => false
 
 def LayoutIslandKind.hasUnbreakableLineLayout : LayoutIslandKind → Bool
-  | .proof | .proofLayout | .calc | .proofWidgetsJsx => true
+  | .proof
+  | .proofLayout
+  | .calc
+  | .quotationLayout
+  | .quotation
+  | .proofWidgetsJsx => true
   | _ => false
 
 def LayoutIslandKind.isProof : LayoutIslandKind → Bool
@@ -524,7 +557,7 @@ def LayoutIslandKind.isProof : LayoutIslandKind → Bool
   | _ => false
 
 def LayoutIslandKind.isQuotation : LayoutIslandKind → Bool
-  | .quotation => true
+  | .quotationLayout | .quotation => true
   | _ => false
 
 def LayoutIslandKind.isProofLayout : LayoutIslandKind → Bool
@@ -536,13 +569,18 @@ def LayoutIslandKind.isCalc : LayoutIslandKind → Bool
   | _ => false
 
 def LayoutIslandKind.retainsRelativeLayout : LayoutIslandKind → Bool
-  | .proof | .proofWidgetsJsx | .quotation | .layoutSensitiveCommand => true
+  | .proof
+  | .quotationLayout
+  | .quotation
+  | .proofWidgetsJsx
+  | .layoutSensitiveCommand => true
   | _ => false
 
 def LayoutIslandKind.usesPendingIndent : LayoutIslandKind → Bool
   | .proof
   | .proofLemma
   | .proofWidgetsJsx
+  | .quotationLayout
   | .quotation
   | .layoutSensitiveCommand
   | .syntaxComment => true
@@ -631,6 +669,10 @@ private def emitRebased? (request : EmissionRequest) (tree : SyntaxTree.Tree)
           request.pendingLeadingWhitespace?.getD originalLeading
         else
           originalLeading)
+  let quotationStartsOnLine :=
+    quotation
+    && (currentLineAfterAppend request.currentLine leading).all
+        SpaceRules.isHorizontalWhitespace
   let leadingColumn := lineWidth <| currentLineAfterAppend request.currentLine leading
   let sourceText :=
     SyntaxTree.sourceText request.source firstToken.span.start lastToken.span.stop
@@ -648,13 +690,13 @@ private def emitRebased? (request : EmissionRequest) (tree : SyntaxTree.Tree)
   let inlineMultilineLayoutIsland :=
     retainsInlineRelativeLayout
     && hasLineBreakTrivia
-    && (!originalLeadingHasLineStructure || proofLayout)
+    && (!originalLeadingHasLineStructure || proofLayout || quotationStartsOnLine)
     && !detachedInlineProofBody
   let inlineContinuationColumns? :=
     if !inlineMultilineLayoutIsland then
       none
     else
-      match sourceContinuationIndent? sourceText, request.lastToken? with
+      match treeContinuationIndent? request.sourceMap tree, request.lastToken? with
       | some sourceIndent, some leftToken =>
           let sourceAnchor := request.sourceMap.columnAt leftToken.span.start
           let outputAnchor := lineWidth request.currentLine - leftToken.lexeme.length
@@ -670,6 +712,8 @@ private def emitRebased? (request : EmissionRequest) (tree : SyntaxTree.Tree)
               else
                 request.currentIndent + indentationSpaces
             else if calcLayout then
+              (leadingColumn / indentationSpaces + 1) * indentationSpaces
+            else if quotationStartsOnLine then
               (leadingColumn / indentationSpaces + 1) * indentationSpaces
             else if usesPendingIndent then
               leadingColumn
@@ -693,6 +737,8 @@ private def emitRebased? (request : EmissionRequest) (tree : SyntaxTree.Tree)
     match inlineContinuationColumns? with
     | some (sourceIndent, targetIndent) =>
         if proofLayout && request.respectPendingIndent then
+          some (sourceIndent, targetIndent)
+        else if quotationStartsOnLine then
           some (sourceIndent, targetIndent)
         else if proofLayout || calcLayout || quotation then
           some
@@ -746,7 +792,7 @@ private def emitRebased? (request : EmissionRequest) (tree : SyntaxTree.Tree)
     else
       targetColumn?
   let targetColumn? :=
-    if quotation && !inlineMultilineLayoutIsland then
+    if quotation && !quotationStartsOnLine && !inlineMultilineLayoutIsland then
       targetColumn?.map
         fun targetColumn =>
           fittingTargetColumn request.source request.sourceMap tree sourceText
@@ -777,14 +823,14 @@ private def emitRebased? (request : EmissionRequest) (tree : SyntaxTree.Tree)
     | some continuationColumns, none => some continuationColumns
     | none, some targetColumn =>
         if calcLayout then
-          (sourceContinuationIndent? sourceText).map
+          (treeContinuationIndent? request.sourceMap tree).map
             fun sourceIndent =>
               (sourceIndent, (targetColumn / indentationSpaces + 1) * indentationSpaces)
         else
           some (sourceColumn, targetColumn)
     | none, none =>
         if calcLayout then
-          (sourceContinuationIndent? sourceText).map
+          (treeContinuationIndent? request.sourceMap tree).map
             fun sourceIndent =>
               (sourceIndent, (leadingColumn / indentationSpaces + 1) * indentationSpaces)
         else

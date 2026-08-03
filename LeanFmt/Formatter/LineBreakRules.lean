@@ -3002,8 +3002,10 @@ def notationRule : LineBreakRule :=
   {
     name := "notation"
     useExistingBreaks := fun _ _ => true
-    flow := fun _ _ => true
-    inheritBase := fun _ _ => true
+    flow :=
+      fun _ segment => segment.rawKind? != some `Lean.Parser.Command.macroTail
+    inheritBase :=
+      fun _ segment => segment.rawKind? != some `Lean.Parser.Command.macroTail
     breakPoints := notationBreaks
   }
 
@@ -3554,7 +3556,7 @@ def ruleFor : SyntaxTree.Tree → Option LineBreakRule
   | .node (.raw `Lean.Option.registerOption) _ => some declarationValueRule
   | .node (.raw `Lean.Parser.Command.namedName) _ => some defaultRule
   | .node (.raw `Lean.Parser.Command.macroArg) _ => some defaultRule
-  | .node (.raw `Lean.Parser.Command.macroTail) _ => some defaultRule
+  | .node (.raw `Lean.Parser.Command.macroTail) _ => some notationRule
   | .node (.raw `Lean.Parser.Command.macroRhs) _ => some defaultRule
   | .node (.raw `Lean.Parser.Command.attribute) _ => some commandAttributeRule
   | .node (.raw `Mathlib.Linter.UnusedTactic.«command#allow_unused_tactic!___») _ =>

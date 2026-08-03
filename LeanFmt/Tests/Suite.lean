@@ -218,8 +218,8 @@ def assertTacticQuotationAntiquotationPreserved (env : Lean.Environment) : IO Un
     "scoped macro (name := transfer_rw) \"transfer_rw\"\n"
     ++ "  : tactic =>\n"
     ++ "    `(tactic|\n"
-    ++ "    (repeat first | rw [← to_nat_inj] | rw [← lt_to_nat] | rw [← le_to_nat]\n"
-    ++ "     repeat first | rw [add_to_nat] | rw [mul_to_nat] | rw [cast_one] | rw [cast_zero]))\n"
+    ++ "      (repeat first | rw [← to_nat_inj] | rw [← lt_to_nat] | rw [← le_to_nat]\n"
+    ++ "       repeat first | rw [add_to_nat] | rw [mul_to_nat] | rw [cast_one] | rw [cast_zero]))\n"
   let inlineMultilineResult ←
     Formatter.formatSourceWithEnvDetailed env inlineMultilineSource
       "moved-inline-multiline-quotation.lean"
@@ -1444,15 +1444,27 @@ def assertQuotationIslandRetainsFittingSourceIndent (env : Lean.Environment)
   let expected :=
     "local macro \"map_simp\"\n"
     ++ "  : tactic =>\n"
-    ++ "  `(tactic| simp only [map_ofNat, map_neg, map_add, map_sub, map_mul, map_pow, map_div₀,\n"
-    ++ "    Polynomial.map_ofNat, map_C, map_X, Polynomial.map_neg, Polynomial.map_add, Polynomial.map_sub,\n"
-    ++ "    Polynomial.map_mul, Polynomial.map_pow])\n"
+    ++ "    `(tactic| simp only [map_ofNat, map_neg, map_add, map_sub, map_mul, map_pow, map_div₀,\n"
+    ++ "      Polynomial.map_ofNat, map_C, map_X, Polynomial.map_neg, Polynomial.map_add, Polynomial.map_sub,\n"
+    ++ "      Polynomial.map_mul, Polynomial.map_pow])\n"
   let formatted ←
     Formatter.formatSourceWithEnv env source "fitting-quotation-island-indent.lean"
       { lineWidth := 100 }
-  assertEq "quotation island keeps a uniform fitting source indent" expected formatted
-  assertTrue "quotation island source-indent fallback fits"
-    (Formatter.linesFit formatted 100)
+  assertEq "quotation island keeps its structural indent" expected formatted
+  assertTrue "quotation island accepts source overflow at its structural indent"
+    (!Formatter.linesFit formatted 100)
+  let sourceModule ←
+    SyntaxTree.parseModuleStringWithEnv env source
+      "fitting-quotation-overflow-source.lean"
+  let formattedModule ←
+    SyntaxTree.parseModuleStringWithEnv env formatted "moved-quotation-overflow.lean"
+  assertTrue "structurally moved quotation layout does not report actionable overflow"
+    (!(Formatter.Diagnostics.formattingExceptions sourceModule formattedModule
+        { lineWidth := 100 }).any
+        fun exception =>
+          match exception with
+          | .lineOverflow _ => true
+          | _ => false)
 
 def assertMultitokenChildKeepsStructuralBase (env : Lean.Environment) : IO Unit := do
   let source :=

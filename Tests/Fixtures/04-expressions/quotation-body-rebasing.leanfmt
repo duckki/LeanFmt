@@ -1,0 +1,88 @@
+import Lean.Elab.Tactic
+
+macro "quotation_body_with_a_long_enough_name" : tactic => `(tactic| (
+  induction n with
+  | zero => simp
+  | succ n ih => simp [ih]))
+
+macro "set_option_quotation_body_with_a_long_enough_name" : tactic =>
+  set_option hygiene false in `(tactic| (
+  induction n with
+  | zero => simp
+  | succ n ih => simp [ih]))
+
+macro "already_moved_quotation_body_with_a_long_enough_name"
+  : tactic =>
+    `(tactic| (
+    induction n with
+    | zero => simp
+    | succ n ih => simp [ih]))
+
+macro "already_moved_set_option_quotation_body_with_a_long_enough_name"
+  : tactic =>
+    set_option hygiene false in `(tactic| (
+  induction n with
+  | zero => simp
+  | succ n ih => simp [ih]))
+
+syntax "quoted_message" str : tactic
+
+macro "quotation_with_multiline_string_content" : tactic =>
+  `(tactic| quoted_message
+  "\nThe tactic failed to close the goal.
+  \nThe indentation on this line is part of the string token.")
+
+local macro "eval_simp" : tactic =>
+  `(tactic| simp only [eval_C, eval_X, eval_neg, eval_add, eval_sub, eval_mul, eval_pow, evalEval])
+
+local macro "already_moved_eval_simp"
+  : tactic =>
+  `(tactic| simp only [eval_C, eval_X, eval_neg, eval_add, eval_sub, eval_mul, eval_pow, evalEval])
+-----------------------------------------------------------------------------------------
+-- leanfmt: expected output below (DO NOT EDIT)
+-----------------------------------------------------------------------------------------
+import Lean.Elab.Tactic
+
+macro "quotation_body_with_a_long_enough_name"
+  : tactic =>
+    `(tactic| (
+      induction n with
+      | zero => simp
+      | succ n ih => simp [ih]))
+
+macro "set_option_quotation_body_with_a_long_enough_name"
+  : tactic =>
+    set_option hygiene false in `(tactic| (
+      induction n with
+      | zero => simp
+      | succ n ih => simp [ih]))
+
+macro "already_moved_quotation_body_with_a_long_enough_name"
+  : tactic =>
+    `(tactic| (
+      induction n with
+      | zero => simp
+      | succ n ih => simp [ih]))
+
+macro "already_moved_set_option_quotation_body_with_a_long_enough_name"
+  : tactic =>
+    set_option hygiene false in `(tactic| (
+      induction n with
+      | zero => simp
+      | succ n ih => simp [ih]))
+
+syntax "quoted_message" str : tactic
+
+macro "quotation_with_multiline_string_content"
+  : tactic =>
+    `(tactic| quoted_message
+      "\nThe tactic failed to close the goal.
+  \nThe indentation on this line is part of the string token.")
+
+local macro "eval_simp"
+  : tactic =>
+    `(tactic| simp only [eval_C, eval_X, eval_neg, eval_add, eval_sub, eval_mul, eval_pow, evalEval])
+
+local macro "already_moved_eval_simp"
+  : tactic =>
+    `(tactic| simp only [eval_C, eval_X, eval_neg, eval_add, eval_sub, eval_mul, eval_pow, evalEval])
