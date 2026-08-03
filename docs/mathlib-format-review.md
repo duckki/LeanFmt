@@ -6,14 +6,14 @@ It is a point-in-time work list, not part of the normative formatting style.
 
 ## Current status: 2026-08-02
 
-The formatter at leanfmt commit `3f3bd05` was validated against Mathlib
-`v4.32.0`. The final invocation resumed at batch 75 after the preceding batches
-had passed. Batches 75 through 83 took 31 to 42 seconds each and passed code
-preservation, missing-rule, actionable-overflow, fallback, and idempotency
-checks. Combined with the persisted state for batches 1 through 74, all 83
-formatter batches passed. The run used the Lake cache, selected only tracked
-`.lean` files under `Mathlib`, and did not pass `--jobs`; the formatter used its
-default automatic worker count.
+The complete Mathlib validation baseline used leanfmt commit `3f3bd05` against
+Mathlib `v4.32.0`. The final invocation resumed at batch 75 after the preceding
+batches had passed. Batches 75 through 83 took 31 to 42 seconds each and passed
+code preservation, missing-rule, actionable-overflow, fallback, and
+idempotency checks. Combined with the persisted state for batches 1 through 74,
+all 83 formatter batches passed. The run used the Lake cache, selected only
+tracked `.lean` files under `Mathlib`, and did not pass `--jobs`; the formatter
+used its default automatic worker count.
 
 The complete post-format build passed all 8,654 jobs in 3,867 seconds. The
 resumed validation took 4,203 seconds overall. There were no formatter
@@ -31,73 +31,79 @@ describe current formatter behavior rather than output left by an earlier
 batch. The corpus is build-clean and diagnostics-clean, but it is not yet
 visually release-ready.
 
-The focused fixes completed before this run remain useful. In particular,
-`b5ab280` makes syntax-owned comments atomic source slices inside larger
-original-layout regions, and `3f3bd05` accepts unchanged syntax-comment
-overflow. The latest review shows that source-slice rebasing still lacks a
-general continuation-base contract and that several broader parent/child layout
-ownership cases remain.
+Three general fixes from this review are now implemented independently. Commit
+`8ca47da` gives multiline source slices a continuation margin relative to their
+rendered anchor. Commit `9d6eada` rebases `calc` rows from the rendered `calc`
+introducer. Commit `e7ba1a3` prevents fit recovery from moving a structural,
+multi-token child below the base selected by its parent; atomic recovery remains
+available for genuinely unbreakable tokens. These changes refine existing
+planner and renderer contracts without adding a public or rule-facing API.
 
-### Current open families
+At `e7ba1a3`, focused width-100 checks of ten representatives passed code
+preservation, missing-rule, actionable-overflow, fallback, and idempotency in
+13 seconds. Their targeted build passed all 3,163 required jobs in 824 seconds,
+with only the accepted Mathlib long-line and long-file lints. The
+source-comment, detached-`calc`, and moved structural-lambda representatives now
+have the intended shape when the comment is one multiline source slice. The
+split line-comment continuation, declaration-comment, and peer continuation
+representatives still reproduce their open families.
 
-| Family | Representative evidence | Intended owner | Risk |
-| --- | --- | --- | --- |
-| A multiline syntax comment moved from inline to block layout rebases only its opening line | `Mathlib/Tactic/NormNum/Pow.lean:282` | Original-tree source-slice planning | Medium |
-| A detached `calc` keeps its steps at their old source base | `Mathlib/Data/List/Perm/Basic.lean:219` | Syntax grouping and original-tree planning | High |
-| A moved `by`, `fun`, tactic quotation, or other protected body does not follow its introducer | `Mathlib/Analysis/BoxIntegral/Partition/Split.lean:158`; `Mathlib/RingTheory/WittVector/Basic.lean:85` | Syntax grouping and original-tree planning | High |
-| A standalone `<\|` does not establish the base of its protected operand | `Mathlib/Topology/Sheaves/CommRingCat.lean:311` | Line-break rules and original-tree planning | High |
-| Application siblings or declaration-field bodies inherit a preceding token column | `Mathlib/Geometry/Manifold/MFDeriv/SpecificFunctions.lean:277`; `Mathlib/Algebra/Order/Monoid/Defs.lean:28` | Syntax grouping and line-break rules | High |
-| A line comment after a standalone declaration `:` consumes the pending result indentation | `Mathlib/Algebra/Module/Projective.lean:281` | Generic comment-boundary handling | Medium |
-| A source-preserved line-comment continuation can detach from its first physical line | `Mathlib/Algebra/ContinuedFractions/Computation/Basic.lean:193` | Syntax tree and original-tree source slices | Medium |
+The same revision passed fresh complete validation of `graphql-lean` and
+`quantum-computing-lean` without a `--jobs` override. GraphQL's three formatter
+batches took 10, 12, and 7 seconds. Quantum's cache phase took 16 seconds, its
+initial build took 41 seconds, formatting took 17 seconds, and its post-format
+build took 2 seconds. The combined run took 231 seconds. Both formatted
+checkouts were byte-clean, and independent diff reviews found no formatting
+regression.
+
+### Current families
+
+| Family | Representative evidence | Intended owner | Risk | Status |
+| --- | --- | --- | --- | --- |
+| A multiline syntax comment moved from inline to block layout rebases only its opening line | `Mathlib/Tactic/NormNum/Pow.lean:282` | Original-tree source-slice planning | Medium | Resolved by `8ca47da` |
+| A detached `calc` keeps its steps at their old source base | `Mathlib/Data/List/Perm/Basic.lean:219` | Syntax grouping and original-tree planning | High | Resolved by `9d6eada` |
+| A moved structural, multi-token child can recover an obsolete source column | `Mathlib/Analysis/SpecialFunctions/Integrability/LogMeromorphic.lean:186` | Renderer structural-floor invariant | Medium | Resolved by `e7ba1a3` |
+| A moved `by`, `fun`, tactic quotation, or other protected body does not follow its introducer | `Mathlib/Analysis/BoxIntegral/Partition/Split.lean:158`; `Mathlib/RingTheory/WittVector/Basic.lean:85` | Syntax grouping and original-tree planning | High | Open |
+| A standalone `<\|` does not establish the base of its protected operand | `Mathlib/Topology/Sheaves/CommRingCat.lean:311` | Line-break rules and original-tree planning | High | Open |
+| Application siblings or declaration-field bodies inherit a preceding token column | `Mathlib/Geometry/Manifold/MFDeriv/SpecificFunctions.lean:277`; `Mathlib/Algebra/Order/Monoid/Defs.lean:28` | Syntax grouping and line-break rules | High | Open |
+| A line comment after a standalone declaration `:` consumes the pending result indentation | `Mathlib/Algebra/Module/Projective.lean:281` | Generic comment-boundary handling | Medium | Open |
+| A source-preserved line-comment continuation can detach from its first physical line | `Mathlib/Algebra/ContinuedFractions/Computation/Basic.lean:193` | Syntax grouping and original-tree source slices | Medium | Open |
 
 These are governing-layout failures, not requests for syntax-specific rule
 exceptions. Mathlib paths are regression inputs only. Long unbreakable lines and
 formatter-created too-many-lines warnings are not findings when the surrounding
 shape is correct.
 
-### Proposed clean fix sequence
+### Proposed clean next steps
 
-1. **Finish the source-slice rebasing contract.** A multiline atomic source
-   slice needs a formatted opening anchor and a continuation margin. The first
-   physical line starts at the formatted anchor; subsequent nonblank lines keep
-   their offsets from the source continuation margin under that anchor. This
-   belongs in original-tree planning and should cover syntax comments and other
-   multiline atomic source slices without token or comment checks in line-break
-   rules or the renderer.
-2. **Narrow protected islands to the content that requires preservation.** The
-   syntax tree should keep `calc`, `by`, `fun`, quotation, and low-priority infix
-   shells structural while preserving only their layout-sensitive bodies. The
-   shell's ordinary rule owns the leading boundary and child indentation;
-   original-tree planning rebases every preserved body line from that target.
-   This avoids separate rule APIs for each introducer.
-3. **Make parent-to-child base propagation one planner invariant.** When a rule
-   moves a protected child, the planner records one destination base for the
-   complete child. Fit recovery may preserve an unbreakable line's relative
-   position, but it must not restore an older absolute source column or allow
-   later lines to escape the structural floor. Apply this after step 2 so the
-   planner receives correctly grouped syntax.
-4. **Normalize peer continuation groups.** Applications, declaration fields,
-   and similar sibling sequences should expose one logical continuation base in
-   the syntax tree. Line-break rules then indent every broken peer from that
-   base, never from the ending column of the preceding token. This should cover
-   the class-field and progressively indented application examples together.
-5. **Preserve pending indentation across comments.** A standalone line comment
-   between a structural boundary and its child is trivia within that boundary;
-   it must not consume or reset the child's pending indentation. Apply this
-   generically so declaration results, operands, and other children behave the
-   same way. Group physical continuation lines with their owning line comment
-   before original-tree planning.
-6. **Validate each invariant before widening the run.** Add focused tests for
-   every representative family, run the full local gate, and format the listed
-   Mathlib representatives at width 100. Then validate `graphql-lean` and
-   `quantum-computing-lean`. Only after those checks are visually clean should
-   the full 83-batch Mathlib run and post-format build be repeated.
+1. **Regroup protected introducer shells before changing their plans.** Keep
+   `by`, `fun`, tactic quotation, and low-priority infix shells structural, and
+   preserve only the bodies that actually require source layout. The existing
+   shell rule should continue to own the leading boundary. This is the cleanest
+   route to one destination base without token checks in the renderer or a new
+   rule API. It is high risk because changing the current island boundary also
+   changes parent fit probes, so begin with one syntax shape and its focused
+   Mathlib representative.
+2. **Normalize one peer continuation group in the syntax tree.** Start with the
+   application/declaration-field staircase representatives. Peers should expose
+   one continuation base to existing rules instead of inheriting the preceding
+   token's ending column. Keep this separate from protected-body work so a fit
+   regression has one owner.
+3. **Carry pending child indentation through line comments.** Treat a line
+   comment between a structural boundary and its child as trivia for that
+   boundary. Group source-preserved physical continuation lines with their
+   owning line comment before original-tree planning. The generic boundary state
+   should indent both a detached comment and the first following code line,
+   while an author-written `: -- comment` remains one line. This should not
+   identify declaration syntax or add a comment-specific line-break rule.
+4. **Repeat validation in widening rings.** For each commit, run the full local
+   gate and its width-100 Mathlib representatives. Then run fresh GraphQL and
+   quantum validation. After all three open invariants are accepted in review,
+   repeat the complete 83-batch Mathlib run and post-format build.
 
-Steps 1 and 5 are the most bounded candidates. Steps 2 through 4 affect shared
-layout ownership and should remain separate commits with independent regression
-coverage. None of these steps requires a new public or rule-facing API;
-internal planner data may be refined as needed. The renderer should continue to
-execute plans and manage output state without identifying Lean syntax kinds.
+Each remaining invariant affects shared layout ownership and should stay in its
+own commit with independent regression coverage. The renderer should continue
+to execute plans and manage output state without identifying Lean syntax kinds.
 
 ## Follow-up validation: 2026-08-01
 
