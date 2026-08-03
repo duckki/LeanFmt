@@ -299,6 +299,21 @@ def childStartsWithLexeme (segment : Segment) (index : Nat) (lexeme : String) : 
   | some child => treeFirstLexeme? child == some lexeme
   | none => false
 
+def childIsAtomLexeme (segment : Segment) (index : Nat) (lexeme : String) : Bool :=
+  match segment.child? index with
+  | some (.leaf token) => token.role == .atom && token.lexeme == lexeme
+  | _ => false
+
+def childAtomLexemeEndsWith (segment : Segment) (index : Nat) (suffix : String) : Bool :=
+  match segment.child? index with
+  | some (.leaf token) => token.role == .atom && token.lexeme.endsWith suffix
+  | _ => false
+
+def childIsTrailingSeparator (segment : Segment) (index : Nat) : Bool :=
+  match segment.child? index >>= SyntaxTree.Tree.singleToken? with
+  | some token => SpaceRules.isTrailingSeparatorToken token.lexeme
+  | none => false
+
 def isDoLetFallbackKind (kind : Lean.SyntaxNodeKind) : Bool :=
   kind == `Lean.Parser.Term.doIdDecl
   || kind == `Lean.Parser.Term.doPatDecl
@@ -2392,9 +2407,57 @@ def indexedNotationRule : LineBreakRule :=
     breakPoints := indexedNotationBreaks
   }
 
+def indexedTermBreaks (_context : RuleContext) (segment : Segment) : List BreakPoint :=
+  let indexes := nonemptyChildIndexes segment
+  match indexes.find? fun index => childAtomLexemeEndsWith segment index "[" with
+  | some openingIndex =>
+      match indexes.find?
+              fun index =>
+                openingIndex < index && childIsAtomLexeme segment index "]" with
+      | some closingIndex =>
+          indexes.filterMap
+            fun index =>
+              if (openingIndex < index
+                    && index < closingIndex
+                    && !childIsTrailingSeparator segment index)
+                  || closingIndex < index then
+                boundaryBreak? segment index 1
+              else
+                none
+      | none => []
+  | none => []
+
+def indexedTermRule : LineBreakRule :=
+  {
+    name := "indexedTerm"
+    useExistingBreaks := fun _ _ => true
+    flow := fun _ _ => true
+    breakPoints := indexedTermBreaks
+  }
+
 def isGeneratedTermKind (kind : Lean.SyntaxNodeKind) : Bool :=
   let name := toString kind
   name.startsWith "«term" || SpaceRules.containsSubstring name ".«term"
+
+def isGeneratedIndexedPrefixTerm
+    (kind : Lean.SyntaxNodeKind) (children : Array SyntaxTree.Tree)
+    : Bool :=
+  if !isGeneratedTermKind kind then
+    false
+  else
+    let segment := Segment.ofTree (.node (.raw kind) children)
+    match (nonemptyChildIndexes segment).head? with
+    | some openingIndex =>
+        if !childAtomLexemeEndsWith segment openingIndex "[" then
+          false
+        else
+          match (nonemptyChildIndexes segment).find?
+                  fun index =>
+                    openingIndex < index && childIsAtomLexeme segment index "]" with
+          | some closingIndex =>
+              (nonemptyChildIndexes segment).any fun index => closingIndex < index
+          | none => false
+    | none => false
 
 def isSymmetricDelimitedGeneratedTerm
     (kind : Lean.SyntaxNodeKind) (children : Array SyntaxTree.Tree)
@@ -3799,7 +3862,7 @@ def ruleFor : SyntaxTree.Tree → Option LineBreakRule
   | .node (.raw `«term_⁻¹») _ => some defaultRule
   | .node (.raw `«term_ˣ») _ => some defaultRule
   | .node (.raw `«term_ᵐᵒᵖ») _ => some defaultRule
-  | .node (.raw `«term__[_]») _ => some defaultRule
+  | .node (.raw `«term__[_]») _ => some indexedTermRule
   | .node (.raw `Uniformity.«term𝓤[_]») _ => some transparentRule
   | .node (.raw `Asymptotics.«term_=O[_]_») _ => some bracketedRelationRule
   | .node (.raw `Asymptotics.«term_=o[_]_») _ => some bracketedRelationRule
@@ -4075,8 +4138,10 @@ def ruleFor : SyntaxTree.Tree → Option LineBreakRule
   | .node (.raw `Lean.Parser.Term.matchAltsWhereDecls) _ => some matchAltsWhereDeclsRule
   | .node (.raw `Lean.Parser.Term.matchAlts) _ => some matchAltsRule
   | .node (.raw kind) children =>
-      if isSymmetricDelimitedGeneratedTerm kind children
-          || isGeneratedPostfixTerm kind children then
+      if isGeneratedIndexedPrefixTerm kind children then
+        some indexedTermRule
+      else if isSymmetricDelimitedGeneratedTerm kind children
+              || isGeneratedPostfixTerm kind children then
         some transparentRule
       else if children.back?.any
                 fun child =>

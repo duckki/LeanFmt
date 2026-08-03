@@ -9,6 +9,8 @@ open System
 
 namespace LeanFmt.Tests
 
+syntax "TestIndexed[" term "]" term : term
+
 def assertEq (label expected actual : String) : IO Unit := do
   unless actual == expected do
     throw <| IO.userError s!"{label} mismatch\nexpected:\n{expected}\nactual:\n{actual}"
@@ -743,6 +745,10 @@ def assertModuleDocInternalBlankLinesPreservedByFormatting (env : Lean.Environme
 
 def syntheticAtomToken (lexeme : String) : SyntaxTree.Token :=
   SyntaxTree.tokenOfSynthetic .atom `token lexeme (String.Pos.Raw.mk 0)
+    (String.Pos.Raw.mk 0)
+
+def syntheticIdentToken (lexeme : String) : SyntaxTree.Token :=
+  SyntaxTree.tokenOfSynthetic .ident `ident lexeme (String.Pos.Raw.mk 0)
     (String.Pos.Raw.mk 0)
 
 def syntheticAtomTokenAt (lexeme : String) (start stop : Nat) : SyntaxTree.Token :=
@@ -9418,8 +9424,98 @@ def assertBracketedNotationRulesKeepDelimitersAttached : IO Unit := do
       ]
   let genericSegment := Formatter.LineBreakRules.Segment.ofTree genericIndexedTerm
   let genericRule := Formatter.LineBreakRules.formattingRuleFor genericIndexedTerm
-  assertTrue "generic generated terms retain shape-based default breaks"
-    (!(genericRule.breakPoints {} genericSegment).isEmpty)
+  assertEq "generic indexed terms select their delimiter-aware rule"
+    "indexedTerm" genericRule.name
+  assertTrue "generic indexed terms break only before their index"
+    (genericRule.breakPoints {} genericSegment == [{ index := 2, indentLevels := 1 }])
+  assertTrue "generic indexed terms flow through their index"
+    (genericRule.flow {} genericSegment)
+  let generatedIndexedPrefix :=
+    SyntaxTree.Tree.node (.raw `Example.«termIndexed[_]_»)
+      #[
+        .leaf (syntheticAtomToken "Indexed["),
+        .leaf (syntheticAtomToken "index"),
+        .leaf (syntheticAtomToken "]"),
+        .node (.raw `null) #[],
+        .leaf (syntheticAtomToken "argument")
+      ]
+  let generatedSegment := Formatter.LineBreakRules.Segment.ofTree generatedIndexedPrefix
+  let generatedRule := Formatter.LineBreakRules.formattingRuleFor generatedIndexedPrefix
+  assertEq "generated indexed prefixes select the delimiter-aware rule"
+    "indexedTerm" generatedRule.name
+  assertTrue "generated indexed prefixes break before the index and following operands"
+    (generatedRule.breakPoints {} generatedSegment
+      == [{ index := 1, indentLevels := 1 }, { index := 4, indentLevels := 1 }])
+  let structuredOpeningChild :=
+    SyntaxTree.Tree.node (.raw `Example.«termNotIndexed_»)
+      #[
+        .node (.raw `null) #[.leaf (syntheticAtomToken "Indexed[")],
+        .leaf (syntheticAtomToken "argument"),
+        .leaf (syntheticAtomToken "]")
+      ]
+  assertTrue "generated indexed prefixes require an immediate opening atom"
+    ((Formatter.LineBreakRules.formattingRuleFor structuredOpeningChild).name
+      != "indexedTerm")
+  let identifierOpeningChild :=
+    SyntaxTree.Tree.node (.raw `Example.«termNotIndexedIdent_»)
+      #[
+        .leaf (syntheticIdentToken "Indexed["),
+        .leaf (syntheticAtomToken "argument"),
+        .leaf (syntheticAtomToken "]")
+      ]
+  assertTrue "generated indexed prefixes reject identifier-role opening leaves"
+    ((Formatter.LineBreakRules.formattingRuleFor identifierOpeningChild).name
+      != "indexedTerm")
+  let generatedIndexedWithSeparator :=
+    SyntaxTree.Tree.node (.raw `Example.«termIndexed[_,]_»)
+      #[
+        .leaf (syntheticAtomToken "Indexed["),
+        .leaf (syntheticAtomToken "index"),
+        .leaf (syntheticAtomToken ","),
+        .leaf (syntheticAtomToken "]"),
+        .leaf (syntheticAtomToken "argument")
+      ]
+  let separatedSegment :=
+    Formatter.LineBreakRules.Segment.ofTree generatedIndexedWithSeparator
+  let separatedRule :=
+    Formatter.LineBreakRules.formattingRuleFor generatedIndexedWithSeparator
+  let separatedBreaks := separatedRule.breakPoints {} separatedSegment
+  assertTrue "indexed term rules omit trailing separator breakpoints"
+    (separatedBreaks
+      == [{ index := 1, indentLevels := 1 }, { index := 4, indentLevels := 1 }])
+  assertTrue "indexed term breakpoint normalization cannot target the closing delimiter"
+    (Formatter.normalizeBreakPoints separatedSegment separatedBreaks == separatedBreaks)
+  let generatedIndexedWithNonAtomSeparator :=
+    SyntaxTree.Tree.node (.raw `Example.«termIndexed[_,]_»)
+      #[
+        .leaf (syntheticAtomToken "Indexed["),
+        .leaf (syntheticAtomToken "index"),
+        .leaf (syntheticIdentToken ","),
+        .leaf (syntheticAtomToken "]"),
+        .leaf (syntheticAtomToken "argument")
+      ]
+  let nonAtomSeparatorSegment :=
+    Formatter.LineBreakRules.Segment.ofTree generatedIndexedWithNonAtomSeparator
+  let nonAtomSeparatorRule :=
+    Formatter.LineBreakRules.formattingRuleFor generatedIndexedWithNonAtomSeparator
+  let nonAtomSeparatorBreaks :=
+    nonAtomSeparatorRule.breakPoints {} nonAtomSeparatorSegment
+  assertTrue "indexed term rules classify separators consistently with normalization"
+    (nonAtomSeparatorBreaks
+      == [{ index := 1, indentLevels := 1 }, { index := 4, indentLevels := 1 }])
+  assertTrue "non-atom separators cannot move indexed breaks onto the closing delimiter"
+    (Formatter.normalizeBreakPoints nonAtomSeparatorSegment nonAtomSeparatorBreaks
+      == nonAtomSeparatorBreaks)
+  let generatedDelimitedWrapper :=
+    SyntaxTree.Tree.node (.raw `Example.«termIndexed[_]»)
+      #[
+        .leaf (syntheticAtomToken "Indexed["),
+        .leaf (syntheticAtomToken "index"),
+        .leaf (syntheticAtomToken "]")
+      ]
+  assertTrue "generated delimiter wrappers are not prefix-index applications"
+    ((Formatter.LineBreakRules.formattingRuleFor generatedDelimitedWrapper).name
+      != "indexedTerm")
   for kind
       in [
         `Asymptotics.«term_=O[_]_»,
@@ -9441,6 +9537,7 @@ def assertBracketedNotationRulesKeepDelimitersAttached : IO Unit := do
       (rule.breakPoints {} segment
         == [{ index := 1, indentLevels := 1 }, { index := 4, indentLevels := 1 }])
     assertTrue s!"bracketed relation operands flow: {kind}" (rule.flow {} segment)
+
   for kind
       in [
         `«term_→ₗ[_]_»,
@@ -9481,6 +9578,28 @@ def assertBracketedNotationRulesKeepDelimitersAttached : IO Unit := do
         ]
   assertTrue "a bare opening bracket is not an indexed infix operator"
     (!ordinaryBracketedTerm.containsNodeKind (.indexedInfix `explicitBracketedTerm))
+
+def assertIndexedTermsRenderWithAttachedClosingDelimiter (env : Lean.Environment)
+    : IO Unit := do
+  let source :=
+    "def coreIndexed := exceptionallyLongReceiverName[exceptionallyLongIndexName]\n"
+    ++ "def generatedIndexed := TestIndexed[exceptionallyLongIndexName] "
+    ++ "exceptionallyLongArgumentName\n"
+  let formatted ←
+    Formatter.formatSourceWithEnv env source "indexed-term-rendering.lean"
+      { lineWidth := 40 }
+  assertTrue "source-level indexed terms preserve code"
+    (← codePreservedIgnoringWhitespace env source formatted)
+  assertTextContains "core indexed closing delimiter stays attached"
+    formatted "exceptionallyLongIndexName]"
+  assertTextContains "generated indexed closing delimiter stays attached"
+    formatted "TestIndexed[\n    exceptionallyLongIndexName]"
+  assertTextContains "generated indexed following operand uses a separate boundary"
+    formatted "exceptionallyLongIndexName]\n    exceptionallyLongArgumentName"
+  let formattedAgain ←
+    Formatter.formatSourceWithEnv env formatted "indexed-term-rendering-formatted.lean"
+      { lineWidth := 40 }
+  assertEq "source-level indexed term formatting is idempotent" formatted formattedAgain
 
 def assertLakeDslFormatting : IO Unit := do
   let env ← SyntaxTree.importEnvironment #[{ module := `Lake }]
@@ -10874,6 +10993,7 @@ def runCliAndArchitectureTests (env : Lean.Environment) : IO Unit := do
   assertDeclarationRuleTransparent
   assertRecursiveCommandArgumentsShareBase
   assertBracketedNotationRulesKeepDelimitersAttached
+  assertIndexedTermsRenderWithAttachedClosingDelimiter env
   assertLakeDslFormatting
   assertMathlibLowRiskSyntaxKindsHaveRules
   assertMissingRuleCheckUsesDispatch env loader

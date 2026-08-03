@@ -1583,6 +1583,15 @@ This covers notation such as `|x|` and `‖x‖` without enumerating delimiter
 spellings. Generated postfix term nodes likewise keep their final atom attached
 to the preceding expression while that expression applies its own layout.
 
+A generated prefix-index term is recognized when its immediate opening atom
+ends in `[`, a later immediate atom is `]`, and an operand follows that closing
+delimiter. It may break inside the index or before following operands, but never
+before the closing `]`. Requiring immediate atoms keeps this delimiter-shape
+recognition from inspecting an operand's nested token spelling. Trailing
+separator tokens inside the brackets do not introduce break points. A generated
+three-child delimiter wrapper with no following operand remains an ordinary
+delimited term.
+
 Unknown syntax is lossless, but its whitespace is not guaranteed to remain
 byte-for-byte unchanged. Multiline custom braced term syntax is a conservative
 exception: leanfmt keeps its source layout instead of canonicalizing indentation for
