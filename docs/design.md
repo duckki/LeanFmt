@@ -1474,8 +1474,8 @@ custom⟪firstVeryLongOperand,
 
 leanfmt does not add a trailing comma.
 
-A single multiline item keeps the outer array compact around that item. This
-supports common nested forms such as an array containing one structure value:
+A single multiline item keeps an outer list compact around that item. This
+supports common nested forms such as a list containing one structure value:
 
 ```lean
 [{
@@ -1484,6 +1484,14 @@ supports common nested forms such as an array containing one structure value:
   fieldName := fieldName
 }]
 ```
+
+An `#[...]` array literal uses balanced delimiters when its singleton item is
+multiline. Existing balanced source breaks are also retained when array items
+carry authored comments.
+
+An atom ending in an opening delimiter is treated as that delimiter for line
+layout. This keeps prefixed forms such as `#[...]` balanced even when the first
+item begins with a normally tight token such as `(`.
 
 Structure instances with several fields break after `{`, between fields, and
 before `}`. Comma-separated fields remain flat when they fit. Newline-separated

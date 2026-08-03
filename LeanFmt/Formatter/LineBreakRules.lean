@@ -443,7 +443,7 @@ def suffixKeywordLexeme (lexeme : String) : Bool :=
   lexemeIn lexeme ["by", "do", "from", "where", "with", "deriving", "then", "else"]
 
 def suffixOpeningDelimiterLexeme (lexeme : String) : Bool :=
-  lexemeIn lexeme ["(", "[", "{", "⟨", "⟪"]
+  SpaceRules.stringEndsWithAny lexeme ["(", "[", "{", "⟨", "⟪"]
 
 def treeStartsWithOpeningDelimiter (tree : SyntaxTree.Tree) : Bool :=
   tree.firstToken?.any fun token => suffixOpeningDelimiterLexeme token.lexeme
@@ -1163,8 +1163,10 @@ def delimitedItemIndexes (segment : Segment) : List Nat :=
 def delimitedItemCount (segment : Segment) : Nat :=
   (delimitedItemIndexes segment).length
 
-def delimitedCollectionBreaks (segment : Segment) : List BreakPoint :=
-  if 1 < delimitedItemCount segment then
+def delimitedCollectionBreaks (segment : Segment) (includeSingleton : Bool := false)
+    : List BreakPoint :=
+  let itemCount := delimitedItemCount segment
+  if 1 < itemCount || (includeSingleton && 0 < itemCount) then
     let itemBreaks :=
       (delimitedItemIndexes segment).filterMap fun index => boundaryBreak? segment index 1
     let closeBreak :=
@@ -1203,7 +1205,7 @@ def arrayItemCount (segment : Segment) : Nat :=
   delimitedItemCount segment
 
 def arrayBreaks (_context : RuleContext) (segment : Segment) : List BreakPoint :=
-  delimitedCollectionBreaks segment
+  delimitedCollectionBreaks segment (segment.rawKind? == some `«term#[_,]»)
 
 def matrixNotationRule : LineBreakRule :=
   {
@@ -2944,6 +2946,8 @@ def nullRule : LineBreakRule :=
 def arrayRule : LineBreakRule :=
   {
     name := "array"
+    useExistingBreaks :=
+      fun _ segment => segment.rawKind? == some `«term#[_,]»
     inheritBase :=
       fun _ segment =>
         segment.rawKind? == some `«term#[_,]» || 1 < arrayItemCount segment

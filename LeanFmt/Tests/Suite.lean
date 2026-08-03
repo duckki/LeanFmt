@@ -798,6 +798,15 @@ def assertCustomNotationBracketSpacing : IO Unit := do
         #[.leaf (syntheticAtomTokenAt "]" 0 1), .leaf (syntheticAtomTokenAt "!" 1 2)]
   assertTrue "source-adjacent postfix bang rejects an intervening break"
     (!Formatter.breakPointPreservesTightTokenBoundary postfixBangSegment { index := 1 })
+  assertTrue "prefixed opening delimiters allow structural breaks after the opener"
+    (Formatter.LineBreakRules.suffixOpeningDelimiterLexeme "#[")
+  let prefixedOpeningSegment :=
+    Formatter.LineBreakRules.Segment.ofTree
+    <| .node (.raw `null)
+        #[.leaf (syntheticAtomTokenAt "#[" 0 2), .leaf (syntheticAtomTokenAt "(" 2 3)]
+  assertTrue "prefixed openers permit a break before a tight child opener"
+    (Formatter.breakPointPreservesTightTokenBoundary prefixedOpeningSegment
+      { index := 1 })
   assertEq "source-spaced modifier notation keeps its boundary" " "
     (Formatter.SpaceRules.interTokenWhitespace "f ⁻¹ᵁ"
       (syntheticAtomTokenAt "f" 0 1) (syntheticAtomTokenAt "⁻¹ᵁ" 2 7))
@@ -6048,6 +6057,49 @@ def assertMultiItemArrayBreaksBalanced (env : Lean.Environment) : IO Unit := do
     Formatter.formatSourceWithEnv env source "multi-item-array-balanced.lean"
   assertEq "multi-item array breaks balanced" expected formatted
 
+def assertCommentedArrayKeepsDelimitedLayout (env : Lean.Environment) : IO Unit := do
+  let source :=
+    "def many : Array Char := #[\n"
+    ++ "  'a', -- first\n"
+    ++ "  'b' -- second\n"
+    ++ "]\n"
+    ++ "def one : Array Char := #[\n"
+    ++ "  'a' -- only\n"
+    ++ "]\n"
+  let expected :=
+    "def many : Array Char :=\n"
+    ++ "  #[\n"
+    ++ "    'a', -- first\n"
+    ++ "    'b' -- second\n"
+    ++ "  ]\n"
+    ++ "\n"
+    ++ "def one : Array Char :=\n"
+    ++ "  #[\n"
+    ++ "    'a' -- only\n"
+    ++ "  ]\n"
+  let formatted ← Formatter.formatSourceWithEnv env source "commented-array-layout.lean"
+  assertEq "commented arrays keep balanced source delimiters" expected formatted
+
+def assertParenthesizedArrayItemsUseBalancedDelimiters (env : Lean.Environment)
+    : IO Unit := do
+  let source :=
+    "def value :=\n"
+    ++ "  #[(\n"
+    ++ "    `F,\n"
+    ++ "    .implicit,\n"
+    ++ "    fun _ => pure 0\n"
+    ++ "  ),\n"
+    ++ "    (`carrier, .implicit, fun _ => pure 1)]\n"
+  let expected :=
+    "def value :=\n"
+    ++ "  #[\n"
+    ++ "    (`F, .implicit, fun _ => pure 0),\n"
+    ++ "    (`carrier, .implicit, fun _ => pure 1)\n"
+    ++ "  ]\n"
+  let formatted ←
+    Formatter.formatSourceWithEnv env source "parenthesized-array-items.lean"
+  assertEq "parenthesized array items use balanced delimiters" expected formatted
+
 def assertListLikeCollectionsBreakBalanced (env : Lean.Environment) : IO Unit := do
   let listSource :=
     "def doLetElseBreaks (_context : RuleContext) (segment : Segment) : List BreakPoint :=\n"
@@ -7768,17 +7820,19 @@ def assertNestedArrayStructureInstancesUseExpressionBase (env : Lean.Environment
     ++ "  }]\n"
   let expected :=
     "def nestedStructure := do\n"
-    ++ "  return #[{\n"
-    ++ "    eager\n"
-    ++ "    lazy? :=\n"
-    ++ "      some do\n"
-    ++ "        return {\n"
-    ++ "          eager with\n"
-    ++ "            edit? :=\n"
-    ++ "              exceptionallyLongStructureFieldValueName firstArgument secondArgument\n"
-    ++ "                thirdArgument\n"
-    ++ "        }\n"
-    ++ "  }]\n"
+    ++ "  return #[\n"
+    ++ "    {\n"
+    ++ "      eager\n"
+    ++ "      lazy? :=\n"
+    ++ "        some do\n"
+    ++ "          return {\n"
+    ++ "            eager with\n"
+    ++ "              edit? :=\n"
+    ++ "                exceptionallyLongStructureFieldValueName firstArgument secondArgument\n"
+    ++ "                  thirdArgument\n"
+    ++ "          }\n"
+    ++ "    }\n"
+    ++ "  ]\n"
   let formatted ←
     Formatter.formatSourceWithEnv env source "nested-array-structure-base.lean"
   assertEq "nested array structure instances use the enclosing expression base"
@@ -10254,8 +10308,10 @@ def assertMathlibLowRiskSyntaxKindsHaveRules : IO Unit := do
       `Lean.Parser.«command__Dsimproc__[_]_(_):=_»
       #[
         .node (.raw `null)
-          #[.node (.raw `Lean.Parser.Command.docComment)
-              #[.leaf (syntheticAtomToken "/-- documentation -/")]],
+          #[
+            .node (.raw `Lean.Parser.Command.docComment)
+              #[.leaf (syntheticAtomToken "/-- documentation -/")]
+          ],
         .leaf (syntheticAtomToken "dsimproc")
       ]
   assertTrue "nested command documentation is separated from its command"
@@ -10895,6 +10951,8 @@ def runExpressionAndRendererTests (env : Lean.Environment) : IO Unit := do
   assertListApplicationSourceBreakIndent env
   assertSingletonArrayKeepsBodyBase env
   assertMultiItemArrayBreaksBalanced env
+  assertCommentedArrayKeepsDelimitedLayout env
+  assertParenthesizedArrayItemsUseBalancedDelimiters env
   assertListLikeCollectionsBreakBalanced env
   assertOffColumnArrayRoundsOneLevel env
   assertInstanceWhereStaysWithHeader env
