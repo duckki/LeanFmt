@@ -159,8 +159,11 @@ private def rebaseTreeText
           | .sourceToken token =>
               rebaseTokenLexeme (sourceMap.columnAt token.span.start) outputColumn token
           | .syntaxComment span =>
-              rebaseMultilineSourceSlice outputColumn
-                (SyntaxTree.sourceText source span.start span.stop)
+              let comment := SyntaxTree.sourceText source span.start span.stop
+              if SpaceRules.hasLineStructure trivia then
+                rebaseMultilineSourceSlice outputColumn comment
+              else
+                rebaseTextIndent (sourceMap.columnAt span.start) outputColumn comment
         loop span.stop (columnAfterAppend outputColumn text) (text :: trivia :: parts)
           rest
   match rebaseUnits tree.tokens.toList tree.syntaxCommentSpans with
@@ -842,7 +845,10 @@ private def emitRebased? (request : EmissionRequest) (tree : SyntaxTree.Tree)
     | some .syntaxComment =>
         let outputColumn :=
           lineWidth <| currentLineAfterAppend request.currentLine leading
-        rebaseMultilineSourceSlice outputColumn sourceText
+        if SpaceRules.hasLineStructure leading then
+          rebaseMultilineSourceSlice outputColumn sourceText
+        else
+          rebaseTextIndent sourceColumn outputColumn sourceText
     | _ =>
         match sourceTextRebase? with
         | some (sourceIndent, targetIndent) =>

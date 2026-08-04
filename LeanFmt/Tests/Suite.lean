@@ -571,6 +571,27 @@ def assertInlineSyntaxCommentKeepsSurroundingIndent (env : Lean.Environment)
     source result.formatted
   assertTrue "inline multiline doc comment preserves code"
     (← codePreservedIgnoringWhitespace env source result.formatted)
+  let movedSource :=
+    "def movedProjectNote :=\n"
+    ++ "  wrapper (by\n"
+    ++ "  #project_note /-- The first line follows the syntax prefix.\n"
+    ++ "  Continuation lines move with the proof body. -/\n"
+    ++ "  trivial)\n"
+  let movedExpected :=
+    "def movedProjectNote :=\n"
+    ++ "  wrapper\n"
+    ++ "    (by\n"
+    ++ "    #project_note /-- The first line follows the syntax prefix.\n"
+    ++ "    Continuation lines move with the proof body. -/\n"
+    ++ "    trivial)\n"
+  let movedResult ←
+    Formatter.formatSourceWithEnvDetailed env movedSource "moved-inline-doc-comment.lean"
+  assertTrue "moved inline multiline doc comment does not fall back"
+    (!movedResult.fellBack)
+  assertEq "moved inline multiline doc comment preserves its relative base"
+    movedExpected movedResult.formatted
+  assertTrue "moved inline multiline doc comment preserves code"
+    (← codePreservedIgnoringWhitespace env movedSource movedResult.formatted)
   let detachedSource :=
     "#project_note\n"
     ++ "/--\n"
