@@ -553,6 +553,73 @@ def assertMovedStandaloneCommentsKeepSiblingIndent (env : Lean.Environment)
   assertTrue "moved match-arm comment preserves code"
     (← codePreservedIgnoringWhitespace env matchArmSource matchArmFormatted)
 
+def assertStandaloneCommentsFollowLayoutOwnership (env : Lean.Environment) : IO Unit := do
+  let proofCommentSource :=
+    "theorem proofWithClosingComment : True := by\n"
+    ++ "  trivial\n"
+    ++ "  -- This comment closes the proof above.\n"
+    ++ "\n"
+    ++ "theorem followingProof : True := by\n"
+    ++ "  trivial\n"
+  let proofCommentFormatted ←
+    Formatter.formatSourceWithEnv env proofCommentSource "closing-proof-comment.lean"
+  assertEq "a trailing proof comment keeps the proof body's indentation"
+    proofCommentSource proofCommentFormatted
+
+  let nextDeclarationSource :=
+    "theorem proofBeforeComment : True := by\n"
+    ++ "  trivial\n"
+    ++ "\n"
+    ++ "  -- This comment introduces the declaration below.\n"
+    ++ "theorem proofAfterComment : True := by\n"
+    ++ "  trivial\n"
+  let nextDeclarationExpected :=
+    "theorem proofBeforeComment : True := by\n"
+    ++ "  trivial\n"
+    ++ "\n"
+    ++ "-- This comment introduces the declaration below.\n"
+    ++ "theorem proofAfterComment : True := by\n"
+    ++ "  trivial\n"
+  let nextDeclarationFormatted ←
+    Formatter.formatSourceWithEnv env nextDeclarationSource
+      "leading-declaration-comment.lean"
+  assertEq "a blank line gives a standalone comment to the following declaration"
+    nextDeclarationExpected nextDeclarationFormatted
+
+  let peerSource :=
+    "inductive CommentedChoice where\n"
+    ++ "  | first\n"
+    ++ "  -- The next constructor remains a peer.\n"
+    ++ "  | second\n"
+    ++ "\n"
+    ++ "variable {α : Type}\n"
+    ++ "    -- argument description\n"
+    ++ "    (value : α)\n"
+  let peerExpected :=
+    "inductive CommentedChoice where\n"
+    ++ "  | first\n"
+    ++ "  -- The next constructor remains a peer.\n"
+    ++ "  | second\n"
+    ++ "\n"
+    ++ "variable {α : Type}\n"
+    ++ "  -- argument description\n"
+    ++ "  (value : α)\n"
+  let peerFormatted ← Formatter.formatSourceWithEnv env peerSource "peer-comments.lean"
+  assertEq "comments aligned with a following peer use that peer's indentation"
+    peerExpected peerFormatted
+
+  for (name, source, formatted)
+      in #[
+        ("closing proof comment", proofCommentSource, proofCommentFormatted),
+        ("leading declaration comment", nextDeclarationSource, nextDeclarationFormatted),
+        ("peer comments", peerSource, peerFormatted)
+      ] do
+    assertTrue s!"{name} preserves code"
+      (← codePreservedIgnoringWhitespace env source formatted)
+    let formattedAgain ←
+      Formatter.formatSourceWithEnv env formatted s!"{name}-formatted.lean"
+    assertEq s!"{name} is idempotent" formatted formattedAgain
+
 def assertInlineSyntaxCommentKeepsSurroundingIndent (env : Lean.Environment)
     : IO Unit := do
   let source :=
@@ -5605,6 +5672,30 @@ def assertDeclarationColonBeforeDetachedResultComment (env : Lean.Environment)
     Formatter.formatSourceWithEnv env formatted
       "declaration-colon-detached-result-comment-formatted.lean"
   assertEq "detached declaration result comment is idempotent" formatted formattedAgain
+  let continuedSource :=
+    "theorem declarationColonWithContinuedResultComment\n"
+    ++ "    (argument : VeryLongArgumentTypeWithEnoughCharactersForLayoutTesting) :\n"
+    ++ "    -- Explain the result type on two lines.\n"
+    ++ "            -- Keep this authored continuation relative to the first comment.\n"
+    ++ "    True := by\n"
+    ++ "  trivial\n"
+  let continuedExpected :=
+    "theorem declarationColonWithContinuedResultComment\n"
+    ++ "    (argument : VeryLongArgumentTypeWithEnoughCharactersForLayoutTesting)\n"
+    ++ "    : -- Explain the result type on two lines.\n"
+    ++ "              -- Keep this authored continuation relative to the first comment.\n"
+    ++ "      True := by\n"
+    ++ "  trivial\n"
+  let continuedFormatted ←
+    Formatter.formatSourceWithEnv env continuedSource
+      "declaration-colon-continued-result-comment.lean"
+  assertEq "declaration result comment continuations move with the attached comment"
+    continuedExpected continuedFormatted
+  let continuedAgain ←
+    Formatter.formatSourceWithEnv env continuedFormatted
+      "declaration-colon-continued-result-comment-formatted.lean"
+  assertEq "continued declaration result comment is idempotent"
+    continuedFormatted continuedAgain
 
 def assertDeclarationColonKeepsAttachedResultComment (env : Lean.Environment)
     : IO Unit := do
@@ -5632,6 +5723,23 @@ def assertDeclarationColonKeepsAttachedResultComment (env : Lean.Environment)
     Formatter.formatSourceWithEnv env formatted
       "declaration-colon-attached-result-comment-formatted.lean"
   assertEq "attached declaration result comment is idempotent" formatted formattedAgain
+  let continuedSource :=
+    "theorem declarationColonWithAttachedContinuedComment\n"
+    ++ "    (argument : VeryLongArgumentTypeWithEnoughCharactersForLayoutTesting)\n"
+    ++ "    : -- Explain the result type on two lines.\n"
+    ++ "              -- Keep this authored continuation relative to the first comment.\n"
+    ++ "      True := by\n"
+    ++ "  trivial\n"
+  let continuedFormatted ←
+    Formatter.formatSourceWithEnv env continuedSource
+      "declaration-colon-attached-continued-comment.lean"
+  assertEq "an attached declaration comment keeps its continuation indentation"
+    continuedSource continuedFormatted
+  let continuedAgain ←
+    Formatter.formatSourceWithEnv env continuedFormatted
+      "declaration-colon-attached-continued-comment-formatted.lean"
+  assertEq "attached continued declaration comment is idempotent"
+    continuedFormatted continuedAgain
 
 def assertImplicitBinderPreservesTightBraces (env : Lean.Environment) : IO Unit := do
   let source := "def implicitBinder {ObjectRef : Type} : Type := ObjectRef\n"
@@ -10922,6 +11030,7 @@ def runBasicFormattingTests (env : Lean.Environment) : IO Unit := do
   assertIndentedCommentTriviaDoesNotPadBlankLines
   assertOnlyIntrinsicCommentLinesForceBreaks env
   assertMovedStandaloneCommentsKeepSiblingIndent env
+  assertStandaloneCommentsFollowLayoutOwnership env
   assertAtomicTokenRetainsFittingSourceColumn env
   assertDoBodyRetainsSourceLayoutToAvoidOverflow env
   assertRegisterOptionValueUsesDeclarationLayout env

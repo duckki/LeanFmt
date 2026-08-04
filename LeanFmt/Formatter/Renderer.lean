@@ -183,6 +183,8 @@ structure WhitespaceState where
   pendingCommandBoundary? : Option CommandBoundarySpacing
   preserveNextStandaloneCommentIndent : Bool
   movePendingCommentAfterToken : Bool
+  sourceLayoutBaseColumn : Nat
+  outputLayoutBaseColumn : Nat
 
 def RenderState.whitespaceState (state : RenderState) : WhitespaceState :=
   {
@@ -195,6 +197,8 @@ def RenderState.whitespaceState (state : RenderState) : WhitespaceState :=
     pendingCommandBoundary? := state.pendingCommandBoundary?
     preserveNextStandaloneCommentIndent := state.preserveNextStandaloneCommentIndent
     movePendingCommentAfterToken := state.movePendingCommentAfterToken
+    sourceLayoutBaseColumn := state.sourceLayoutBaseColumn
+    outputLayoutBaseColumn := state.outputLayoutBaseColumn
   }
 
 structure SegmentBase where
@@ -337,6 +341,44 @@ def commentTriviaStartsOnNewLine (trivia : String) : Bool :=
   | '\n' :: _ | '\r' :: _ => true
   | _ => false
 
+def commentTriviaStartsAfterBlankLine (trivia : String) : Bool :=
+  let leadingWhitespace :=
+    (SpaceRules.normalizeLineEndings trivia).toList.takeWhile
+      fun char => char == '\n' || SpaceRules.isHorizontalWhitespace char
+  2 <= leadingWhitespace.count '\n'
+
+def commentTriviaHasSeparatedGroups (trivia : String) : Bool :=
+  let rec loop (blockCommentDepth : Nat) (seenComment sawBlank : Bool)
+      : List String → Bool
+    | [] => false
+    | line :: rest =>
+        let stripped := SpaceRules.stripLeadingHorizontalWhitespace line
+        let nextBlockCommentDepth :=
+          SpaceRules.blockCommentDepthAfterLine blockCommentDepth line
+        if blockCommentDepth == 0 && stripped.isEmpty then
+          loop nextBlockCommentDepth seenComment (sawBlank || seenComment) rest
+        else if blockCommentDepth == 0
+                && (stripped.startsWith "--" || stripped.startsWith "/-") then
+          if seenComment && sawBlank then
+            true
+          else
+            loop nextBlockCommentDepth true false rest
+        else
+          loop nextBlockCommentDepth seenComment sawBlank rest
+  loop 0 false false <| (SpaceRules.normalizeLineEndings trivia).splitOn "\n"
+
+def standaloneSourceLineCommentIndent? (trivia : String) : Option Nat :=
+  match (SpaceRules.normalizeLineEndings trivia).splitOn "\n" with
+  | [] | [_] => none
+  | _ :: rest =>
+      rest.findSome?
+        fun line =>
+          let stripped := SpaceRules.stripLeadingHorizontalWhitespace line
+          if stripped.startsWith "--" then
+            some (line.length - stripped.length)
+          else
+            none
+
 def ensureBlankLineBeforeLeadingComment (text : String) : String :=
   if text.startsWith "\n\n" || text.startsWith "\r\n\r\n" then
     text
@@ -348,13 +390,17 @@ def ensureBlankLineBeforeLeadingComment (text : String) : String :=
 def commentTriviaForBoundary
     (trivia commentIndentation followingIndentation : String)
     (spacing : CommandBoundarySpacing)
+    (belongsToFollowingToken : Bool := true)
     : String :=
   let adjusted :=
     SpaceRules.commentTriviaForBreakWithFollowingIndent trivia commentIndentation
       followingIndentation
   if spacing == .blankLine then
     if commentTriviaStartsOnNewLine trivia then
-      ensureBlankLineBeforeLeadingComment adjusted
+      if belongsToFollowingToken then
+        ensureBlankLineBeforeLeadingComment adjusted
+      else
+        ensureBlankLineBeforeIndentation adjusted followingIndentation
     else
       ensureBlankLineBeforeIndentation adjusted followingIndentation
   else
@@ -454,6 +500,36 @@ def WhitespaceState.defaultWhitespace (state : WhitespaceState) (token : SyntaxT
             SpaceRules.firstCommentColumn? boundaryTrivia <| lineWidth state.currentLine
           SpaceRules.commentTriviaForTreeBoundary boundaryTrivia
             (sourceCommentColumn.getD 0) (targetCommentColumn.getD 0) indentation
+        else if state.pendingCommandBoundary? == some .blankLine
+                && state.sourceMap.columnAt token.span.start
+                    == state.sourceLayoutBaseColumn
+                && commentTriviaStartsOnNewLine trivia
+                && !commentTriviaHasSeparatedGroups trivia then
+          match standaloneSourceLineCommentIndent? trivia with
+          | some sourceCommentIndent =>
+              let sourceTokenIndent := state.sourceMap.columnAt token.span.start
+              if sourceCommentIndent == sourceTokenIndent then
+                whitespaceForPendingBoundary trivia indentation
+                  state.pendingCommandBoundary?
+              else
+                let belongsToFollowingToken := commentTriviaStartsAfterBlankLine trivia
+                let commentIndent :=
+                  if belongsToFollowingToken then
+                    indent
+                  else
+                    shiftColumnByAnchor state.sourceLayoutBaseColumn
+                      state.outputLayoutBaseColumn sourceCommentIndent
+                let commentIndentation := spaces commentIndent
+                match state.pendingCommandBoundary? with
+                | some spacing =>
+                    commentTriviaForBoundary trivia commentIndentation indentation spacing
+                      belongsToFollowingToken
+                | none =>
+                    SpaceRules.commentTriviaForBreakWithFollowingIndent trivia
+                      commentIndentation indentation
+          | none =>
+              whitespaceForPendingBoundary trivia indentation
+                state.pendingCommandBoundary?
         else
           whitespaceForPendingBoundary trivia indentation state.pendingCommandBoundary?
     | none, some indent =>
