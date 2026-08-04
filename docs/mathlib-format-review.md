@@ -6,6 +6,80 @@ It is a point-in-time work list, not part of the normative formatting style.
 
 ## Current status: 2026-08-03
 
+### Validation through `21b19ae`
+
+The renderer-side comment boundary work is committed through `21b19ae` in
+three independent changes: `6882d77` handles comment-forced tree boundaries,
+`66621fc` preserves the relative indentation of an inline multiline block
+comment, and `21b19ae` rebases inline syntax-comment continuations when their
+surrounding original-layout tree moves. These changes keep comments as source
+trivia. They add neither comment nodes to the syntax tree nor a new rule API.
+
+Fresh GraphQL and quantum validation passed at `21b19ae`. GraphQL formatted 264
+files with automatic worker count, zero exceptions, and a clean post-format
+build. Its optional cache command was unavailable; the initial build, three
+formatter batches, and final build took 59, 13/10/7, and 24 seconds. Five files
+changed by 36 insertions and 18 deletions, only at the intended multiline
+parenthesized proof-argument boundary. Quantum formatted 21 files with zero
+exceptions and no diff; its cache, initial build, formatter, and final build took
+14, 42, 16, and 3 seconds. The combined run, including building leanfmt and fresh
+clones, took 281 seconds. The syntax-comment continuation refinement also passed
+the complete local gate and focused width-100 Mathlib checks. Five affected
+Mathlib modules built successfully in 19 seconds.
+
+A complete Mathlib `v4.32.0` run used commit
+`81a5d257c8e410db227a6665ed08f64fea08e997`, selected all 8,264 tracked Lean
+files under `Mathlib`, used line width 100 and the automatic worker count, and
+restored the Lake cache. All 83 formatter batches were covered. Code
+preservation, missing-rule, fallback, and idempotency counts were zero. Four
+overflow-only diagnostics remain accepted: the 101-column qualified projection
+in `AlgebraicGeometry/Gluing.lean:119`, the 104-column protected proof line in
+`AlgebraicGeometry/StructureSheaf.lean:426`, and authored trailing comments in
+`Tactic/FBinop.lean:225` and `Tactic/GCongr/Core.lean:820`. The complete
+post-format build passed all 8,654 jobs in 3,863 seconds. The formatted tree
+changed 7,524 files with 311,282 insertions and 271,209 deletions, and
+`git diff --check` passed.
+
+The isolated slow geometry/manifold batch was not a regression. On the same
+clean 100-file batch, `21b19ae` took 47.40 seconds and an experimental comment
+generalization took 46.39 seconds. Focused comparisons against `6f705af` also
+showed equivalent formatter time for the three dominant files. No increasing
+batch trend, worker failure, or memory pressure was observed.
+
+### Rejected standalone-comment generalization
+
+An experiment removed `preserveNextStandaloneCommentIndent` and attempted to
+derive standalone-comment indentation at every pending renderer boundary from
+the preceding token's source column and the pending indentation. The complete
+83-batch width-100 Mathlib formatter pass remained preservation- and
+idempotency-clean, but comparison with the preceding full output changed 33
+files and was not visually consistent. It correctly restored several proof-body
+comments, including the examples in `Analysis/Calculus/Deriv/Prod.lean` and
+`Analysis/LocallyConvex/WithSeminorms.lean`, but it also over-indented peer
+comments in inductive declarations, parameter groups, structures, and command
+bodies. A continued declaration-result comment in
+`CategoryTheory/Limits/HasLimits.lean` could still move to column zero.
+Three independent reviews classified the 33 changed files as 20 wholly correct,
+9 wholly incorrect, 2 mixed, and 2 ambiguous.
+
+The experiment also initially suppressed the established relocation of a line
+comment beside an unchanged `(` or declaration `:`. Giving
+`movePendingCommentAfterToken` priority fixed that regression and received
+focused coverage, but did not resolve the mixed 33-file indentation result. The
+entire experiment was therefore backed out and was not committed. The branch is
+clean at `21b19ae`.
+
+The failed attempt establishes a useful constraint for the next fix: a token's
+source column does not reveal whether its containing layout moved. A clean
+general solution should translate a standalone comment through the existing
+`sourceLayoutBaseColumn` and `outputLayoutBaseColumn` anchors before comparing
+it with the pending structural indentation. This can distinguish an unchanged
+peer comment from a comment inside a body whose parent moved, without checking
+Lean syntax kinds or adding a rule API. Before implementation, focused tests
+must cover all four shapes: a trailing proof comment, an inductive peer comment,
+a moved function-body comment, and comment relocation beside stationary and
+moved `(` and `:` tokens.
+
 ### Comment-created tree boundaries after `6f705af`
 
 The working tree now treats line comments and multiline block comments as
