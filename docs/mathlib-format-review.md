@@ -4,7 +4,64 @@ This document records the visual review of a complete Mathlib formatting run so
 the remaining layout work can be addressed without repeating the corpus review.
 It is a point-in-time work list, not part of the normative formatting style.
 
-## Current status: 2026-08-03
+## Current status: 2026-08-05
+
+### Structural `cases` checkpoint after `c9f4e8c`
+
+The structural `cases` change after `c9f4e8c` groups a direct target collection,
+the complete header, and the outer alternatives as separate semantic layout
+owners. This makes alternative boundaries structural without forcing optional
+wrapping inside the header. Target collections reuse the existing discriminant
+flow, so multiple targets and named discriminants receive the same continuation
+and `:` alignment as `match`. Direct role classification excludes proofs,
+`using` clauses, and nested tactics; the line-break rule does not search token
+text or descendants. No renderer behavior or rule API changed.
+
+On GraphQL's `FieldGroup/PrefixAppend.lean`, formatter time fell from more than
+ten hours to 31.7 seconds. A fresh GraphQL validation passed its clean build,
+all three formatter batches, and its post-format build in 228 seconds. The
+formatted tree changed 26 files by 183 insertions and 201 deletions. Independent
+review found the `cases ... with` headers, named discriminants, alternatives,
+and nested bodies logically consistent. Quantum validation passed in 163
+seconds and produced no formatting diff. Both projects had zero preservation,
+overflow, missing-rule, fallback, and idempotency exceptions.
+
+The complete Mathlib `v4.32.0` audit used commit
+`81a5d257c8e410db227a6665ed08f64fea08e997`, the Lake cache, line width 100,
+only the `Mathlib` directory, and no `--jobs` override. The cache restored 8,451
+artifacts with 188 already present, and the clean pre-format build passed all
+8,654 jobs in 5 seconds. All 83 formatter batches were covered. Code
+preservation, missing-rule, fallback, and idempotency counts were zero. The
+formatted tree changed 7,527 files by 314,094 insertions and 273,931 deletions,
+and `git diff --check` passed. The post-format build passed all 8,654 jobs in
+4,394 seconds. Most formatter batches took roughly 30 to 55 seconds; isolated
+heavy batches took roughly 90 to 100 seconds without an increasing trend,
+worker failure, or memory pressure.
+
+Seven actionable-width diagnostics remain. They are checkpoint-known or
+reproduce with the committed `c9f4e8c` formatter and are therefore independent
+of this `cases` change:
+
+- `AlgebraicGeometry/Gluing.lean:119`, 101 columns;
+- `AlgebraicGeometry/StructureSheaf.lean:426`, 104 columns;
+- `Analysis/CStarAlgebra/GelfandNaimarkSegal.lean:116`, 101 columns;
+- `NumberTheory/Bernoulli.lean:285`, 101 columns;
+- `NumberTheory/Bernoulli.lean:388`, 103 columns;
+- `NumberTheory/Bernoulli.lean:395`, 102 columns;
+- `Tactic/GCongr/Core.lean:819`, 104 columns.
+
+Focused tests cover plain, default-only, default-plus-explicit, named,
+proof-bearing, nested, `using`, and multiple-target `cases` forms, including
+preservation and idempotency. Independent review found no regression in the
+changed named-discriminant, `using`, `with`, explicit-alternative, or
+default-alternative layouts. A broad review reproduced only the existing
+protected-body and standalone-comment families recorded below. A targeted
+review also found that source-preserved `cases` branch bodies can remain at the
+alternative's indentation; this predates the header change but remains an open
+ownership inconsistency. The next high-risk checkpoint should rebase that one
+direct body boundary without opening ordinary leaf proof islands. Keep the seven
+width shapes as separate generalized consistency fixes rather than adding
+`cases` exceptions.
 
 ### Validation through `21b19ae`
 
@@ -325,6 +382,7 @@ replayed and built successfully in 5 seconds with only accepted lints.
 | A source-preserved line-comment continuation can detach from its first physical line | `Mathlib/Algebra/ContinuedFractions/Computation/Basic.lean:193` | Syntax grouping and original-tree source slices | Medium | Open |
 | `calc` rows can disagree on their shared continuation base | `Mathlib/Analysis/InnerProductSpace/Projection/Basic.lean:362` | Original-tree planning and renderer continuation bases | High | Open |
 | A branch body can remain aligned with its branch header | `Mathlib/Algebra/BigOperators/Fin.lean:632` | Syntax grouping and original-tree planning | High | Open |
+| A source-preserved `cases` body can remain aligned with its alternative | `Mathlib/Data/ENat/Lattice.lean:139`; `Mathlib/Analysis/Meromorphic/Order.lean:198` | Tactic alternative ownership and protected-body rebasing | High | Open; the structural header checkpoint does not open leaf proof islands |
 | Inline record and attribute children can inherit the opener's source column | `Mathlib/Lean/Meta/RefinedDiscrTree/Basic.lean:169`; `Mathlib/Algebra/Group/Submonoid/Membership.lean:553` | Syntax grouping and continuation-base planning | High | Open |
 | An indexed delimiter group can detach its closing bracket | `Mathlib/Geometry/Manifold/VectorBundle/Hom.lean:97` | Shape-based line-break dispatch | Medium | Resolved in the working tree after `61d472a` by a general delimiter-shape rule |
 | A prefixed array opener can stay attached to a multiline parenthesized item | `Mathlib/Tactic/CategoryTheory/Elementwise.lean:159` | Delimiter classification and collection breaks | Low | Resolved in the working tree after `61d472a` by applying opening-delimiter suffix semantics consistently |

@@ -1411,6 +1411,25 @@ def tacticLayoutOwnerBreaks (context : RuleContext) (segment : Segment)
   else
     defaultBreaks context segment
 
+def tacticEliminationHeaderBreaks (_context : RuleContext) (segment : Segment)
+    : List BreakPoint :=
+  match defaultPresentChildIndexes segment with
+  | [] | [_] => []
+  | _ :: targetIndex :: rest =>
+      let targetIsNamed :=
+        match segment.parent with
+        | .node (.tacticEliminationHeader targetIsNamed) _ => targetIsNamed
+        | _ => false
+      let targetBreak :=
+        if targetIsNamed then [] else [boundaryBreak? segment targetIndex 1].filterMap id
+      targetBreak
+      ++ rest.filterMap
+          fun index =>
+            match segment.child? index with
+            | some (.node (.proofBody _) _) =>
+                boundaryBreak? segment index alternativeBodyIndentLevels
+            | _ => boundaryBreak? segment index 1
+
 def tacticAlternativeBodyBreaks (context : RuleContext) (segment : Segment)
     : List BreakPoint :=
   if parentIsRawKind context `Lean.Parser.Tactic.inductionAlt
@@ -3348,10 +3367,20 @@ def commandInChainRule : LineBreakRule :=
 def tacticLayoutOwnerRule : LineBreakRule :=
   {
     name := "tacticLayoutOwner"
+    mandatory :=
+      fun context segment => !(tacticLayoutOwnerBreaks context segment).isEmpty
     flow := fun _ _ => true
     inheritBase := fun _ _ => true
     roundUpBaseIndentation := true
     breakPoints := tacticLayoutOwnerBreaks
+  }
+
+def tacticEliminationHeaderRule : LineBreakRule :=
+  {
+    name := "tacticEliminationHeader"
+    flow := fun _ _ => true
+    inheritBase := fun _ _ => true
+    breakPoints := tacticEliminationHeaderBreaks
   }
 
 def tacticAlternativeContainerRule : LineBreakRule :=
@@ -3951,6 +3980,8 @@ partial def ruleFor : SyntaxTree.Tree → Option LineBreakRule
   | .node (.raw `Lean.Parser.Tactic.locationHyp) _ => some defaultRule
   | .node (.raw `Lean.Parser.Tactic.exact) _ => some defaultRule
   | .node (.raw `Lean.Parser.Tactic.cases) _ => some tacticLayoutOwnerRule
+  | .node (.tacticEliminationTargets _) _ => some matchDiscriminantsRule
+  | .node (.tacticEliminationHeader _) _ => some tacticEliminationHeaderRule
   | .node (.raw `Lean.Parser.Tactic.inductionAlts) _ =>
       some tacticAlternativeContainerRule
   | .node (.raw `Lean.Parser.Tactic.inductionAlt) _ => some tacticAlternativeRule

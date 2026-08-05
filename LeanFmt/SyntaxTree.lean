@@ -65,6 +65,8 @@ inductive NodeKind where
   | lowPriorityInfixRhs
   | indexedInfix (kind : SyntaxNodeKind)
   | suffixGroup
+  | tacticEliminationTargets (containsNamed : Bool)
+  | tacticEliminationHeader (targetIsNamed : Bool)
   | namedDiscriminant
   | patternLambda
   | definition
@@ -96,6 +98,10 @@ def nodeKindName : NodeKind → String
   | .lowPriorityInfixRhs => "LeanFmt.SyntaxTree.NodeKind.lowPriorityInfixRhs"
   | .indexedInfix kind => s!"LeanFmt.SyntaxTree.NodeKind.indexedInfix {kind}"
   | .suffixGroup => "LeanFmt.SyntaxTree.NodeKind.suffixGroup"
+  | .tacticEliminationTargets containsNamed =>
+      s!"LeanFmt.SyntaxTree.NodeKind.tacticEliminationTargets {containsNamed}"
+  | .tacticEliminationHeader targetIsNamed =>
+      s!"LeanFmt.SyntaxTree.NodeKind.tacticEliminationHeader {targetIsNamed}"
   | .namedDiscriminant => "LeanFmt.SyntaxTree.NodeKind.namedDiscriminant"
   | .patternLambda => "LeanFmt.SyntaxTree.NodeKind.patternLambda"
   | .definition => "LeanFmt.SyntaxTree.NodeKind.definition"
@@ -1613,10 +1619,23 @@ private def nodeKindHasRawKind (expected : SyntaxNodeKind) : NodeKind → Bool
   | .raw kind | .tactic kind _ _ _ => kind == expected
   | _ => false
 
-private partial def treeContainsRawKind (expected : SyntaxNodeKind) : Tree → Bool
-  | .missing | .leaf _ => false
+private partial def treeIsCasesAlternativeGroup : Tree → Bool
   | .node kind children =>
-      nodeKindHasRawKind expected kind || children.any (treeContainsRawKind expected)
+      if nodeKindHasRawKind `Lean.Parser.Tactic.inductionAlt kind then
+        true
+      else
+        match kind with
+        | .raw `null =>
+            let content := children.filter fun child => child.firstToken?.isSome
+            !content.isEmpty && content.all treeIsCasesAlternativeGroup
+        | _ => false
+  | _ => false
+
+private partial def casesTargetGroupContainsNamedDiscriminant : Tree → Bool
+  | .node .namedDiscriminant _ => true
+  | .node (.raw `null) children =>
+      children.any casesTargetGroupContainsNamedDiscriminant
+  | _ => false
 
 def splitCasesDefaultAlternative? (alternatives : Tree) : Option (Tree × Tree) := do
   let .node kind children := unwrapSingleNullTree alternatives | none
@@ -1628,34 +1647,50 @@ def splitCasesDefaultAlternative? (alternatives : Tree) : Option (Tree × Tree) 
         fun index => children[index]?.any fun child => child.firstToken?.isSome
     let defaultIndex ← contentIndexes.head?
     let defaultAlternative ← children[defaultIndex]?
-    if treeContainsRawKind `Lean.Parser.Tactic.inductionAlt defaultAlternative
-        || !(contentIndexes.tail.any
-              fun index =>
-                children[index]?.any
-                  (treeContainsRawKind `Lean.Parser.Tactic.inductionAlt)) then
+    if treeIsCasesAlternativeGroup defaultAlternative then
       none
     else
       let explicitAlternatives := .node kind (children.set! defaultIndex .missing)
-      some (.node (.proofBody false) #[defaultAlternative], explicitAlternatives)
+      let defaultBody :=
+        .node (.proofBody defaultAlternative.containsTacticLayoutOwner)
+          #[defaultAlternative]
+      some (defaultBody, explicitAlternatives)
 
 def regroupCasesChildren (children : Array Tree) : Option (Array Tree) := do
   let alternativesIndex ←
     children.findIdx?
       fun child =>
         child.firstToken?.any fun token => token.lexeme == "with"
-  let targetIndex ← previousContentIndex? children alternativesIndex
-  let target ← children[targetIndex]?
+  let suffixIndex ← previousContentIndex? children alternativesIndex
+  let headerContent := childrenRange children 0 alternativesIndex
+  let headerContentIndexes :=
+    (List.range headerContent.size).filter
+      fun index => headerContent[index]?.any fun child => child.firstToken?.isSome
+  let targetIndex ← headerContentIndexes[1]?
+  let target ← headerContent[targetIndex]?
+  let targetIsNamed := casesTargetGroupContainsNamedDiscriminant target
+  let targetGroup :=
+    match target with
+    | .node (.raw `null) targetChildren =>
+        .node (.tacticEliminationTargets targetIsNamed) targetChildren
+    | _ => .node (.tacticEliminationTargets targetIsNamed) #[target]
+  let children := children.set! targetIndex targetGroup
+  let suffix ← children[suffixIndex]?
   let alternatives ← children[alternativesIndex]?
   let (withKeyword, alternatives) ← Tree.extractLeadingLexeme? "with" alternatives
-  let header := .node .suffixGroup #[target, withKeyword]
-  let children := children.set! targetIndex header
+  let suffix := .node .suffixGroup #[suffix, withKeyword]
+  let children := children.set! suffixIndex suffix
+  let headerChildren := childrenRange children 0 alternativesIndex
+  let trailingChildren := childrenRange children (alternativesIndex + 1) children.size
   match splitCasesDefaultAlternative? alternatives with
   | some (defaultAlternative, explicitAlternatives) =>
-      some
-      <| childrenRange children 0 alternativesIndex
-          ++ #[defaultAlternative, explicitAlternatives]
-          ++ childrenRange children (alternativesIndex + 1) children.size
-  | none => some <| children.set! alternativesIndex alternatives
+      let header :=
+        .node (.tacticEliminationHeader targetIsNamed)
+          (headerChildren.push defaultAlternative)
+      some <| #[header, explicitAlternatives] ++ trailingChildren
+  | none =>
+      let header := .node (.tacticEliminationHeader targetIsNamed) headerChildren
+      some <| #[header, alternatives] ++ trailingChildren
 
 def regroupNamedDiscriminant? (children : Array Tree) : Option Tree :=
   if children.size == 2 then do

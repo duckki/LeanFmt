@@ -7145,6 +7145,229 @@ def assertMathlibOwnershipConsistencyShapes (env : Lean.Environment) : IO Unit :
   assertEq "a tactic owner after a preceding tactic is idempotent"
     precedingTacticFormatted precedingTacticAgain
 
+  let compactCasesSource :=
+    "theorem compactCasesLayout (value : Nat) : True := by\n"
+    ++ "  cases value with | zero => trivial | succ value => trivial\n"
+  let compactCasesExpected :=
+    "theorem compactCasesLayout (value : Nat) : True := by\n"
+    ++ "  cases value with\n"
+    ++ "  | zero => trivial\n"
+    ++ "  | succ value => trivial\n"
+  let compactCasesFormatted ←
+    Formatter.formatSourceWithEnv env compactCasesSource "compact-cases-layout.lean"
+  assertEq "a structural cases owner does not retain a fitting inline layout"
+    compactCasesExpected compactCasesFormatted
+  assertTrue "compact cases formatting preserves code"
+    (← codePreservedIgnoringWhitespace env compactCasesSource compactCasesFormatted)
+  let compactCasesAgain ←
+    Formatter.formatSourceWithEnv env compactCasesFormatted
+      "compact-cases-layout-formatted.lean"
+  assertEq "compact cases formatting is idempotent"
+    compactCasesFormatted compactCasesAgain
+
+  let casesWithoutWithSource :=
+    "theorem casesWithoutWith (value : Nat) : True := by\n" ++ "  cases value\n"
+  let casesWithoutWithFormatted ←
+    Formatter.formatSourceWithEnv env casesWithoutWithSource "cases-without-with.lean"
+  assertEq "cases without alternatives retain their compact target"
+    casesWithoutWithSource casesWithoutWithFormatted
+
+  let defaultOnlyCasesSource :=
+    "theorem defaultOnlyCases (value : Nat) : True := by\n" ++ "  cases value with simp\n"
+  let defaultOnlyCasesFormatted ←
+    Formatter.formatSourceWithEnv env defaultOnlyCasesSource "cases-default-only.lean"
+  assertEq "a fitting default-only cases tactic stays in its header"
+    defaultOnlyCasesSource defaultOnlyCasesFormatted
+  let defaultOnlyCasesAgain ←
+    Formatter.formatSourceWithEnv env defaultOnlyCasesFormatted
+      "cases-default-only-formatted.lean"
+  assertEq "default-only cases formatting is idempotent"
+    defaultOnlyCasesFormatted defaultOnlyCasesAgain
+
+  let compactNamedCasesSource :=
+    "theorem compactNamedCases (value : Nat) : True := by\n"
+    ++ "  cases selected : value with | zero => trivial | succ value => trivial\n"
+  let compactNamedCasesExpected :=
+    "theorem compactNamedCases (value : Nat) : True := by\n"
+    ++ "  cases selected : value with\n"
+    ++ "  | zero => trivial\n"
+    ++ "  | succ value => trivial\n"
+  let compactNamedCasesTree ←
+    SyntaxTree.parseModuleStringWithEnv env compactNamedCasesSource
+      "compact-named-cases.lean"
+  assertTrue "a cases header records its direct named target"
+    (compactNamedCasesTree.tree.containsNodeKind (.tacticEliminationHeader true))
+  let compactNamedCasesFormatted ←
+    Formatter.formatSourceWithEnv env compactNamedCasesSource "compact-named-cases.lean"
+  assertEq "a fitting named cases header keeps its name and discriminant together"
+    compactNamedCasesExpected compactNamedCasesFormatted
+
+  let proofBearingCasesSource :=
+    "example (value : Nat) : True := by\n"
+    ++ "  cases (show Nat from by exact value) with\n"
+    ++ "  | zero => trivial\n"
+    ++ "  | succ value => trivial\n"
+  let proofBearingCasesExpected :=
+    "example (value : Nat) : True := by\n"
+    ++ "  cases\n"
+    ++ "    (show Nat from by exact value) with\n"
+    ++ "  | zero => trivial\n"
+    ++ "  | succ value => trivial\n"
+  let proofBearingCasesTree ←
+    SyntaxTree.parseModuleStringWithEnv env proofBearingCasesSource
+      "proof-bearing-cases-target.lean"
+  assertTrue "a proof-bearing cases target remains an ordinary direct target"
+    (proofBearingCasesTree.tree.containsNodeKind (.tacticEliminationHeader false))
+  let proofBearingCasesFormatted ←
+    Formatter.formatSourceWithEnv env proofBearingCasesSource
+      "proof-bearing-cases-target.lean" { lineWidth := 42 }
+  assertEq "a proof inside the target does not add a header indentation level"
+    proofBearingCasesExpected proofBearingCasesFormatted
+  assertTrue "proof-bearing cases target formatting preserves code"
+    (← codePreservedIgnoringWhitespace env proofBearingCasesSource
+        proofBearingCasesFormatted)
+
+  let nestedNamedDefaultSource :=
+    "theorem nestedDefault (value : Nat) : True := by\n"
+    ++ "  cases value with\n"
+    ++ "    cases selected : chooseValue first second third fourth with\n"
+    ++ "    | zero => trivial\n"
+    ++ "    | succ value => trivial\n"
+  let nestedNamedDefaultExpected :=
+    "theorem nestedDefault (value : Nat) : True := by\n"
+    ++ "  cases value with\n"
+    ++ "      cases selected\n"
+    ++ "            : chooseValue first second third fourth with\n"
+    ++ "      | zero => trivial\n"
+    ++ "      | succ value => trivial\n"
+  let nestedNamedDefaultResult ←
+    Formatter.formatSourceWithEnvDetailed env nestedNamedDefaultSource
+      "nested-named-default-cases.lean" { lineWidth := 60 }
+  assertTrue "a nested named default tactic does not cause a format fallback"
+    !nestedNamedDefaultResult.fellBack
+  assertEq "a nested named cases tactic retains the default body's direct indentation"
+    nestedNamedDefaultExpected nestedNamedDefaultResult.formatted
+  assertTrue "nested named default formatting preserves code"
+    (← codePreservedIgnoringWhitespace env nestedNamedDefaultSource
+        nestedNamedDefaultResult.formatted)
+  let nestedNamedDefaultAgain ←
+    Formatter.formatSourceWithEnv env nestedNamedDefaultResult.formatted
+      "nested-named-default-cases-formatted.lean" { lineWidth := 60 }
+  assertEq "nested named default formatting is idempotent"
+    nestedNamedDefaultResult.formatted nestedNamedDefaultAgain
+
+  let compactNestedDefaultSource :=
+    "example (value : Nat) : True := by\n"
+    ++ "  cases value with cases chooseValue first second third with"
+    ++ " | zero => trivial | succ inner => trivial\n"
+  let compactNestedDefaultExpected :=
+    "example (value : Nat) : True := by\n"
+    ++ "  cases value with\n"
+    ++ "      cases chooseValue first second third with\n"
+    ++ "      | zero => trivial\n"
+    ++ "      | succ inner => trivial\n"
+  let compactNestedDefaultTree ←
+    SyntaxTree.parseModuleStringWithEnv env compactNestedDefaultSource
+      "compact-nested-default-cases.lean"
+  let nestedDefaultOwnsLayout :=
+    match findTreeNode? (.tacticEliminationHeader false)
+            compactNestedDefaultTree.tree with
+    | some (.node _ children) =>
+        children.any
+          fun
+          | .node (.proofBody true) _ => true
+          | _ => false
+    | _ => false
+  assertTrue "a nested cases default retains structural proof ownership"
+    nestedDefaultOwnsLayout
+  let compactNestedDefaultFormatted ←
+    Formatter.formatSourceWithEnv env compactNestedDefaultSource
+      "compact-nested-default-cases.lean" { lineWidth := 60 }
+  assertEq "a compact nested default tactic expands under its outer cases owner"
+    compactNestedDefaultExpected compactNestedDefaultFormatted
+  assertTrue "compact nested default formatting preserves code"
+    (← codePreservedIgnoringWhitespace env compactNestedDefaultSource
+        compactNestedDefaultFormatted)
+
+  let nestedDefaultAndExplicitSource :=
+    "example (value : Nat) : True := by\n"
+    ++ "  cases value with\n"
+    ++ "    cases fallback with | zero => trivial | succ fallback => trivial\n"
+    ++ "  | zero => trivial\n"
+    ++ "  | succ value => trivial\n"
+  let nestedDefaultAndExplicitExpected :=
+    "example (value : Nat) : True := by\n"
+    ++ "  cases value with\n"
+    ++ "      cases fallback with\n"
+    ++ "      | zero => trivial\n"
+    ++ "      | succ fallback => trivial\n"
+    ++ "  | zero => trivial\n"
+    ++ "  | succ value => trivial\n"
+  let nestedDefaultAndExplicitFormatted ←
+    Formatter.formatSourceWithEnv env nestedDefaultAndExplicitSource
+      "nested-default-and-explicit-cases.lean" { lineWidth := 60 }
+  assertEq "nested default and outer explicit alternatives keep distinct owners"
+    nestedDefaultAndExplicitExpected nestedDefaultAndExplicitFormatted
+  let nestedDefaultAndExplicitAgain ←
+    Formatter.formatSourceWithEnv env nestedDefaultAndExplicitFormatted
+      "nested-default-and-explicit-cases-formatted.lean" { lineWidth := 60 }
+  assertEq "nested default and explicit alternatives are jointly idempotent"
+    nestedDefaultAndExplicitFormatted nestedDefaultAndExplicitAgain
+
+  let namedCasesUsingSource :=
+    "example (value : Nat) : True := by\n"
+    ++ "  cases selected : chooseValue first second third using Nat.rec with\n"
+    ++ "  | zero => trivial\n"
+    ++ "  | succ value => trivial\n"
+  let namedCasesUsingExpected :=
+    "example (value : Nat) : True := by\n"
+    ++ "  cases selected : chooseValue first second third\n"
+    ++ "    using Nat.rec with\n"
+    ++ "  | zero => trivial\n"
+    ++ "  | succ value => trivial\n"
+  let namedCasesUsingTree ←
+    SyntaxTree.parseModuleStringWithEnv env namedCasesUsingSource "named-cases-using.lean"
+  assertTrue "a cases header records a named target before a using suffix"
+    (namedCasesUsingTree.tree.containsNodeKind (.tacticEliminationHeader true))
+  let namedCasesUsingFormatted ←
+    Formatter.formatSourceWithEnv env namedCasesUsingSource "named-cases-using.lean"
+      { lineWidth := 50 }
+  assertEq "a using suffix does not detach a named target from cases"
+    namedCasesUsingExpected namedCasesUsingFormatted
+
+  let multipleNamedCasesSource :=
+    "example (value : Nat) : True := by\n"
+    ++ "  cases value, selected : chooseValue first second third with\n"
+    ++ "  | zero => trivial\n"
+    ++ "  | succ value => trivial\n"
+  let multipleNamedCasesExpected :=
+    "example (value : Nat) : True := by\n"
+    ++ "  cases value,\n"
+    ++ "        selected\n"
+    ++ "        : chooseValue first second third with\n"
+    ++ "  | zero => trivial\n"
+    ++ "  | succ value => trivial\n"
+  let multipleNamedCasesTree ←
+    SyntaxTree.parseModuleStringWithEnv env multipleNamedCasesSource
+      "multiple-named-cases.lean"
+  assertTrue "a cases target list records a direct named target"
+    (multipleNamedCasesTree.tree.containsNodeKind (.tacticEliminationHeader true))
+  assertTrue "multiple cases targets form a structural elimination-target list"
+    (multipleNamedCasesTree.tree.containsNodeKind (.tacticEliminationTargets true))
+  let multipleNamedCasesFormatted ←
+    Formatter.formatSourceWithEnv env multipleNamedCasesSource "multiple-named-cases.lean"
+      { lineWidth := 50 }
+  assertEq "a named target in a cases target list keeps the header base"
+    multipleNamedCasesExpected multipleNamedCasesFormatted
+  assertTrue "multiple named cases formatting preserves code"
+    (← codePreservedIgnoringWhitespace env multipleNamedCasesSource
+        multipleNamedCasesFormatted)
+  let multipleNamedCasesAgain ←
+    Formatter.formatSourceWithEnv env multipleNamedCasesFormatted
+      "multiple-named-cases-formatted.lean" { lineWidth := 50 }
+  assertEq "multiple named cases formatting is idempotent"
+    multipleNamedCasesFormatted multipleNamedCasesAgain
+
   let defaultCasesAlternativeSource :=
     "inductive CasesDefaultExample where\n"
     ++ "  | push (value : Nat)\n"
@@ -7187,6 +7410,11 @@ def assertMathlibOwnershipConsistencyShapes (env : Lean.Environment) : IO Unit :
   assertTrue "cases default alternative formatting preserves code"
     (← codePreservedIgnoringWhitespace env defaultCasesAlternativeSource
         defaultCasesAlternativeResult.formatted)
+  let defaultCasesAlternativeAgain ←
+    Formatter.formatSourceWithEnv env defaultCasesAlternativeResult.formatted
+      "cases-default-alternative-formatted.lean" { lineWidth := 100 }
+  assertEq "default and explicit cases alternatives are jointly idempotent"
+    defaultCasesAlternativeResult.formatted defaultCasesAlternativeAgain
 
   let casesHeaderSource :=
     "theorem casesLayout : True := by\n"
