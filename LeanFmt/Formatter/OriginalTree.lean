@@ -492,6 +492,15 @@ private def isProofLemmaCommand (tree : SyntaxTree.Tree) : Bool :=
       LineBreakRules.treeFirstLexeme? tree == some "lemma" && containsProofTree tree
   | _ => false
 
+private partial def containsTransparentTacticLayoutOwner : SyntaxTree.Tree → Bool
+  | .node kind children =>
+      let tree := SyntaxTree.Tree.node kind children
+      if isCalcTree tree || isProtectedTacticTree tree then
+        false
+      else
+        tree.isTacticLayoutOwner || children.any containsTransparentTacticLayoutOwner
+  | _ => false
+
 private def isAttributeModifierBlock (tree : SyntaxTree.Tree) : Bool :=
   match tree with
   | .node (.raw `Lean.Parser.Command.declModifiers) _ =>
@@ -541,7 +550,7 @@ def classify? (tree : SyntaxTree.Tree) : Option LayoutIslandKind :=
     some .mathlibTactic
   else if isProofLayoutIsland tree then
     some .proofLayout
-  else if isProofLemmaCommand tree && !tree.containsTacticLayoutOwner then
+  else if isProofLemmaCommand tree && !containsTransparentTacticLayoutOwner tree then
     some .proofLemma
   else if isAttributeModifierBlock tree then
     some .attributes

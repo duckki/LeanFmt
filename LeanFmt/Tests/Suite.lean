@@ -10391,14 +10391,34 @@ def assertFormatterArchitecture : IO Unit := do
       ]
   assertTrue "a leaf lemma remains an original-layout island"
     (Formatter.OriginalTree.classify? leafLemma == some .proofLemma)
+  let casesOwner :=
+    SyntaxTree.Tree.node (.raw `Lean.Parser.Tactic.cases)
+      #[
+        .node (.raw `null)
+          #[
+            .node (.raw `Lean.Parser.Tactic.tacticSeq)
+              #[.leaf (syntheticAtomToken "exact")]
+          ]
+      ]
   let structuralLemma :=
     SyntaxTree.Tree.node (.raw `lemma)
       #[
         .leaf (syntheticAtomToken "lemma"),
-        .node (.proofBody true) #[.leaf (syntheticAtomToken "cases")]
+        .node (.proofBody true) #[casesOwner]
       ]
   assertTrue "a lemma exposes a structural tactic owner"
     (Formatter.OriginalTree.classify? structuralLemma != some .proofLemma)
+  let protectedCalcLemma :=
+    SyntaxTree.Tree.node (.raw `lemma)
+      #[
+        .leaf (syntheticAtomToken "lemma"),
+        .node (.proofBody true)
+          #[
+            .node (.raw `Lean.calcTactic) #[.leaf (syntheticAtomToken "calc")]
+          ]
+      ]
+  assertTrue "a protected tactic owner does not open its lemma"
+    (Formatter.OriginalTree.classify? protectedCalcLemma == some .proofLemma)
   let annotation :=
     SyntaxTree.Tree.node (.raw `Lean.Parser.Command.declModifiers)
       #[.leaf (syntheticAtomToken "@[")]

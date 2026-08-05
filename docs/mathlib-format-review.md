@@ -10,11 +10,13 @@ It is a point-in-time work list, not part of the normative formatting style.
 
 The working tree narrows the Mathlib `lemma` original-layout exception by one
 existing syntax fact: a lemma remains protected only when it contains no
-structural tactic layout owner. This matches the established proof-body policy.
+structurally rendered tactic layout owner.
 It does not add a rule API, inspect tokens in a line-break rule, or teach the
 renderer about commands or tactics. Leaf lemma proofs remain complete source
-islands; a lemma containing `cases`, induction alternatives, or a visible `calc`
+islands; a lemma containing transparent `cases` or induction alternatives
 exposes the existing owner so its direct children can use that owner's rule.
+An original-layout owner such as `calc` remains part of the protected lemma and
+cannot open its parent island.
 
 Focused coverage verifies that a direct multiline `cases` body is indented two
 levels below its alternative, formatting preserves code, and a second pass is

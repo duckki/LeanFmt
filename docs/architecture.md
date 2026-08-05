@@ -804,10 +804,11 @@ Proof subtrees and extensible attribute payloads are not reformatted.
 and emission plan. Classification produces one `LayoutIslandKind`; the renderer retains
 that result and passes it into emission instead of repeating the protected-tree scans.
 Mathlib `lemma` commands remain complete original-layout islands when their proofs have
-no structural tactic owner. When a proof already advertises an owner such as `cases`,
-induction alternatives, or a visible `calc`, the command exposes that owner just as an
-ordinary proof body does; the owner's existing rule then controls its direct children
-while leaf proof regions remain protected.
+no structurally rendered tactic owner. When a proof contains a transparent owner such as
+`cases` or induction alternatives, the command exposes that owner just as an ordinary
+proof body does; the owner's existing rule then controls its direct children while leaf
+proof regions remain protected. An owner such as `calc` that is itself an original-layout
+island cannot justify opening its protected parent.
 Its renderer-facing API returns the planned text, final token, and the one
 comment-boundary flag needed by subsequent ordinary rendering; it does not own or mutate
 renderer state. When the renderer reaches a recognized proof or attribute node, it
