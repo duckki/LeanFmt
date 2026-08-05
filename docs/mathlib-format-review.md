@@ -6,6 +6,46 @@ It is a point-in-time work list, not part of the normative formatting style.
 
 ## Current status: 2026-08-05
 
+### Direct `cases` body checkpoint after `d87a9c6`
+
+The working tree narrows the Mathlib `lemma` original-layout exception by one
+existing syntax fact: a lemma remains protected only when it contains no
+structural tactic layout owner. This matches the established proof-body policy.
+It does not add a rule API, inspect tokens in a line-break rule, or teach the
+renderer about commands or tactics. Leaf lemma proofs remain complete source
+islands; a lemma containing `cases`, induction alternatives, or a visible `calc`
+exposes the existing owner so its direct children can use that owner's rule.
+
+Focused coverage verifies that a direct multiline `cases` body is indented two
+levels below its alternative, formatting preserves code, and a second pass is
+stable. Architecture coverage separately verifies both sides of the exception:
+a leaf lemma remains a `.proofLemma` island, while a lemma with a structural
+proof owner does not.
+
+The complete local release gate passed: build, tests, linter, fixture update and
+dry check, self-formatting, preservation, overflow, missing-rule, and idempotency
+checks were all clean. A fresh GraphQL and quantum validation passed in 305
+seconds with no formatting changes, exceptions, build failures, or worsening
+batch-time trend.
+
+At width 100, eight affected Mathlib modules passed preservation and idempotency
+formatting, and their combined 3,020-target build completed successfully. Direct
+`cases` bodies in `Algebra/CharP/MixedCharZero.lean`,
+`Analysis/Meromorphic/Order.lean`, `Data/ENat/Lattice.lean`,
+`Data/EReal/Operations.lean`, and
+`LinearAlgebra/Projectivization/Cardinality.lean` now use the intended two-level
+body indentation. The build emitted only accepted 100-column linter warnings;
+formatter diagnostics found no actionable overflow.
+
+This checkpoint deliberately does not reach through an outer structural owner.
+Nested `cases` bodies under induction alternatives remain source-preserved in
+`RingTheory/Etale/QuasiFinite.lean` and
+`Tactic/ComputeAsymptotics/Multiseries/Monomial/Basic.lean`. That is a distinct
+induction-alternative ownership family and should be the next review target, not
+an extension of this condition. Before that fix, run the complete Mathlib
+formatter and post-format build once for the current checkpoint so its corpus
+impact can be reviewed independently.
+
 ### Structural `cases` checkpoint after `c9f4e8c`
 
 The structural `cases` change after `c9f4e8c` groups a direct target collection,

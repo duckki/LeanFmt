@@ -541,7 +541,7 @@ def classify? (tree : SyntaxTree.Tree) : Option LayoutIslandKind :=
     some .mathlibTactic
   else if isProofLayoutIsland tree then
     some .proofLayout
-  else if isProofLemmaCommand tree then
+  else if isProofLemmaCommand tree && !tree.containsTacticLayoutOwner then
     some .proofLemma
   else if isAttributeModifierBlock tree then
     some .attributes

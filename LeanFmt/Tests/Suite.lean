@@ -7165,6 +7165,33 @@ def assertMathlibOwnershipConsistencyShapes (env : Lean.Environment) : IO Unit :
   assertEq "compact cases formatting is idempotent"
     compactCasesFormatted compactCasesAgain
 
+  let oneLevelCasesBodySource :=
+    "theorem oneLevelCasesBody (value : Nat) : True := by\n"
+    ++ "  cases value with\n"
+    ++ "  | zero => trivial\n"
+    ++ "  | succ value =>\n"
+    ++ "    have h : True := True.intro\n"
+    ++ "    exact h\n"
+  let oneLevelCasesBodyExpected :=
+    "theorem oneLevelCasesBody (value : Nat) : True := by\n"
+    ++ "  cases value with\n"
+    ++ "  | zero => trivial\n"
+    ++ "  | succ value =>\n"
+    ++ "      have h : True := True.intro\n"
+    ++ "      exact h\n"
+  let oneLevelCasesBodyFormatted ←
+    Formatter.formatSourceWithEnv env oneLevelCasesBodySource "one-level-cases-body.lean"
+  assertEq "a cases body uses two indentation levels below its alternative"
+    oneLevelCasesBodyExpected oneLevelCasesBodyFormatted
+  assertTrue "two-level cases body formatting preserves code"
+    (← codePreservedIgnoringWhitespace env oneLevelCasesBodySource
+        oneLevelCasesBodyFormatted)
+  let oneLevelCasesBodyAgain ←
+    Formatter.formatSourceWithEnv env oneLevelCasesBodyFormatted
+      "one-level-cases-body-formatted.lean"
+  assertEq "two-level cases body formatting is idempotent"
+    oneLevelCasesBodyFormatted oneLevelCasesBodyAgain
+
   let casesWithoutWithSource :=
     "theorem casesWithoutWith (value : Nat) : True := by\n" ++ "  cases value\n"
   let casesWithoutWithFormatted ←
@@ -10356,6 +10383,22 @@ def assertFormatterArchitecture : IO Unit := do
       #[.leaf (syntheticAtomToken "`("), .leaf (syntheticAtomToken ")")]
   assertTrue "command quotations preserve their original layout"
     (Formatter.OriginalTree.shouldEmit commandQuotation)
+  let leafLemma :=
+    SyntaxTree.Tree.node (.raw `lemma)
+      #[
+        .leaf (syntheticAtomToken "lemma"),
+        .node (.proofBody false) #[.leaf (syntheticAtomToken "exact")]
+      ]
+  assertTrue "a leaf lemma remains an original-layout island"
+    (Formatter.OriginalTree.classify? leafLemma == some .proofLemma)
+  let structuralLemma :=
+    SyntaxTree.Tree.node (.raw `lemma)
+      #[
+        .leaf (syntheticAtomToken "lemma"),
+        .node (.proofBody true) #[.leaf (syntheticAtomToken "cases")]
+      ]
+  assertTrue "a lemma exposes a structural tactic owner"
+    (Formatter.OriginalTree.classify? structuralLemma != some .proofLemma)
   let annotation :=
     SyntaxTree.Tree.node (.raw `Lean.Parser.Command.declModifiers)
       #[.leaf (syntheticAtomToken "@[")]
