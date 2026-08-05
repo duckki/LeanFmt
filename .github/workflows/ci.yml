@@ -19,7 +19,7 @@ jobs:
     name: Current toolchain
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: leanprover/lean-action@v1
         with:
           build-args: --wfail
@@ -42,7 +42,7 @@ jobs:
       matrix:
         lean: [v4.29.1, v4.30.0, v4.31.0]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Select compatibility toolchain
         run: echo "leanprover/lean4:${{ matrix.lean }}" > lean-toolchain
       - uses: leanprover/lean-action@v1
