@@ -30,6 +30,12 @@ partial def findTreeNode? (target : SyntaxTree.NodeKind)
           none
   | _ => none
 
+partial def countTreeNodes (target : SyntaxTree.NodeKind) : SyntaxTree.Tree → Nat
+  | .node kind children =>
+      (if kind == target then 1 else 0)
+      + children.foldl (fun count child => count + countTreeNodes target child) 0
+  | _ => 0
+
 def textContains (text needle : String) : Bool :=
   match text.splitOn needle with
   | [_] => false
@@ -7236,6 +7242,42 @@ def assertMathlibOwnershipConsistencyShapes (env : Lean.Environment) : IO Unit :
     Formatter.formatSourceWithEnv env namedCasesFormatted
       "named-cases-discriminant-formatted.lean" { lineWidth := 56 }
   assertEq "named cases formatting is idempotent" namedCasesFormatted namedCasesAgain
+
+  let nestedCasesSource :=
+    "theorem nestedCasesOwnership (n : Nat) : True := by\n"
+    ++ "  cases n with | zero => simp | succ n =>\n"
+    ++ "  cases n with\n"
+    ++ "  | zero => simp\n"
+    ++ "  | succ n =>\n"
+    ++ "  have h : True := True.intro\n"
+    ++ "  exact h\n"
+  let nestedCasesTree ←
+    SyntaxTree.parseModuleStringWithEnv env nestedCasesSource
+      "nested-cases-ownership.lean"
+  assertTrue "a nested cases sequence remains structurally owned"
+    (2 <= countTreeNodes (.proofBody true) nestedCasesTree.tree)
+  assertTrue "leaf cases bodies remain protected"
+    (0 < countTreeNodes (.proofBody false) nestedCasesTree.tree)
+  let nestedCasesExpected :=
+    "theorem nestedCasesOwnership (n : Nat) : True := by\n"
+    ++ "  cases n with\n"
+    ++ "  | zero => simp\n"
+    ++ "  | succ n =>\n"
+    ++ "      cases n with\n"
+    ++ "      | zero => simp\n"
+    ++ "      | succ n =>\n"
+    ++ "          have h : True := True.intro\n"
+    ++ "          exact h\n"
+  let nestedCasesFormatted ←
+    Formatter.formatSourceWithEnv env nestedCasesSource "nested-cases-ownership.lean"
+  assertEq "nested cases bodies use the shared alternative indentation"
+    nestedCasesExpected nestedCasesFormatted
+  assertTrue "nested cases formatting preserves code"
+    (← codePreservedIgnoringWhitespace env nestedCasesSource nestedCasesFormatted)
+  let nestedCasesAgain ←
+    Formatter.formatSourceWithEnv env nestedCasesFormatted
+      "nested-cases-ownership-formatted.lean"
+  assertEq "nested cases formatting is idempotent" nestedCasesFormatted nestedCasesAgain
 
   let unsupportedTacticOwnerSource :=
     "theorem firstAlternativeLayout : True := by\n"

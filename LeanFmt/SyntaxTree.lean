@@ -225,7 +225,7 @@ def containsTacticLayoutOwner (tree : Tree) : Bool :=
 partial def protectNestedTacticSequences : Tree → Tree
   | tree@(.node (.tactic kind _ _ _) _) =>
       if isTacticSequenceKind kind then
-        .node (.proofBody false) #[tree]
+        .node (.proofBody tree.containsTacticLayoutOwner) #[tree]
       else
         tree
   | .node kind children =>
