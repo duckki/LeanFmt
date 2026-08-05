@@ -470,7 +470,8 @@ def WhitespaceState.defaultWhitespace (state : WhitespaceState) (token : SyntaxT
         let indent := state.indentForMultilineToken token indent
         let indentation := spaces indent
         if state.preserveNextStandaloneCommentIndent
-            && SpaceRules.hasCommentStart trivia then
+            && SpaceRules.hasCommentStart trivia
+            && !commentTriviaStartsAfterBlankLine trivia then
           let leftStayedAtSourceColumn :=
             state.currentLine.endsWith left.lexeme
             && lineWidth state.currentLine - left.lexeme.length
@@ -482,6 +483,7 @@ def WhitespaceState.defaultWhitespace (state : WhitespaceState) (token : SyntaxT
                 match state.pendingCommandBoundary? with
                 | some spacing =>
                     commentTriviaForBoundary trivia commentIndentation indentation spacing
+                      false
                 | none =>
                     SpaceRules.commentTriviaForBreakWithFollowingIndent trivia
                       commentIndentation indentation
@@ -500,6 +502,22 @@ def WhitespaceState.defaultWhitespace (state : WhitespaceState) (token : SyntaxT
             SpaceRules.firstCommentColumn? boundaryTrivia <| lineWidth state.currentLine
           SpaceRules.commentTriviaForTreeBoundary boundaryTrivia
             (sourceCommentColumn.getD 0) (targetCommentColumn.getD 0) indentation
+        else if SpaceRules.hasCommentStart trivia
+                && SpaceRules.hasLineStructure trivia
+                && !commentTriviaStartsOnNewLine trivia then
+          let boundaryTrivia := SpaceRules.cleanTrivia trivia
+          let sourceCommentColumn :=
+            SpaceRules.firstCommentColumn? trivia
+              (state.sourceMap.columnAt left.span.stop)
+          let targetCommentColumn :=
+            SpaceRules.firstCommentColumn? boundaryTrivia (lineWidth state.currentLine)
+          let adjusted :=
+            SpaceRules.commentTriviaForTreeBoundary boundaryTrivia
+              (sourceCommentColumn.getD 0) (targetCommentColumn.getD 0) indentation
+          if state.pendingCommandBoundary? == some .blankLine then
+            ensureBlankLineBeforeIndentation adjusted indentation
+          else
+            adjusted
         else if state.pendingCommandBoundary? == some .blankLine
                 && state.sourceMap.columnAt token.span.start
                     == state.sourceLayoutBaseColumn
@@ -987,12 +1005,39 @@ def firstLineWithBreakFlag (text : String) : String × Bool :=
 def RenderState.withoutLineFitSuffix (state : RenderState) : RenderState :=
   { state with lineFitSuffixWidth := 0 }
 
+partial def firstTokenWithContext?
+    (context : LineBreakRules.RuleContext) (tree : SyntaxTree.Tree)
+    : Option (LineBreakRules.RuleContext × SyntaxTree.Token) :=
+  match tree with
+  | .missing => none
+  | .leaf token => if token.lexeme.isEmpty then none else some (context, token)
+  | .node _ _ =>
+      let segment := LineBreakRules.Segment.ofTree tree
+      segment.indexes.findSome?
+        fun index =>
+          segment.child? index >>= firstTokenWithContext? (context.push segment index)
+
 def suffixMayContinueAcrossRuleBreak (segment : LineBreakRules.Segment) (index : Nat)
     : Bool :=
   match segment.child? index >>= SyntaxTree.Tree.firstToken? with
   | some token =>
       LineBreakRules.suffixTokenAction { ancestors := [] } token == .emit
   | none => false
+
+def treeStartsWithStructuralSuffix (tree : SyntaxTree.Tree) : Bool :=
+  match firstTokenWithContext? {} tree with
+  | some (context, token) =>
+      LineBreakRules.suffixTokenAction context token == .emit
+      && LineBreakRules.suffixTokenAction { ancestors := [] } token != .emit
+  | none => false
+
+def groupedSuffixMayContinueAcrossRuleBreak
+    (segment : LineBreakRules.Segment) (index : Nat)
+    : Bool :=
+  match segment.child? index with
+  | some child@(.node _ _) =>
+      treeStartsWithStructuralSuffix child
+  | _ => false
 
 def WhitespaceState.appendText (state : WhitespaceState) (text : String)
     : WhitespaceState :=
@@ -1235,7 +1280,8 @@ def firstRuleBreakAfter
     (fun stop breakPoint =>
       if index < breakPoint.index
           && breakPoint.index < stop
-          && !suffixMayContinueAcrossRuleBreak segment breakPoint.index then
+          && !suffixMayContinueAcrossRuleBreak segment breakPoint.index
+          && !groupedSuffixMayContinueAcrossRuleBreak segment breakPoint.index then
         breakPoint.index
       else
         stop)
@@ -1744,8 +1790,17 @@ def FlowRenderContext.nextBreakIndex (flow : FlowRenderContext) (index : Nat) : 
 def FlowRenderContext.stateForPieceFit
     (flow : FlowRenderContext) (state : RenderState) (index : Nat)
     : RenderState :=
-  if flow.nextBreakIndex index == flow.segment.stop then
+  let nextBreakIndex := flow.nextBreakIndex index
+  if nextBreakIndex == flow.segment.stop then
     state
+  else if groupedSuffixMayContinueAcrossRuleBreak flow.segment nextBreakIndex then
+    match flow.segment.child? (nextBreakIndex - 1) with
+    | some child =>
+        let suffixWidth :=
+          lineFitSuffixForChild state flow.segment (nextBreakIndex - 1)
+            flow.segment.stop child
+        { state with lineFitSuffixWidth := suffixWidth }
+    | none => state
   else
     { state with lineFitSuffixWidth := 0 }
 
@@ -1816,7 +1871,10 @@ def FlowRenderContext.stateForForcedNestedChild?
           <| state.withPendingIndent
               (state.currentIndent + breakPoint.indentLevels * indentationSpaces)
       else if keepPrefixWithChildFirstLine then
-        none
+        if (OriginalTree.classify? child).isSome && !childFit.flat then
+          some <| flow.withBreak state breakPoint
+        else
+          none
       else if breakAfterPreviousChild
               || !childFit.fits
               || flow.hasSourceBreakAt index
@@ -2441,6 +2499,17 @@ mutual
       match flow.segment.child? index with
       | none => renderFlowChildren state flow (index + 1) breakAfterPreviousChild
       | some child =>
+          let state :=
+            if index + 1 == flow.segment.stop
+                && flow.rule.inheritBase flow.entryState.context flow.segment
+                && flow.rule.roundUpBaseIndentation then
+              {
+                state with
+                  segmentBaseColumn := flow.entryState.segmentBaseColumn
+                  segmentIndentation := flow.entryState.segmentIndentation
+              }
+            else
+              state
           let childSegment := LineBreakRules.Segment.ofTree child
           let childContext := state.context.push flow.segment index
           let childFit :=
@@ -2459,9 +2528,14 @@ mutual
             && !commentForcesBreakAt state.source flow.segment index
           let renderNestedAndContinue (state : RenderState) :=
             let before := state
+            let nextBreakIndex := flow.nextBreakIndex index
+            let suffixStop :=
+              if groupedSuffixMayContinueAcrossRuleBreak flow.segment nextBreakIndex then
+                flow.segment.stop
+              else
+                nextBreakIndex
             let rendered :=
-              renderNestedSegment state flow.segment index child
-                (some (flow.nextBreakIndex index))
+              renderNestedSegment state flow.segment index child (some suffixStop)
             renderFlowChildren rendered flow (index + 1)
               (renderedTreeIsMultiline before rendered child)
           match flow.stateForForcedNestedChild? state index child breakAfterPreviousChild

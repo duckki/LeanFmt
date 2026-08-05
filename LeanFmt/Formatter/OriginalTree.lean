@@ -219,9 +219,27 @@ private def tokenStartsCurrentLine (currentLine : String) (token : SyntaxTree.To
     let prefixLength := currentLine.length - token.lexeme.length
     (currentLine.take prefixLength).all SpaceRules.isHorizontalWhitespace
 
-private def isProofTree (tree : SyntaxTree.Tree) : Bool :=
+private def bodyColumnAfterOpeningDelimiter?
+    (currentLine : String) (token : SyntaxTree.Token)
+    : Option Nat :=
+  if !currentLine.endsWith token.lexeme then
+    none
+  else
+    let prefixLength := currentLine.length - token.lexeme.length
+    let precedingText :=
+      SpaceRules.stripLineEndWhitespace <| (currentLine.take prefixLength).toString
+    if LineBreakRules.suffixOpeningDelimiterLexeme precedingText then
+      some (precedingText.length - 1 + indentationSpaces)
+    else
+      none
+
+private def isProofBodyTree (tree : SyntaxTree.Tree) : Bool :=
   match tree with
-  | .node .proofBody _ => true
+  | .node (.proofBody _) _ => true
+  | _ => false
+
+private def proofBodyContainsTacticLayoutOwner : SyntaxTree.Tree → Bool
+  | .node (.proofBody containsOwner) _ => containsOwner
   | _ => false
 
 private def isQuotationTree : SyntaxTree.Tree → Bool
@@ -230,6 +248,8 @@ private def isQuotationTree : SyntaxTree.Tree → Bool
   | .node (.raw `Lean.Parser.Command.quot) _ => true
   | .node (.raw `Lean.Parser.Tactic.quot) _ => true
   | .node (.raw `Lean.Parser.Tactic.quotSeq) _ => true
+  | .node (.tactic `Lean.Parser.Tactic.quot _ _ _) _ => true
+  | .node (.tactic `Lean.Parser.Tactic.quotSeq _ _ _) _ => true
   | .node (.raw `token_antiquot) _ => true
   | .node (.raw `Qq.«termQ(__)») _ => true
   | .node kind _ =>
@@ -247,7 +267,7 @@ private partial def containsQuotationOutsideProofTree : SyntaxTree.Tree → Bool
   | .missing => false
   | .leaf _ => false
   | tree@(.node _ children) =>
-      if isProofTree tree then
+      if isProofBodyTree tree then
         false
       else
         isQuotationTree tree || children.any containsQuotationOutsideProofTree
@@ -313,14 +333,34 @@ private def isLayoutSensitiveCommand : SyntaxTree.Tree → Bool
   | .node (.raw `Batteries.Tactic.Alias.aliasLR) _ => true
   | _ => false
 
-private def isMathlibTacticSyntaxTree : SyntaxTree.Tree → Bool
-  | .node (.raw `Mathlib.Tactic.dsimpPercent) _ => false
-  | .node kind _ =>
-      (SyntaxTree.nodeKindName kind).startsWith "Mathlib.Tactic."
-  | _ => false
+private def isTacticSequenceKind (kind : Lean.SyntaxNodeKind) : Bool :=
+  SyntaxTree.Tree.isTacticSequenceKind kind
+
+private def coreTacticKindName (kindName : String) : Bool :=
+  SyntaxTree.isCoreTacticKindName kindName
 
 private def isCalcTree : SyntaxTree.Tree → Bool
-  | .node (.raw `Lean.calc) _ => true
+  | tree => SyntaxTree.Tree.isCalcTree tree
+
+private def isTacticKindName (kindName : String) : Bool :=
+  coreTacticKindName kindName || SyntaxTree.isExtensionTacticKindName kindName
+
+private def isProtectedTacticTree : SyntaxTree.Tree → Bool
+  | .node (.raw `Mathlib.Tactic.dsimpPercent) _ => false
+  | .node (.tactic `Mathlib.Tactic.dsimpPercent _ _ _) _ => false
+  | tree@(.node kind _) =>
+      let kindName := SyntaxTree.nodeKindName kind
+      if isQuotationTree tree then
+        false
+      else if isTacticKindName kindName then
+        match kind with
+        | .tactic rawKind _ isOwner _ =>
+            !isTacticSequenceKind rawKind && !isOwner
+        | .raw rawKind =>
+            !isTacticSequenceKind rawKind && !SyntaxTree.Tree.isTacticLayoutOwner tree
+        | _ => true
+      else
+        false
   | _ => false
 
 private def tokenHasCommentTrivia (token : SyntaxTree.Token) : Bool :=
@@ -387,7 +427,7 @@ private partial def containsProofTree : SyntaxTree.Tree → Bool
   | .missing => false
   | .leaf _ => false
   | tree@(.node _ children) =>
-      isProofTree tree || children.any containsProofTree
+      isProofBodyTree tree || children.any containsProofTree
 
 private def isProofLambdaTree (tree : SyntaxTree.Tree) : Bool :=
   LineBreakRules.treeFirstLexeme? tree == some "fun" && containsProofTree tree
@@ -495,8 +535,10 @@ deriving BEq, Repr
 def classify? (tree : SyntaxTree.Tree) : Option LayoutIslandKind :=
   if isIgnoreNextTarget tree then
     some .ignored
-  else if isProofTree tree then
+  else if isProofBodyTree tree && !proofBodyContainsTacticLayoutOwner tree then
     some .proof
+  else if isProtectedTacticTree tree then
+    some .mathlibTactic
   else if isProofLayoutIsland tree then
     some .proofLayout
   else if isProofLemmaCommand tree then
@@ -523,8 +565,6 @@ def classify? (tree : SyntaxTree.Tree) : Option LayoutIslandKind :=
     some .batteriesLibraryNote
   else if isLayoutSensitiveCommand tree then
     some .layoutSensitiveCommand
-  else if isMathlibTacticSyntaxTree tree then
-    some .mathlibTactic
   else if isCustomBracedTermSyntaxTree tree then
     some .customBracedTerm
   else if isCustomSubalgebraAdjoinSyntaxTree tree then
@@ -576,6 +616,7 @@ def LayoutIslandKind.retainsRelativeLayout : LayoutIslandKind → Bool
   | .quotationLayout
   | .quotation
   | .proofWidgetsJsx
+  | .mathlibTactic
   | .layoutSensitiveCommand => true
   | _ => false
 
@@ -585,12 +626,13 @@ def LayoutIslandKind.usesPendingIndent : LayoutIslandKind → Bool
   | .proofWidgetsJsx
   | .quotationLayout
   | .quotation
+  | .mathlibTactic
   | .layoutSensitiveCommand
   | .syntaxComment => true
   | _ => false
 
 def LayoutIslandKind.preservesFollowingCommentIndent : LayoutIslandKind → Bool
-  | .layoutSensitiveCommand => true
+  | .proof | .layoutSensitiveCommand => true
   | _ => false
 
 def LayoutIslandKind.formatsLeadingBoundary : LayoutIslandKind → Bool
@@ -776,8 +818,13 @@ private def emitRebased? (request : EmissionRequest) (tree : SyntaxTree.Tree)
         fun token =>
           if tokenStartsCurrentLine request.currentLine token then
             some (request.currentLine.length - token.lexeme.length + indentationSpaces)
-          else
+          else if sourceColumn <= request.sourceLayoutBaseColumn then
             none
+          else if request.sourceMap.columnAt token.span.start
+                  == request.currentLine.length - token.lexeme.length then
+            none
+          else
+            bodyColumnAfterOpeningDelimiter? request.currentLine token
     else
       none
   let targetColumn? :=

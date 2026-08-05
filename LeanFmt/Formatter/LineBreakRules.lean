@@ -87,6 +87,7 @@ end Segment
 def Segment.rawKind? (segment : Segment) : Option Lean.SyntaxNodeKind :=
   match segment.parent with
   | .node (.raw kind) _ => some kind
+  | .node (.tactic kind _ _ _) _ => some kind
   | .node (.letExpression kind _) _ => some kind
   | _ => none
 
@@ -99,12 +100,14 @@ def RuleContext.parentRawKind? (context : RuleContext) : Option Lean.SyntaxNodeK
   | some frame =>
       match frame.segment.parent with
       | .node (.raw kind) _ => some kind
+      | .node (.tactic kind _ _ _) _ => some kind
       | _ => none
   | none => none
 
 def Frame.rawKind? (frame : Frame) : Option Lean.SyntaxNodeKind :=
   match frame.segment.parent with
   | .node (.raw kind) _ => some kind
+  | .node (.tactic kind _ _ _) _ => some kind
   | .node (.letExpression kind _) _ => some kind
   | _ => none
 
@@ -229,6 +232,7 @@ def childIsRawKind (segment : Segment) (index : Nat) (kind : Lean.SyntaxNodeKind
     : Bool :=
   match segment.child? index with
   | some (.node (.raw childKind) _) => childKind == kind
+  | some (.node (.tactic childKind _ _ _) _) => childKind == kind
   | _ => false
 
 partial def treeIsRawKindThroughNullWrappers
@@ -244,6 +248,7 @@ partial def treeIsRawKindThroughNullWrappers
         && content[0]?.any fun child => treeIsRawKindThroughNullWrappers child kind
       else
         false
+  | .node (.tactic childKind _ _ _) _ => childKind == kind
   | _ => false
 
 def childIsRawKindThroughNullWrappers
@@ -262,6 +267,7 @@ def treeHasContent : SyntaxTree.Tree → Bool
 def treeIsRawKind (tree : SyntaxTree.Tree) (kind : Lean.SyntaxNodeKind) : Bool :=
   match tree with
   | .node (.raw treeKind) _ => treeKind == kind
+  | .node (.tactic treeKind _ _ _) _ => treeKind == kind
   | _ => false
 
 partial def treeFirstLexeme? : SyntaxTree.Tree → Option String
@@ -292,7 +298,13 @@ partial def treeContainsRawKind (kind : Lean.SyntaxNodeKind) : SyntaxTree.Tree �
   | .leaf _ => false
   | .node (.raw treeKind) children =>
       treeKind == kind || children.any (treeContainsRawKind kind)
+  | .node (.tactic treeKind _ _ _) children =>
+      treeKind == kind || children.any (treeContainsRawKind kind)
   | .node _ children => children.any (treeContainsRawKind kind)
+
+def childContainsNodeKind (segment : Segment) (index : Nat) (kind : SyntaxTree.NodeKind)
+    : Bool :=
+  segment.child? index |>.any fun child => child.containsNodeKind kind
 
 def childStartsWithLexeme (segment : Segment) (index : Nat) (lexeme : String) : Bool :=
   match segment.child? index with
@@ -524,6 +536,7 @@ def suffixInfixOperatorIn : List Frame → Bool
   | parent :: ancestors =>
       match parent.nodeKind? with
       | some (.infixChain _) => parent.childIndex % 2 == 1
+      | some .lowPriorityInfixRhs => parent.childIndex == 0
       | _ => frameWrapsOnlySelectedChild parent && suffixInfixOperatorIn ancestors
 
 def suffixInfixOperator (context : RuleContext) : Bool :=
@@ -799,6 +812,9 @@ def nullInheritBase (context : RuleContext) (segment : Segment) : Bool :=
   || parentIsRawKind context `Lean.Parser.Term.structInstFields
   || parentIsRawKind context `Lean.Parser.Term.letRecDecls
   || parentIsRawKind context `Lean.Parser.Term.letRecDecl
+  || parentIsRawKind context `Lean.Parser.Tactic.cases
+  || parentIsRawKind context `Lean.Parser.Tactic.inductionAlts
+  || parentIsRawKind context `Lean.Parser.Tactic.inductionAlt
   || parentIsRawKind context `BigOperators.bigOpBinder
   || parentIsRawKind context `Batteries.ExtendedBinder.extBinder
   || parentIsRawKind context `Batteries.ExtendedBinder.extBinderCollection
@@ -880,40 +896,68 @@ def lowPriorityInfixSegment (segment : Segment) : Bool :=
   | .node (.infixChain `«term_<|_») _ => true
   | _ => false
 
-def childUsesMandatoryStartAlignment (segment : Segment) (index : Nat) : Bool :=
-  match segment.child? index with
-  | some (.node (.letExpression _ _) _) => true
-  | some (.node (.raw kind) _) =>
-      kind == `Lean.Parser.Term.let
-      || kind == `Lean.Parser.Term.letrec
-      || kind == `Lean.Parser.Term.have
-      || kind == `Lean.Parser.Term.haveI
+def lowPriorityInfixRhsSegment (segment : Segment) : Bool :=
+  match segment.parent with
+  | .node .lowPriorityInfixRhs _ => true
   | _ => false
 
-def lowPriorityInfixHasMandatoryAlignedRhs (segment : Segment) : Bool :=
-  lowPriorityInfixSegment segment
-  && segment.indexes.any
-      fun index =>
-        index % 2 == 0 && 0 < index && childUsesMandatoryStartAlignment segment index
+def childIsLowPriorityInfixRhs (segment : Segment) (index : Nat) : Bool :=
+  match segment.child? index with
+  | some (.node .lowPriorityInfixRhs _) => true
+  | _ => false
 
-def attachedBodyInfixOperator (segment : Segment) (index : Nat) : Bool :=
+def lowPriorityInfixRhsHasMandatoryAlignedBody (segment : Segment) : Bool :=
+  if !lowPriorityInfixRhsSegment segment then
+    false
+  else
+    match segment.child? (segment.start + 1) with
+    | some (.node (.letExpression _ _) _) => true
+    | some (.node (.raw kind) _) =>
+        kind == `Lean.Parser.Term.let
+        || kind == `Lean.Parser.Term.letrec
+        || kind == `Lean.Parser.Term.have
+        || kind == `Lean.Parser.Term.haveI
+    | _ => false
+
+def lowPriorityInfixRhsHasAttachedBody (segment : Segment) : Bool :=
+  lowPriorityInfixRhsSegment segment
+  && (attachedBodyStart segment (segment.start + 1)
+      || childStartsWithLexeme segment (segment.start + 1) "calc"
+      || lowPriorityInfixRhsHasMandatoryAlignedBody segment)
+
+def childLowPriorityInfixRhsHasAttachedBody (segment : Segment) (index : Nat) : Bool :=
+  match segment.child? index with
+  | some child => lowPriorityInfixRhsHasAttachedBody (Segment.ofTree child)
+  | none => false
+
+def lowPriorityInfixRhsCanFlow (segment : Segment) : Bool :=
+  lowPriorityInfixRhsSegment segment
+  && (attachedBodyStart segment (segment.start + 1)
+      || lowPriorityInfixRhsHasMandatoryAlignedBody segment)
+
+def childLowPriorityInfixRhsCanFlow (segment : Segment) (index : Nat) : Bool :=
+  match segment.child? index with
+  | some child => lowPriorityInfixRhsCanFlow (Segment.ofTree child)
+  | none => false
+
+def lowPriorityInfixAllRhsCanFlow (segment : Segment) : Bool :=
   lowPriorityInfixSegment segment
-  && index % 2 == 1
-  && (childIsRawKind segment (index + 1) `Lean.Parser.Term.byTactic
-      || attachedBodyStart segment (index + 1))
+  && segment.indexes.all
+      fun index =>
+        index == segment.start || childLowPriorityInfixRhsCanFlow segment index
 
 partial def treeContainsAttachedBodyInfix : SyntaxTree.Tree → Bool
   | .missing => false
   | .leaf _ => false
   | tree@(.node _ children) =>
       let segment := Segment.ofTree tree
-      segment.indexes.any (attachedBodyInfixOperator segment)
+      lowPriorityInfixRhsHasAttachedBody segment
       || children.any treeContainsAttachedBodyInfix
 
 partial def treeContainsProofTree : SyntaxTree.Tree → Bool
   | .missing => false
   | .leaf _ => false
-  | .node .proofBody _ => true
+  | .node (.proofBody _) _ => true
   | .node _ children => children.any treeContainsProofTree
 
 def childHasNestedProofBody (segment : Segment) (index : Nat) : Bool :=
@@ -921,13 +965,6 @@ def childHasNestedProofBody (segment : Segment) (index : Nat) : Bool :=
   && match segment.child? index with
       | some child => treeContainsProofTree child
       | none => false
-
-def lowPriorityInfixOwnsRhsStart (segment : Segment) (index : Nat) : Bool :=
-  lowPriorityInfixSegment segment
-  && 0 < index
-  && index % 2 == 0
-  && (!childHasNestedProofBody segment index
-      || childUsesMandatoryStartAlignment segment index)
 
 def declarationValueHasAttachedBodyInfix (segment : Segment) : Bool :=
   match contentIndexAfterLexeme? segment ":=" with
@@ -1289,6 +1326,96 @@ def inductiveAlternativeBreaks (context : RuleContext) (segment : Segment)
     | [] => []
     | _ :: rest =>
         rest.filterMap fun index => boundaryBreak? segment index 0
+  else
+    []
+
+def tacticAlternativeSequenceBreaks (context : RuleContext) (segment : Segment)
+    : List BreakPoint :=
+  if parentIsRawKind context `Lean.Parser.Tactic.inductionAlts then
+    match segment.indexes.filter
+            fun index =>
+              childIsRawKind segment index `Lean.Parser.Tactic.inductionAlt with
+    | [] | [_] => []
+    | _ :: rest => rest.filterMap fun index => boundaryBreak? segment index 0
+  else
+    []
+
+def tacticSequenceItemBreaks (context : RuleContext) (segment : Segment)
+    : List BreakPoint :=
+  if parentIsRawKind context `Lean.Parser.Tactic.tacticSeq1Indented
+      && context.ancestors.any
+          fun frame =>
+            frame.nodeKind?.any
+              fun
+              | .proofBody _ => true
+              | _ => false then
+    match nonemptyChildIndexes segment with
+    | [] | [_] => []
+    | _ :: rest => rest.filterMap fun index => boundaryBreak? segment index 0
+  else
+    []
+
+def tacticAlternativeContainerBreaks (_context : RuleContext) (segment : Segment)
+    : List BreakPoint :=
+  segment.indexes.filterMap
+    fun index =>
+      if (segment.child? index).any
+          (treeContainsRawKind `Lean.Parser.Tactic.inductionAlt) then
+        boundaryBreak? segment index 0
+      else
+        none
+
+partial def tacticAlternativesStartWithDefault : SyntaxTree.Tree → Bool
+  | .node kind children =>
+      let isAlternativeContainer :=
+        match kind with
+        | .raw rawKind | .tactic rawKind _ _ _ =>
+            rawKind == `Lean.Parser.Tactic.inductionAlts
+        | _ => false
+      if isAlternativeContainer then
+        match children.find? treeHasContent with
+        | some child => !treeContainsRawKind `Lean.Parser.Tactic.inductionAlt child
+        | none => false
+      else
+        children.any tacticAlternativesStartWithDefault
+  | _ => false
+
+def alternativeBodyIndentLevels : Nat :=
+  2
+
+def tacticLayoutOwnerBreaks (context : RuleContext) (segment : Segment)
+    : List BreakPoint :=
+  if segment.rawKind? == some `Lean.Parser.Tactic.cases then
+    match defaultPresentChildIndexes segment with
+    | [] | [_] => []
+    | _ :: rest =>
+        rest.filterMap
+          fun index =>
+            if (segment.child? index).any
+                (treeContainsRawKind `Lean.Parser.Tactic.inductionAlts) then
+              let indentLevels :=
+                if (segment.child? index).any tacticAlternativesStartWithDefault then
+                  alternativeBodyIndentLevels
+                else
+                  0
+              boundaryBreak? segment index indentLevels
+            else if childContainsNodeKind segment index .namedDiscriminant then
+              none
+            else if (segment.child? index).any
+                      fun
+                      | .node (.proofBody _) _ => true
+                      | _ => false then
+              boundaryBreak? segment index alternativeBodyIndentLevels
+            else
+              boundaryBreak? segment index 1
+  else
+    defaultBreaks context segment
+
+def tacticAlternativeBodyBreaks (context : RuleContext) (segment : Segment)
+    : List BreakPoint :=
+  if parentIsRawKind context `Lean.Parser.Tactic.inductionAlt
+      && childStartsWithLexeme segment segment.start "=>" then
+    [boundaryBreak? segment (segment.start + 1) alternativeBodyIndentLevels].filterMap id
   else
     []
 
@@ -1741,6 +1868,23 @@ def doSeqItemBreaks (context : RuleContext) (segment : Segment) : List BreakPoin
   else
     []
 
+def doSeqSemicolonBreaks (context : RuleContext) (segment : Segment) : List BreakPoint :=
+  if parentIsDoSequence context then
+    match nonemptyChildIndexes segment with
+    | [] | [_] => []
+    | _ :: rest =>
+        rest.filterMap
+          fun index =>
+            match previousContentIndex? segment index with
+            | some previousIndex =>
+                match segment.child? previousIndex >>= SyntaxTree.Tree.lastToken? with
+                | some token =>
+                    if token.lexeme == ";" then boundaryBreak? segment index 2 else none
+                | none => none
+            | none => none
+  else
+    []
+
 def doElseBreaks (context : RuleContext) (segment : Segment) : List BreakPoint :=
   if parentIsRawKind context `Lean.Parser.Term.doIf
       && childStartsWithLexeme segment 0 "else"
@@ -1936,6 +2080,10 @@ def doLetRecRule : LineBreakRule :=
 def letIdDeclRule : LineBreakRule :=
   {
     name := "letIdDecl"
+    flow :=
+      fun _ segment =>
+        (contentIndexAfterLexeme? segment ":=").any
+          fun index => attachedBodyStart segment index
     inheritBase := fun _ _ => true
     roundUpBaseIndentation := true
     breakPoints := letIdDeclBreaks
@@ -2548,7 +2696,7 @@ def ifThenElseBreaks (_context : RuleContext) (segment : Segment) : List BreakPo
 
 def dependentIfThenElseBreaks (_context : RuleContext) (segment : Segment)
     : List BreakPoint :=
-  [(3, 1), (4, 0), (5, 1), (6, 0), (7, 1)].filterMap
+  [(3, 1), (5, 1), (6, 0), (7, 1)].filterMap
     fun (index, indentLevels) =>
       if attachedBodyStart segment index then
         none
@@ -2624,9 +2772,6 @@ def subtypeBreaks (_context : RuleContext) (segment : Segment) : List BreakPoint
   | some breakPoint => [breakPoint]
   | none => []
 
-def matchAltRhsIndentLevels (_context : RuleContext) (_segment : Segment) : Nat :=
-  2
-
 def inMatchAltRhs (context : RuleContext) : Bool :=
   match context.ancestors with
   | parent :: grandparent :: _ =>
@@ -2647,12 +2792,12 @@ def attachedBodyHasFollowingApplicationArgument (context : RuleContext) : Bool :
             parent.childIndex < index && (parent.segment.child? index).any treeHasContent
   | _ => false
 
-def matchAltBreaks (context : RuleContext) (segment : Segment) : List BreakPoint :=
+def matchAltBreaks (_context : RuleContext) (segment : Segment) : List BreakPoint :=
   if childIsRawKind segment 3 `Lean.Parser.Term.byTactic
       || attachedBodyStart segment 3 then
     []
   else
-    match boundaryBreak? segment 3 (matchAltRhsIndentLevels context segment) with
+    match boundaryBreak? segment 3 alternativeBodyIndentLevels with
     | some breakPoint => [breakPoint]
     | none => []
 
@@ -2662,7 +2807,7 @@ def matchExprAltBreaks (_context : RuleContext) (segment : Segment) : List Break
 def doBreaks (context : RuleContext) (segment : Segment) : List BreakPoint :=
   let indentLevels :=
     if inMatchAltRhs context then
-      matchAltRhsIndentLevels context segment
+      alternativeBodyIndentLevels
     else if attachedBodyHasFollowingApplicationArgument context then
       2
     else
@@ -2714,32 +2859,34 @@ def infixAlternativeRhsBreak? (segment : Segment) : Option BreakPoint := do
     none
 
 def infixBreaks (_context : RuleContext) (segment : Segment) : List BreakPoint :=
-  match segment.parent with
-  | .node (.infixChain `Lean.Parser.Term.proj) _ => []
-  | _ =>
-      match segment.children? with
-      | none => []
-      | some children =>
-          (List.range children.size).flatMap
-            fun index =>
-              if index % 2 == 1 && !attachedBodyInfixOperator segment index then
-                [
-                  boundaryBreak? segment index 0,
-                  if lowPriorityInfixSegment segment
-                      && childUsesMandatoryStartAlignment segment (index + 1) then
-                    boundaryBreak? segment (index + 1) 1
-                  else
-                    none
-                ].filterMap
-                  id
-              else if 1 < index
-                      && index % 2 == 0
-                      && !lowPriorityInfixOwnsRhsStart segment index
-                      && (childIsRawKind segment index `Lean.Parser.Term.have
-                          || childIsRawKind segment index `Lean.Parser.Term.haveI) then
-                [boundaryBreak? segment index 0].filterMap id
-              else
-                []
+  if lowPriorityInfixSegment segment then
+    segment.indexes.filterMap
+      fun index =>
+        if segment.start < index && childIsLowPriorityInfixRhs segment index then
+          boundaryBreak? segment index 0
+        else
+          none
+  else
+    match segment.parent with
+    | .node (.infixChain `Lean.Parser.Term.proj) _ => []
+    | _ =>
+        match segment.children? with
+        | none => []
+        | some children =>
+            (List.range children.size).flatMap
+              fun index =>
+                if index % 2 == 1 then
+                  [boundaryBreak? segment index 0].filterMap id
+                else
+                  []
+
+def lowPriorityInfixRhsBreaks (_context : RuleContext) (segment : Segment)
+    : List BreakPoint :=
+  if lowPriorityInfixRhsHasAttachedBody segment
+      && !lowPriorityInfixRhsHasMandatoryAlignedBody segment then
+    []
+  else
+    [boundaryBreak? segment (segment.start + 1) 1].filterMap id
 
 def infixRuleBreaks (context : RuleContext) (segment : Segment) : List BreakPoint :=
   let breaks :=
@@ -2829,7 +2976,7 @@ def arrowInfixLogicalContext (context : RuleContext) : Bool :=
   framesContainLogicalContext context.ancestors
 
 def infixFlow (context : RuleContext) (segment : Segment) : Bool :=
-  lowPriorityInfixHasMandatoryAlignedRhs segment
+  lowPriorityInfixAllRhsCanFlow segment
   || (arrowInfixSegment segment && !arrowInfixLogicalContext context)
 
 def infixAlternativeSequence (context : RuleContext) (segment : Segment) : Bool :=
@@ -2881,6 +3028,9 @@ def nullBreaks (context : RuleContext) (segment : Segment) : List BreakPoint :=
   ++ structureParentBreaks context segment
   ++ structInstFieldBreaks context segment
   ++ inductiveAlternativeBreaks context segment
+  ++ tacticAlternativeSequenceBreaks context segment
+  ++ tacticSequenceItemBreaks context segment
+  ++ tacticAlternativeBodyBreaks context segment
   ++ quantifierBinderBreaks context segment
   ++ extendedBinderCollectionBreaks context segment
   ++ binderIdentifierBreaks context segment
@@ -2891,6 +3041,7 @@ def nullBreaks (context : RuleContext) (segment : Segment) : List BreakPoint :=
   ++ assertNotExistsIdentifierBreaks context segment
   ++ exportItemBreaks context segment
   ++ doSeqItemBreaks context segment
+  ++ doSeqSemicolonBreaks context segment
   ++ infixAlternativeBreaks context segment
   ++ doElseBreaks context segment
   ++ doElseIfBreaks context segment
@@ -2906,6 +3057,8 @@ def nullBreaksMandatory (context : RuleContext) (segment : Segment) : Bool :=
   !(structureFieldBreaks context segment).isEmpty
   || structInstFieldsMandatory context segment
   || !(inductiveAlternativeBreaks context segment).isEmpty
+  || !(tacticAlternativeSequenceBreaks context segment).isEmpty
+  || !(tacticSequenceItemBreaks context segment).isEmpty
   || !(doSeqItemBreaks context segment).isEmpty
   || !(doElseBreaks context segment).isEmpty
   || !(doElseIfBreaks context segment).isEmpty
@@ -2925,6 +3078,8 @@ def nullBreaksMandatory (context : RuleContext) (segment : Segment) : Bool :=
 def nullRule : LineBreakRule :=
   {
     name := "null"
+    useExistingBreaks :=
+      fun context segment => !(tacticAlternativeBodyBreaks context segment).isEmpty
     mandatory := nullBreaksMandatory
     flow :=
       fun context segment =>
@@ -2938,6 +3093,7 @@ def nullRule : LineBreakRule :=
         || !(allowUnusedTacticIdentifierBreaks context segment).isEmpty
         || !(assertNotExistsIdentifierBreaks context segment).isEmpty
         || !(exportItemBreaks context segment).isEmpty
+        || !(tacticAlternativeBodyBreaks context segment).isEmpty
         || !(infixAlternativeBreaks context segment).isEmpty
     inheritBase := nullInheritBase
     breakPoints := nullBreaks
@@ -3090,6 +3246,20 @@ def transparentRule : LineBreakRule :=
             childIndex < index && (segment.child? childIndex).any treeHasContent
   }
 
+def suffixGroupRule : LineBreakRule :=
+  {
+    name := "suffixGroup"
+    inheritBase := fun _ _ => true
+  }
+
+def namedDiscriminantRule : LineBreakRule :=
+  {
+    name := "namedDiscriminant"
+    useExistingBreaks := fun _ _ => true
+    flow := fun _ _ => true
+    breakPoints := fun _ segment => [boundaryBreak? segment 1 0].filterMap id
+  }
+
 def dotIdentRule : LineBreakRule :=
   {
     name := "dotIdent"
@@ -3123,13 +3293,28 @@ def mutualRule : LineBreakRule :=
 def infixChainRule : LineBreakRule :=
   {
     name := "infixChain"
+    useExistingBreaks := fun _ segment => lowPriorityInfixAllRhsCanFlow segment
     flow := infixFlow
+    keepPrefixWithChildFirstLine :=
+      fun _ segment index => childLowPriorityInfixRhsHasAttachedBody segment index
     inheritBase := infixAttachedBodyAssignmentValue
     liftsTailIndentation :=
       fun context segment =>
         !infixAttachedBodyAssignmentValue context segment
         && !(infixRuleBreaks context segment).isEmpty
     breakPoints := infixRuleBreaks
+  }
+
+def lowPriorityInfixRhsRule : LineBreakRule :=
+  {
+    name := "lowPriorityInfixRhs"
+    mandatory := fun _ segment => lowPriorityInfixRhsHasMandatoryAlignedBody segment
+    flow := fun _ _ => true
+    inheritBase := fun _ _ => true
+    keepPrefixWithChildFirstLine :=
+      fun _ segment index =>
+        index == segment.start + 1 && !lowPriorityInfixRhsHasMandatoryAlignedBody segment
+    breakPoints := lowPriorityInfixRhsBreaks
   }
 
 def binderTacticRule : LineBreakRule :=
@@ -3158,6 +3343,37 @@ def commandInChainRule : LineBreakRule :=
     mandatory := fun context segment => !(commandInBreaks context segment).isEmpty
     useExistingBreaks := fun _ _ => true
     breakPoints := commandInBreaks
+  }
+
+def tacticLayoutOwnerRule : LineBreakRule :=
+  {
+    name := "tacticLayoutOwner"
+    flow := fun _ _ => true
+    inheritBase := fun _ _ => true
+    roundUpBaseIndentation := true
+    breakPoints := tacticLayoutOwnerBreaks
+  }
+
+def tacticAlternativeContainerRule : LineBreakRule :=
+  {
+    name := "tacticAlternativeContainer"
+    useExistingBreaks := fun _ _ => true
+    flow := fun _ _ => true
+    inheritBase := fun _ _ => true
+    roundUpBaseIndentation := true
+    breakPoints := tacticAlternativeContainerBreaks
+  }
+
+def tacticAlternativeRule : LineBreakRule :=
+  {
+    name := "tacticAlternative"
+    useExistingBreaks := fun _ _ => true
+    flow := fun _ _ => true
+    inheritBase := fun _ _ => true
+    keepPrefixWithChildFirstLine :=
+      fun _ segment index => childStartsWithLexeme segment index "=>"
+    roundUpBaseIndentation := true
+    breakPoints := defaultBreaks
   }
 
 def ifThenElseRule : LineBreakRule :=
@@ -3349,6 +3565,7 @@ def haveRule : LineBreakRule :=
   {
     name := "have"
     mandatory := fun _ _ => true
+    startAlignment := fun _ _ => .required
     inheritBase :=
       fun context _ =>
         !parentIsInfixChain context && !parentIsRawKind context `Lean.Parser.Term.typeSpec
@@ -3494,9 +3711,10 @@ def isGeneratedMathlibCrossRefKind (kind : Lean.SyntaxNodeKind) : Bool :=
   ].any
     fun suffix => name.endsWith suffix
 
-def ruleFor : SyntaxTree.Tree → Option LineBreakRule
+partial def ruleFor : SyntaxTree.Tree → Option LineBreakRule
   | .missing => some defaultRule
   | .leaf _ => some defaultRule
+  | .node (.tactic kind _ _ _) children => ruleFor (.node (.raw kind) children)
   -- Module and declaration wrappers with generic layout.
   | .node (.raw `null) _ => some nullRule
   | .node (.raw `Lean.Parser.Module.module) _ => some moduleRule
@@ -3659,7 +3877,7 @@ def ruleFor : SyntaxTree.Tree → Option LineBreakRule
   | .node (.raw `Lean.Parser.Term.syntheticHole) _ => some defaultRule
   | .node (.raw `Lean.Parser.Term.suffices) _ => some sufficesRule
   | .node (.raw `Lean.Parser.Term.sufficesDecl) _ => some defaultRule
-  | .node (.raw `Lean.Parser.Term.open) _ => some defaultRule
+  | .node (.raw `Lean.Parser.Term.open) _ => some commandInChainRule
   | .node (.raw `Lean.Parser.Term.termReturn) _ =>
       some <| prefixedTermRule "termReturn"
   | .node (.raw `Lean.Parser.Term.panic) _ => some defaultRule
@@ -3723,7 +3941,7 @@ def ruleFor : SyntaxTree.Tree → Option LineBreakRule
   | .node (.raw `Lean.Parser.Termination.coinductiveFixpoint) _ => some defaultRule
   | .node (.raw `Lean.Parser.Termination.inductiveFixpoint) _ => some defaultRule
   | .node (.raw `Lean.Parser.Term.whereFinally) _ => some whereFinallyRule
-  | .node .proofBody _ => some defaultRule
+  | .node (.proofBody _) _ => some defaultRule
   | .node (.raw `Lean.Parser.Tactic.tacticSeq) _ => some defaultRule
   | .node (.raw `Lean.Parser.Tactic.tacticSeq1Indented) _ => some defaultRule
   | .node (.raw `Lean.Parser.Tactic.tacticRwa__) _ => some defaultRule
@@ -3732,6 +3950,10 @@ def ruleFor : SyntaxTree.Tree → Option LineBreakRule
   | .node (.raw `Lean.Parser.Tactic.location) _ => some defaultRule
   | .node (.raw `Lean.Parser.Tactic.locationHyp) _ => some defaultRule
   | .node (.raw `Lean.Parser.Tactic.exact) _ => some defaultRule
+  | .node (.raw `Lean.Parser.Tactic.cases) _ => some tacticLayoutOwnerRule
+  | .node (.raw `Lean.Parser.Tactic.inductionAlts) _ =>
+      some tacticAlternativeContainerRule
+  | .node (.raw `Lean.Parser.Tactic.inductionAlt) _ => some tacticAlternativeRule
   | .node (.raw `Lean.Parser.Tactic.tacticRfl) _ => some defaultRule
   | .node (.raw `Lean.Parser.Tactic.grind) _ => some defaultRule
   | .node (.raw `Lean.Parser.Tactic.optConfig) _ => some defaultRule
@@ -4082,11 +4304,14 @@ def ruleFor : SyntaxTree.Tree → Option LineBreakRule
   | .node (.raw `Lean.Parser.Term.letIdDecl) _ => some letIdDeclRule
   | .node (.raw `Lean.Parser.Term.letPatDecl) _ => some letPatternDeclRule
   | .node (.raw `Lean.Parser.Term.whereDecls) _ => some whereDeclsRule
+  | .node .suffixGroup _ => some suffixGroupRule
+  | .node .namedDiscriminant _ => some namedDiscriminantRule
   | .node (.raw `Lean.Parser.Command.whereStructInst) _ => some whereStructInstRule
   | .node (.raw `Lean.Parser.Command.mutual) _ => some mutualRule
   | .node (.infixChain `Lean.Parser.Command.in) _ => some commandInChainRule
   | .node (.infixChain `Lean.Parser.Term.binderTactic) _ =>
       some binderTacticRule
+  | .node .lowPriorityInfixRhs _ => some lowPriorityInfixRhsRule
   | .node (.infixChain _) _ => some infixChainRule
   | .node .ifThenElseClause _ => some transparentRule
   | .node .ifThenElseChain _ => some ifThenElseChainRule
@@ -4157,6 +4382,8 @@ def ruleFor : SyntaxTree.Tree → Option LineBreakRule
         some recursiveSequenceRule
       else if treeIsBinderOperatorTerm (.node (.raw kind) children) then
         some quantifierRule
+      else if SyntaxTree.isCoreTacticKindName (SyntaxTree.nodeKindName (.raw kind)) then
+        some defaultRule
       else if isGeneratedLocalNotationKind kind
               || isGeneratedMathlibCrossRefKind kind then
         some defaultRule

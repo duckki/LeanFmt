@@ -174,11 +174,11 @@ def EnvironmentLoader.environmentForSourceProfiled
     timeIO <| pure <| Formatter.Internal.normalizeSource source
   let loadFromHeader (defaultParse : String)
       : IO Lean.Environment := do
-        let (spec, headerMs) ← timeIO <| LeanEnvironment.specForSource normalized fileName
-        let (result, environmentMs) ← timeIO <| loader.environmentForSpec spec
-        profileLine options
-          s!"{fileName}: environment.normalize={normalizeMs}ms default-parse={defaultParse} import-header={headerMs}ms import-env={environmentMs}ms origin={result.origin.description}"
-        pure result.environment
+    let (spec, headerMs) ← timeIO <| LeanEnvironment.specForSource normalized fileName
+    let (result, environmentMs) ← timeIO <| loader.environmentForSpec spec
+    profileLine options
+      s!"{fileName}: environment.normalize={normalizeMs}ms default-parse={defaultParse} import-header={headerMs}ms import-env={environmentMs}ms origin={result.origin.description}"
+    pure result.environment
   if shouldImportEnvironmentFirst options then
     loadFromHeader "skipped"
   else

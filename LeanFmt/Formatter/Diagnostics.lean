@@ -37,6 +37,7 @@ def LeanFormatterAvailability.description : LeanFormatterAvailability → String
 
 def syntaxNodeKind? : SyntaxTree.NodeKind → Option SyntaxNodeKind
   | .raw kind => some kind
+  | .tactic kind _ _ _ => some kind
   | .letExpression kind _ => some kind
   | _ => none
 

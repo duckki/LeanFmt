@@ -1589,6 +1589,22 @@ def assertBlockCommentBoundaries (env : Lean.Environment) : IO Unit := do
     (← codePreservedIgnoringWhitespace env inlineMultilineSource
         inlineMultilineResult.formatted)
 
+  let bulletCommentSource :=
+    "theorem bulletMultilineBlockComment : True := by\n"
+    ++ "  · /- first comment line\n"
+    ++ "    second comment line -/\n"
+    ++ "    exact True.intro\n"
+  let bulletCommentResult ←
+    Formatter.formatSourceWithEnvDetailed env bulletCommentSource
+      "bullet-multiline-block-comment.lean"
+  assertTrue "bullet multiline block comment does not fall back"
+    !bulletCommentResult.fellBack
+  assertEq "bullet multiline block comment keeps its relative indentation"
+    bulletCommentSource bulletCommentResult.formatted
+  assertTrue "bullet multiline block comment preserves code"
+    (← codePreservedIgnoringWhitespace env bulletCommentSource
+        bulletCommentResult.formatted)
+
   let fittingAgain ←
     Formatter.formatSourceWithEnv env fittingFormatted
       "fitting-single-line-block-comment-formatted.lean" { lineWidth := 70 }
@@ -1613,6 +1629,11 @@ def assertBlockCommentBoundaries (env : Lean.Environment) : IO Unit := do
       "inline-multiline-block-comment-boundary-formatted.lean" { lineWidth := 70 }
   assertEq "inline multiline block comment boundary is idempotent"
     inlineMultilineResult.formatted inlineMultilineAgain
+  let bulletCommentAgain ←
+    Formatter.formatSourceWithEnv env bulletCommentResult.formatted
+      "bullet-multiline-block-comment-formatted.lean"
+  assertEq "bullet multiline block comment is idempotent"
+    bulletCommentResult.formatted bulletCommentAgain
 
 def assertProofIslandUsesStructuralIndent (env : Lean.Environment) : IO Unit := do
   let source :=
@@ -2263,12 +2284,12 @@ def assertNestedDoLetArrowFallbackKeepsBodyBase (env : Lean.Environment) : IO Un
   assertTextContains "nested do-let arrow fallback keeps its body beneath the pipe"
     result.formatted
     ("| -- Keep the multiline fallback beneath the pipe.\n"
-      ++ "              let fallback := current\n")
+      ++ "          let fallback := current\n")
   assertTextContains
     "nested do-let arrow fallback keeps the continuation outside its body"
     result.formatted
-    ("              return some (fallback + nested)\n"
-      ++ "            return some (extracted + current)\n")
+    ("          return some (fallback + nested)\n"
+      ++ "        return some (extracted + current)\n")
   let formattedAgain ←
     Formatter.formatSourceWithEnv env result.formatted
       "nested-do-let-arrow-fallback-formatted.lean"
@@ -2888,7 +2909,7 @@ def assertWhereFinallyKeepsHeaderAndProofBody (env : Lean.Environment) : IO Unit
     SyntaxTree.parseModuleStringWithEnv env result.formatted
       "where-finally-formatted.lean"
   assertTrue "where finally regroups its tactic as a proof body"
-    (moduleTree.tree.containsNodeKind .proofBody)
+    (moduleTree.tree.containsNodeKind (.proofBody false))
   assertTrue "where finally has complete rule coverage"
     (Formatter.Diagnostics.missingRuleOccurrencesForModule moduleTree).isEmpty
   let formattedAgain ←
@@ -3192,6 +3213,32 @@ def assertMultilineProtectedApplicationArgumentsBreakFromParent (env : Lean.Envi
       "multiline-protected-application-arguments-formatted.lean" { lineWidth := 100 }
   assertEq "multiline protected application arguments are idempotent"
     result.formatted formattedAgain
+
+  let shallowBodySource :=
+    "def protectedProofWithShallowSourceBody :=\n"
+    ++ "  applicationNameWithEnoughCharactersToMoveItsParenthesizedProofArgument firstArgument (by\n"
+    ++ "    intro value\n"
+    ++ "    exact value)\n"
+  let shallowBodyExpected :=
+    "def protectedProofWithShallowSourceBody :=\n"
+    ++ "  applicationNameWithEnoughCharactersToMoveItsParenthesizedProofArgument firstArgument\n"
+    ++ "    (by\n"
+    ++ "      intro value\n"
+    ++ "      exact value)\n"
+  let shallowBodyResult ←
+    Formatter.formatSourceWithEnvDetailed env shallowBodySource
+      "protected-proof-with-shallow-source-body.lean" { lineWidth := 100 }
+  assertTrue "a moved shallow protected proof does not fall back"
+    (!shallowBodyResult.fellBack)
+  assertEq "a moved protected proof body follows its rendered argument base"
+    shallowBodyExpected shallowBodyResult.formatted
+  assertTrue "a moved shallow protected proof preserves code"
+    (← codePreservedIgnoringWhitespace env shallowBodySource shallowBodyResult.formatted)
+  let shallowBodyAgain ←
+    Formatter.formatSourceWithEnv env shallowBodyResult.formatted
+      "protected-proof-with-shallow-source-body-formatted.lean" { lineWidth := 100 }
+  assertEq "a moved shallow protected proof is idempotent"
+    shallowBodyResult.formatted shallowBodyAgain
 
 def assertProofApplicationFollowsMovedInlineAnchor (env : Lean.Environment)
     : IO Unit := do
@@ -3641,7 +3688,7 @@ def assertTerminationClausesUseDeclarationBase (env : Lean.Environment) : IO Uni
     SyntaxTree.parseModuleStringWithEnv env simpleResult.formatted
       "termination-clauses-declaration-base-formatted.lean"
   assertTrue "decreasing clause tactic is a protected proof body"
-    (moduleTree.tree.containsNodeKind .proofBody)
+    (moduleTree.tree.containsNodeKind (.proofBody false))
   assertTrue "termination clauses have complete rule coverage"
     (Formatter.Diagnostics.missingRuleOccurrencesForModule moduleTree).isEmpty
   let formattedAgain ←
@@ -4618,6 +4665,31 @@ def assertHaveProofAfterInfixPreservesLayout (env : Lean.Environment) : IO Unit 
   let formattedAgain ←
     Formatter.formatSourceWithEnv env formatted "have-proof-after-infix-formatted.lean"
   assertEq "have proof after infix is idempotent" formatted formattedAgain
+
+  let inlineSource :=
+    "partial def beq (r₁ r₂ : ArgReorder) : Bool :=\n"
+    ++ "  r₁.perm.beq r₂.perm &&\n"
+    ++ "    have : BEq ArgReorder := ⟨beq⟩\n"
+    ++ "    r₁.argReorders == r₂.argReorders\n"
+  let inlineExpected :=
+    "partial def beq (r₁ r₂ : ArgReorder) : Bool :=\n"
+    ++ "  r₁.perm.beq r₂.perm\n"
+    ++ "  &&  have : BEq ArgReorder := ⟨beq⟩\n"
+    ++ "      r₁.argReorders == r₂.argReorders\n"
+  let inlineResult ←
+    Formatter.formatSourceWithEnvDetailed env inlineSource
+      "inline-have-after-infix.lean" { lineWidth := 100 }
+  assertTrue "an inline have after an infix operator does not fall back"
+    (!inlineResult.fellBack)
+  assertEq "an inline have body aligns with its rounded-up base"
+    inlineExpected inlineResult.formatted
+  assertTrue "an inline have after an infix operator preserves code"
+    (← codePreservedIgnoringWhitespace env inlineSource inlineResult.formatted)
+  let inlineFormattedAgain ←
+    Formatter.formatSourceWithEnv env inlineResult.formatted
+      "inline-have-after-infix-formatted.lean" { lineWidth := 100 }
+  assertEq "an inline have after an infix operator is idempotent"
+    inlineResult.formatted inlineFormattedAgain
 
 def assertSingletonDelimitedHaveInheritsCollectionBase (env : Lean.Environment)
     : IO Unit := do
@@ -6911,8 +6983,8 @@ def assertDependentIfThenElseKeepsHeaderAndBranchesAligned (env : Lean.Environme
   let expected :=
     "def choose : Nat :=\n"
     ++ "  if h :\n"
-    ++ "    VeryLongPredicateName firstArgument secondArgument thirdArgument\n"
-    ++ "  then\n"
+    ++ "    VeryLongPredicateName firstArgument secondArgument\n"
+    ++ "      thirdArgument then\n"
     ++ "    veryLongThenBranch h firstArgument secondArgument\n"
     ++ "  else\n"
     ++ "    veryLongElseBranch firstArgument secondArgument\n"
@@ -6920,6 +6992,267 @@ def assertDependentIfThenElseKeepsHeaderAndBranchesAligned (env : Lean.Environme
     Formatter.formatSourceWithEnv env source "dependent-if-then-else.lean"
       { lineWidth := 70 }
   assertEq "dependent if keeps its header and branches aligned" expected formatted
+
+def assertMathlibOwnershipConsistencyShapes (env : Lean.Environment) : IO Unit := do
+  let nestedProofSource :=
+    "def protectedAnonymousConstructorLambdaBody :=\n"
+    ++ "  build\n"
+    ++ "    ⟨fun value => ⟨value, by exact proof⟩,\n"
+    ++ "      fun ⟨value, property⟩ =>\n"
+    ++ "      ⟨⟨value, by exact property⟩, by exact property⟩⟩\n"
+  let nestedProofExpected :=
+    "def protectedAnonymousConstructorLambdaBody :=\n"
+    ++ "  build\n"
+    ++ "    ⟨\n"
+    ++ "      fun value => ⟨value, by exact proof⟩,\n"
+    ++ "      fun ⟨value, property⟩ =>\n"
+    ++ "        ⟨⟨value, by exact property⟩, by exact property⟩\n"
+    ++ "    ⟩\n"
+  let nestedProofFormatted ←
+    Formatter.formatSourceWithEnv env nestedProofSource
+      "protected-anonymous-constructor-lambda-body.lean"
+  assertEq "a lambda body inside a protected constructor uses its structural base"
+    nestedProofExpected nestedProofFormatted
+
+  let brokenStructureSource :=
+    "class StructureBodyMovedWithHeader (FirstParameterName SecondParameterName : Type) extends\n"
+    ++ "    FirstParentStructureName, SecondParentStructureName where\n"
+    ++ "  firstField : Nat\n"
+    ++ "  secondField : Nat\n"
+  let brokenStructureExpected :=
+    "class StructureBodyMovedWithHeader\n"
+    ++ "    (FirstParameterName SecondParameterName : Type)\n"
+    ++ "    extends FirstParentStructureName, SecondParentStructureName where\n"
+    ++ "  firstField : Nat\n"
+    ++ "  secondField : Nat\n"
+  let brokenStructureFormatted ←
+    Formatter.formatSourceWithEnv env brokenStructureSource
+      "structure-body-moved-with-header.lean" { lineWidth := 80 }
+  assertEq "a moved structure header does not move its body"
+    brokenStructureExpected brokenStructureFormatted
+
+  let flatLocalDoSource :=
+    "def localDoBodyAfterFormatterBreaksReturnType :=\n"
+    ++ "  let rec process (firstArgument secondArgument thirdArgument fourthArgument : Nat) : Nat := do\n"
+    ++ "    match firstArgument with\n"
+    ++ "    | 0 => pure secondArgument\n"
+    ++ "    | _ => pure thirdArgument\n"
+    ++ "  process 0 1 2 3\n"
+  let flatLocalDoExpected :=
+    "def localDoBodyAfterFormatterBreaksReturnType :=\n"
+    ++ "  let rec process\n"
+    ++ "      (firstArgument secondArgument thirdArgument fourthArgument : Nat)\n"
+    ++ "      : Nat := do\n"
+    ++ "    match firstArgument with\n"
+    ++ "    | 0 => pure secondArgument\n"
+    ++ "    | _ => pure thirdArgument\n"
+    ++ "  process 0 1 2 3\n"
+  let flatLocalDoFormatted ←
+    Formatter.formatSourceWithEnv env flatLocalDoSource
+      "local-do-body-after-formatter-breaks-return-type.lean" { lineWidth := 80 }
+  assertEq "a formatter-created return-type break does not move the local do body"
+    flatLocalDoExpected flatLocalDoFormatted
+
+  let commandInSource :=
+    "def commandInBody :=\n"
+    ++ "  open scoped Classical in\n"
+    ++ "  have value : Nat := 0\n"
+    ++ "  value\n"
+  let commandInFormatted ←
+    Formatter.formatSourceWithEnv env commandInSource "command-in-body.lean"
+  assertEq "a command wrapper keeps in with its header" commandInSource commandInFormatted
+
+  let proofCommentSource :=
+    "section\n\n"
+    ++ "theorem proofBeforeSectionEnd : True := by\n"
+    ++ "  exact True.intro\n"
+    ++ "  -- This comment still belongs to the proof.\n\n"
+    ++ "end\n"
+  let proofCommentFormatted ←
+    Formatter.formatSourceWithEnv env proofCommentSource
+      "proof-comment-before-section-end.lean"
+  assertEq "a proof comment keeps its owner before a section end"
+    proofCommentSource proofCommentFormatted
+
+  let semicolonSource :=
+    "def semicolonDoSequence : Nat := do\n"
+    ++ "  pure 0; return valueWithEnoughCharactersToReallyRequireBreaking -- retain the result\n"
+  let semicolonExpected :=
+    "def semicolonDoSequence : Nat := do\n"
+    ++ "  pure 0;\n"
+    ++ "      return valueWithEnoughCharactersToReallyRequireBreaking -- retain the result\n"
+  let semicolonFormatted ←
+    Formatter.formatSourceWithEnv env semicolonSource
+      "semicolon-do-sequence.lean" { lineWidth := 60 }
+  assertEq "a semicolon-connected do sequence can break after its separator"
+    semicolonExpected semicolonFormatted
+
+  let tacticSequenceSource :=
+    "theorem tacticSequenceBoundary (value : Nat) : True := by\n"
+    ++ "  refine target\n"
+    ++ "  cases value with\n"
+    ++ "  | zero => exact True.intro\n"
+    ++ "  | succ value => exact True.intro\n"
+  let tacticSequenceFormatted ←
+    Formatter.formatSourceWithEnv env tacticSequenceSource "tactic-sequence-boundary.lean"
+  assertEq "sibling tactics keep their mandatory boundary"
+    tacticSequenceSource tacticSequenceFormatted
+
+  let tacticFamilySource :=
+    "theorem tacticFamilyCoverage (h : Prop) [Decidable h] : True := by\n"
+    ++ "  by_cases h\n"
+    ++ "  · exact True.intro\n"
+    ++ "  · exact True.intro\n"
+  let tacticFamilyTree ←
+    SyntaxTree.parseModuleStringWithEnv env tacticFamilySource
+      "tactic-family-coverage.lean"
+  assertTrue "core tactic families have complete rule coverage"
+    (Formatter.Diagnostics.missingRuleOccurrencesForModule tacticFamilyTree).isEmpty
+  let tacticFamilyFormatted ←
+    Formatter.formatSourceWithEnv env tacticFamilySource "tactic-family-coverage.lean"
+  assertEq "core tactic families keep their structural layout"
+    tacticFamilySource tacticFamilyFormatted
+
+  let precedingTacticSource :=
+    "theorem tacticBeforeCases (value : Nat) : True := by\n"
+    ++ "  unfold Example at hypothesis ⊢\n"
+    ++ "  cases value with\n"
+    ++ "  | zero =>\n"
+    ++ "      exact True.intro\n"
+    ++ "  | succ value =>\n"
+    ++ "      exact True.intro\n"
+  let precedingTacticExpected :=
+    "theorem tacticBeforeCases (value : Nat) : True := by\n"
+    ++ "  unfold Example at hypothesis ⊢\n"
+    ++ "  cases value with\n"
+    ++ "  | zero =>\n"
+    ++ "      exact True.intro\n"
+    ++ "  | succ value =>\n"
+    ++ "      exact True.intro\n"
+  let precedingTacticFormatted ←
+    Formatter.formatSourceWithEnv env precedingTacticSource "tactic-before-cases.lean"
+  assertEq "a cases body uses the same two-level indentation as a match body"
+    precedingTacticExpected precedingTacticFormatted
+  let precedingTacticAgain ←
+    Formatter.formatSourceWithEnv env precedingTacticFormatted
+      "tactic-before-cases-formatted.lean"
+  assertEq "a tactic owner after a preceding tactic is idempotent"
+    precedingTacticFormatted precedingTacticAgain
+
+  let defaultCasesAlternativeSource :=
+    "inductive CasesDefaultExample where\n"
+    ++ "  | push (value : Nat)\n"
+    ++ "  | pop\n"
+    ++ "\n"
+    ++ "theorem casesDefaultAlternative (o : CasesDefaultExample) : True := by\n"
+    ++ "  simp only; cases o with simp only\n"
+    ++ "  | push value =>\n"
+    ++ "    have h : True := True.intro\n"
+    ++ "    refine\n"
+    ++ "      by\n"
+    ++ "        -- Preserve this comment inside the branch body.\n"
+    ++ "        exact h\n"
+    ++ "  | pop =>\n"
+    ++ "    trivial\n"
+  let defaultCasesAlternativeExpected :=
+    "inductive CasesDefaultExample where\n"
+    ++ "  | push (value : Nat)\n"
+    ++ "  | pop\n"
+    ++ "\n"
+    ++ "theorem casesDefaultAlternative (o : CasesDefaultExample) : True := by\n"
+    ++ "  simp only;\n"
+    ++ "  cases o with simp only\n"
+    ++ "  | push value =>\n"
+    ++ "      have h : True := True.intro\n"
+    ++ "      refine\n"
+    ++ "        by\n"
+    ++ "          -- Preserve this comment inside the branch body.\n"
+    ++ "          exact h\n"
+    ++ "  | pop =>\n"
+    ++ "      trivial\n"
+  let defaultCasesAlternativeResult ←
+    Formatter.formatSourceWithEnvDetailed env defaultCasesAlternativeSource
+      "cases-default-alternative.lean" { lineWidth := 100 }
+  assertTrue "a cases default alternative does not cause a format fallback"
+    !defaultCasesAlternativeResult.fellBack
+  assertEq
+    "a cases default alternative uses the same body indentation as named alternatives"
+    defaultCasesAlternativeExpected defaultCasesAlternativeResult.formatted
+  assertTrue "cases default alternative formatting preserves code"
+    (← codePreservedIgnoringWhitespace env defaultCasesAlternativeSource
+        defaultCasesAlternativeResult.formatted)
+
+  let casesHeaderSource :=
+    "theorem casesLayout : True := by\n"
+    ++ "  cases chooseValue first second third fourth with\n"
+    ++ "  | zero =>\n"
+    ++ "    exact True.intro\n"
+    ++ "  | succ value =>\n"
+    ++ "    exact True.intro\n"
+  let casesHeaderExpected :=
+    "theorem casesLayout : True := by\n"
+    ++ "  cases\n"
+    ++ "    chooseValue first second third fourth with\n"
+    ++ "  | zero =>\n"
+    ++ "      exact True.intro\n"
+    ++ "  | succ value =>\n"
+    ++ "      exact True.intro\n"
+  let casesHeaderFormatted ←
+    Formatter.formatSourceWithEnv env casesHeaderSource "cases-header-suffix.lean"
+      { lineWidth := 48 }
+  assertEq "cases keeps with as a header suffix before moving the discriminant"
+    casesHeaderExpected casesHeaderFormatted
+
+  let namedCasesSource :=
+    "theorem namedCasesLayout : True := by\n"
+    ++ "  cases selectedValue : chooseValue first second third fourth with\n"
+    ++ "  | zero =>\n"
+    ++ "    exact True.intro\n"
+    ++ "  | succ value =>\n"
+    ++ "    exact True.intro\n"
+  let namedCasesTree ←
+    SyntaxTree.parseModuleStringWithEnv env namedCasesSource
+      "named-cases-discriminant.lean"
+  assertTrue "cases groups with as a structural header suffix"
+    (namedCasesTree.tree.containsNodeKind .suffixGroup)
+  assertTrue "cases groups a named discriminant independently of parser wrappers"
+    (namedCasesTree.tree.containsNodeKind .namedDiscriminant)
+  let namedCasesExpected :=
+    "theorem namedCasesLayout : True := by\n"
+    ++ "  cases selectedValue\n"
+    ++ "        : chooseValue first second third fourth with\n"
+    ++ "  | zero =>\n"
+    ++ "      exact True.intro\n"
+    ++ "  | succ value =>\n"
+    ++ "      exact True.intro\n"
+  let namedCasesFormatted ←
+    Formatter.formatSourceWithEnv env namedCasesSource
+      "named-cases-discriminant.lean" { lineWidth := 56 }
+  assertEq "named cases keeps the name with cases and aligns a broken colon"
+    namedCasesExpected namedCasesFormatted
+  assertTrue "named cases formatting preserves code"
+    (← codePreservedIgnoringWhitespace env namedCasesSource namedCasesFormatted)
+  let namedCasesAgain ←
+    Formatter.formatSourceWithEnv env namedCasesFormatted
+      "named-cases-discriminant-formatted.lean" { lineWidth := 56 }
+  assertEq "named cases formatting is idempotent" namedCasesFormatted namedCasesAgain
+
+  let unsupportedTacticOwnerSource :=
+    "theorem firstAlternativeLayout : True := by\n"
+    ++ "  all_goals\n"
+    ++ "    first\n"
+    ++ "    | exact True.intro\n"
+    ++ "    | (exact True.intro)\n"
+  let unsupportedTacticOwnerTree ←
+    SyntaxTree.parseModuleStringWithEnv env unsupportedTacticOwnerSource
+      "first-alternative-layout.lean"
+  assertTrue "an unsupported tactic shell keeps its proof body protected"
+    (unsupportedTacticOwnerTree.tree.containsNodeKind (.proofBody false))
+  let unsupportedTacticOwnerFormatted ←
+    Formatter.formatSourceWithEnv env unsupportedTacticOwnerSource
+      "first-alternative-layout.lean"
+  assertEq "an unsupported tactic shell preserves its alternative layout"
+    unsupportedTacticOwnerSource unsupportedTacticOwnerFormatted
 
 def assertElseIfContinuesOnElseLine (env : Lean.Environment) : IO Unit := do
   let source :=
@@ -7230,6 +7563,114 @@ def assertLambdaBodyUsesOperandAnchor (env : Lean.Environment) : IO Unit := do
   let formatted ←
     Formatter.formatSourceWithEnv env source "lambda-body-operand-anchor.lean"
   assertEq "lambda body uses operand anchor" expected formatted
+
+def assertMovedBodiesUseStructuralIndentation (env : Lean.Environment) : IO Unit := do
+  let lambdaSource :=
+    "def lambdaBodyWithShallowSourceIndent :=\n"
+    ++ "  transform input\n"
+    ++ "    fun ⟨value, proof⟩ =>\n"
+    ++ "    ⟨value, proof⟩\n"
+  let lambdaExpected :=
+    "def lambdaBodyWithShallowSourceIndent :=\n"
+    ++ "  transform input\n"
+    ++ "    fun ⟨value, proof⟩ =>\n"
+    ++ "      ⟨value, proof⟩\n"
+  let lambdaFormatted ←
+    Formatter.formatSourceWithEnv env lambdaSource
+      "lambda-body-with-shallow-source-indent.lean"
+  assertEq "an ordinary lambda body follows its structural indentation"
+    lambdaExpected lambdaFormatted
+  let lambdaAgain ←
+    Formatter.formatSourceWithEnv env lambdaFormatted
+      "lambda-body-with-shallow-source-indent-formatted.lean"
+  assertEq "an ordinary lambda body with corrected indentation is idempotent"
+    lambdaFormatted lambdaAgain
+
+  let branchSource :=
+    "theorem branchBodyWithShallowSourceIndent (value : Nat) : True := by\n"
+    ++ "  cases value with\n"
+    ++ "  | zero => trivial\n"
+    ++ "  | succ value =>\n"
+    ++ "  exact True.intro\n"
+  let branchExpected :=
+    "theorem branchBodyWithShallowSourceIndent (value : Nat) : True := by\n"
+    ++ "  cases value with\n"
+    ++ "  | zero => trivial\n"
+    ++ "  | succ value =>\n"
+    ++ "      exact True.intro\n"
+  let branchFormatted ←
+    Formatter.formatSourceWithEnv env branchSource
+      "branch-body-with-shallow-source-indent.lean"
+  assertEq "a branch body follows its structural indentation"
+    branchExpected branchFormatted
+
+  let extensionTacticSource :=
+    "theorem extensionTacticWithShallowSourceIndent (value : Nat) : True := by\n"
+    ++ "  cases value with\n"
+    ++ "  | zero => trivial\n"
+    ++ "  | succ value =>\n"
+    ++ "  #project_note /-- The extension tactic follows its branch. -/\n"
+    ++ "  trivial\n"
+  let extensionTacticExpected :=
+    "theorem extensionTacticWithShallowSourceIndent (value : Nat) : True := by\n"
+    ++ "  cases value with\n"
+    ++ "  | zero => trivial\n"
+    ++ "  | succ value =>\n"
+    ++ "      #project_note /-- The extension tactic follows its branch. -/\n"
+    ++ "      trivial\n"
+  let extensionTacticFormatted ←
+    Formatter.formatSourceWithEnv env extensionTacticSource
+      "extension-tactic-with-shallow-source-indent.lean"
+  assertEq "a protected tactic island follows its structural parent"
+    extensionTacticExpected extensionTacticFormatted
+
+  let calcSource :=
+    "theorem calcRowsWithShallowSourceIndent : left = right := by\n"
+    ++ "  calc\n"
+    ++ "  left = middle := firstProof\n"
+    ++ "  _ = right := secondProof\n"
+  let calcExpected :=
+    "theorem calcRowsWithShallowSourceIndent : left = right := by\n"
+    ++ "  calc\n"
+    ++ "    left = middle := firstProof\n"
+    ++ "    _ = right := secondProof\n"
+  let calcFormatted ←
+    Formatter.formatSourceWithEnv env calcSource
+      "calc-rows-with-shallow-source-indent.lean"
+  assertEq "calc rows follow the calc introducer indentation" calcExpected calcFormatted
+
+  let structureSource :=
+    "class StructureBodyAfterBrokenHeader\n"
+    ++ "    (FirstParameterName SecondParameterName : Type)\n"
+    ++ "    extends ParentStructureNameWithEnoughCharactersToKeepTheHeaderBroken where\n"
+    ++ "  firstField : Nat\n"
+    ++ "  secondField : Nat\n"
+  let structureFormatted ←
+    Formatter.formatSourceWithEnv env structureSource
+      "structure-body-after-broken-header.lean" { lineWidth := 80 }
+  assertEq "a structure body uses the command base after where"
+    structureSource structureFormatted
+
+  let localDoSource :=
+    "def localDoBodyAfterBrokenReturnType :=\n"
+    ++ "  let rec process (firstArgument secondArgument thirdArgument : Nat)\n"
+    ++ "      : Nat := do\n"
+    ++ "        match firstArgument with\n"
+    ++ "        | 0 => pure secondArgument\n"
+    ++ "        | _ => pure thirdArgument\n"
+    ++ "  process 0 1 2\n"
+  let localDoExpected :=
+    "def localDoBodyAfterBrokenReturnType :=\n"
+    ++ "  let rec process (firstArgument secondArgument thirdArgument : Nat)\n"
+    ++ "      : Nat := do\n"
+    ++ "    match firstArgument with\n"
+    ++ "    | 0 => pure secondArgument\n"
+    ++ "    | _ => pure thirdArgument\n"
+    ++ "  process 0 1 2\n"
+  let localDoFormatted ←
+    Formatter.formatSourceWithEnv env localDoSource
+      "local-do-body-after-broken-return-type.lean" { lineWidth := 80 }
+  assertEq "a local do body uses the declaration base" localDoExpected localDoFormatted
 
 def assertLambdaBodyOverflowKeepsStructuralBase (env : Lean.Environment) : IO Unit := do
   let source :=
@@ -8260,6 +8701,36 @@ def assertAnonymousConstructorBreakBalanced (env : Lean.Environment) : IO Unit :
       "anonymous-constructor-after-pipe-formatted.lean" { lineWidth := 60 }
   assertEq "structural piped constructor is idempotent"
     pipedConstructorFormatted pipedConstructorFormattedAgain
+  let pipedStructureSource :=
+    "def structureAfterPipe :=\n"
+    ++ "  outer\n"
+    ++ "    (fun value =>\n"
+    ++ "      build\n"
+    ++ "      <|\n"
+    ++ "    { firstField := firstValueWithEnoughCharacters\n"
+    ++ "      secondField := by exact proof })\n"
+  let pipedStructureExpected :=
+    "def structureAfterPipe :=\n"
+    ++ "  outer\n"
+    ++ "    (fun value =>\n"
+    ++ "      build\n"
+    ++ "      <|\n"
+    ++ "        {\n"
+    ++ "          firstField := firstValueWithEnoughCharacters\n"
+    ++ "          secondField := by exact proof\n"
+    ++ "        })\n"
+  let pipedStructureFormatted ←
+    Formatter.formatSourceWithEnv env pipedStructureSource
+      "structure-after-pipe.lean" { lineWidth := 60 }
+  assertEq "a broken low-priority pipe owns its structural right operand"
+    pipedStructureExpected pipedStructureFormatted
+  assertTrue "structural piped structure preserves code"
+    (← codePreservedIgnoringWhitespace env pipedStructureSource pipedStructureFormatted)
+  let pipedStructureAgain ←
+    Formatter.formatSourceWithEnv env pipedStructureFormatted
+      "structure-after-pipe-formatted.lean" { lineWidth := 60 }
+  assertEq "structural piped structure is idempotent"
+    pipedStructureFormatted pipedStructureAgain
   let movedProofLayoutSource :=
     "def movedInlineProofLayout :=\n"
     ++ "  Fork.IsLimit.mk' _ fun s =>\n"
@@ -9311,11 +9782,17 @@ def assertCliChecksStillFormatUnlessCheck
     preservingFormatted (← IO.FS.readFile preservingFile)
 
   let overflowFile := root / "Overflow.lean"
+  let message := "\"" ++ String.ofList (List.replicate 50 'x') ++ "\""
   let overflowSource :=
     "def overflow := do\n"
-    ++ "  match action with\n"
-    ++ "  | .help => IO.println usage;\n"
-    ++ "      pure 0\n"
+    ++ "  match value with\n"
+    ++ "  | some item =>\n"
+    ++ "    if condition then\n"
+    ++ "      logError\n"
+    ++ "        "
+    ++ message
+    ++ "\n"
+    ++ "  | none => pure ()\n"
   IO.FS.writeFile overflowFile overflowSource
   let afterExceptionFile := root / "AfterException.lean"
   let afterExceptionSource := "def  afterException  : Nat := 0\n"
@@ -9324,12 +9801,14 @@ def assertCliChecksStillFormatUnlessCheck
     LeanFmt.Driver.runOptionsWithLoader loader
       {
         checkException := true
+        formatterOptions := { lineWidth := 60 }
         includeHidden := true
         files := [overflowFile, afterExceptionFile]
       }
   assertTrue "CLI exception check rejects a format fallback" (overflowExitCode == 1)
   let overflowFormatted ←
     Formatter.formatSourceWithEnv env overflowSource overflowFile.toString
+      { lineWidth := 60 }
   assertEq "CLI exception failure writes the checked candidate"
     overflowFormatted (← IO.FS.readFile overflowFile)
   let afterExceptionFormatted ←
@@ -9342,6 +9821,7 @@ def assertCliChecksStillFormatUnlessCheck
       {
         check := true
         checkException := true
+        formatterOptions := { lineWidth := 60 }
         includeHidden := true
         files := [overflowFile]
       }
@@ -9976,6 +10456,8 @@ def assertLakeDslFormatting : IO Unit := do
     (Formatter.Diagnostics.missingRuleOccurrencesForModule moduleTree).isEmpty
 
 def assertMathlibLowRiskSyntaxKindsHaveRules : IO Unit := do
+  assertTrue "quoted generated tactic kinds belong to the core tactic family"
+    (SyntaxTree.isCoreTacticKindName "«tacticBy_cases_:_»")
   let kinds : List Lean.SyntaxNodeKind :=
     [
       `Lean.Parser.Command.attribute,
@@ -11258,6 +11740,7 @@ def runControlFlowTests (env : Lean.Environment) : IO Unit := do
   assertIfLetPatternKeepsAssignmentWithHeader env
   assertIfLetBranchesUseConditionalBase env
   assertDependentIfThenElseKeepsHeaderAndBranchesAligned env
+  assertMathlibOwnershipConsistencyShapes env
   assertElseIfContinuesOnElseLine env
   assertElseIfChainBreaksThenBranchesTogether env
   assertTermMatchAlternativesStayOnOwnLines env
@@ -11272,6 +11755,7 @@ def runControlFlowTests (env : Lean.Environment) : IO Unit := do
   assertNestedMatchAfterLambdaAlignsWithMatch env
   assertPrefixedMatchAlternativesAlignWithMatch env
   assertLambdaBodyUsesOperandAnchor env
+  assertMovedBodiesUseStructuralIndentation env
   assertLambdaBodyOverflowKeepsStructuralBase env
   assertLambdaBinderSequenceBreaksBetweenBinders env
   assertLambdaKeepsAttachedBlockIntroducers env
