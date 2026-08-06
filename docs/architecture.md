@@ -545,13 +545,15 @@ For each segment:
 7. If the rule has no break behavior, render children in source order.
 8. If `useExistingBreaks` is true, collect source breaks only at returned break points.
    For non-flow rules, any accepted source break applies all rule breaks. For flow rules,
-   try the accepted source-break candidate before computed wrapping.
+   try the accepted source-break candidate once before flat layout. If it does not fit,
+   retain that rejection and continue to flat layout and computed wrapping without
+   reconstructing the rejected candidate.
 9. Try flat rendering when allowed.
 10. For rules that prefer child layouts, try the recursively rendered children when
     the rule-specific prefix remains flat and the complete child layout fits.
-11. For flow rules, try accepted source breaks after flat failure, then computed flow
-   wrapping that retains those accepted source boundaries while adding any required
-   breaks.
+11. For flow rules that did not already try source layout through `useExistingBreaks`,
+   try accepted source breaks after flat failure, then computed flow wrapping that
+   retains those accepted source boundaries while adding any required breaks.
 12. For non-flow rules with break points, apply all returned breaks simultaneously.
 
 Fit measurement is speculative. The renderer emits into an empty probe while retaining

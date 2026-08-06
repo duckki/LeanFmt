@@ -2088,19 +2088,21 @@ mutual
       (rule : LineBreakRules.LineBreakRule)
       (breakPoints : List LineBreakRules.BreakPoint) (isFlow : Bool)
       : RenderState :=
-    let sourceBreaks := sourceBreaksAllowedByBreakPointsInState state segment breakPoints
-    let hasSourceBreaks := !sourceBreaks.isEmpty
-    if !isFlow && hasSourceBreaks then
-      renderBalancedSegment state segment rule breakPoints
-    else
-      match tryRenderSegmentWithSourceBreaks? state segment rule breakPoints with
-      | some rendered => rendered
-      | none =>
-          let probe := measureLayout state segment false
-          if probe.acceptedForRule isFlow breakPoints then
-            state.commitLayoutProbe probe
-          else
-            renderAfterFlatFailure state segment rule breakPoints isFlow
+    let renderFlatOrRuleLayout (_ : Unit) :=
+      let probe := measureLayout state segment false
+      if probe.acceptedForRule isFlow breakPoints then
+        state.commitLayoutProbe probe
+      else
+        renderRuleLayout state segment rule breakPoints isFlow
+    match sourceBreaksForRule? state segment rule breakPoints with
+    | some sourceBreaks =>
+        if !isFlow then
+          renderBalancedSegment state segment rule breakPoints
+        else
+          match renderSegmentWithSourceBreaksIfFits? state segment sourceBreaks with
+          | some rendered => rendered
+          | none => renderFlatOrRuleLayout ()
+    | none => renderFlatOrRuleLayout ()
 
   partial def renderNestedSegment
       (state : RenderState) (segment : LineBreakRules.Segment) (index : Nat)
@@ -2455,20 +2457,15 @@ mutual
         some state
     loop state segment.start
 
-  partial def tryRenderSegmentWithSourceBreaks?
+  partial def renderSegmentWithSourceBreaksIfFits?
       (state : RenderState) (segment : LineBreakRules.Segment)
-      (rule : LineBreakRules.LineBreakRule)
-      (breakPoints : List LineBreakRules.BreakPoint)
+      (sourceBreaks : List SourceBreak)
       : Option RenderState :=
-    match sourceBreaksForRule? state segment rule breakPoints with
-    | none =>
-        none
-    | some breaks =>
-        let candidate := renderSegmentWithSourceBreaks state segment breaks
-        if renderedCandidateFits state candidate then
-          some candidate
-        else
-          none
+    let candidate := renderSegmentWithSourceBreaks state segment sourceBreaks
+    if renderedCandidateFits state candidate then
+      some candidate
+    else
+      none
 
   partial def renderFlowSegment
       (state : RenderState) (segment : LineBreakRules.Segment)
