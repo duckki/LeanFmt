@@ -2124,6 +2124,29 @@ def assertDoLetElseBreaks (env : Lean.Environment) : IO Unit := do
     ("  let .leaf comma := commaTree\n"
       ++ "  | return .text\n"
       ++ "            \"A long fallback message that cannot share the fallback separator line at all\"")
+  let trailingCommentSource :=
+    "def fallbackComment (depth : Nat) : Id Bool := do\n"
+    ++ "  let depth + 1 := depth | pure (); return false -- fallback comment remains attached\n"
+    ++ "  -- continuation comment keeps the do-body indentation\n"
+    ++ "  return true\n"
+  let trailingCommentExpected :=
+    "def fallbackComment (depth : Nat) : Id Bool := do\n"
+    ++ "  let depth + 1 := depth\n"
+    ++ "  | pure (); return false -- fallback comment remains attached\n"
+    ++ "  -- continuation comment keeps the do-body indentation\n"
+    ++ "  return true\n"
+  let trailingCommentFormatted ←
+    Formatter.formatSourceWithEnv env trailingCommentSource
+      "do-let-fallback-trailing-comment.lean" { lineWidth := 70 }
+  assertEq "do-let fallback fit counts its trailing comment"
+    trailingCommentExpected trailingCommentFormatted
+  assertTrue "do-let fallback with a trailing comment preserves code"
+    (← codePreservedIgnoringWhitespace env trailingCommentSource trailingCommentFormatted)
+  let trailingCommentAgain ←
+    Formatter.formatSourceWithEnv env trailingCommentFormatted
+      "do-let-fallback-trailing-comment-formatted.lean" { lineWidth := 70 }
+  assertEq "do-let fallback with a trailing comment is idempotent"
+    trailingCommentFormatted trailingCommentAgain
   let nestedSource :=
     "def nestedDoLetElse (e : Expr) : MetaM (Bool × Expr) := do\n"
     ++ "  try\n"
@@ -7313,6 +7336,81 @@ def assertMathlibOwnershipConsistencyShapes (env : Lean.Environment) : IO Unit :
   assertEq "multiline induction body formatting is idempotent"
     multilineInductionBodyFormatted multilineInductionBodyAgain
 
+  let casesAfterSiblingSource :=
+    "theorem casesAfterSibling (value : Nat) : True := by\n"
+    ++ "  trivial\n"
+    ++ "  cases value with\n"
+    ++ "  | zero =>\n"
+    ++ "    exact True.intro\n"
+    ++ "  | succ value =>\n"
+    ++ "    exact True.intro\n"
+  let casesAfterSiblingExpected :=
+    "theorem casesAfterSibling (value : Nat) : True := by\n"
+    ++ "  trivial\n"
+    ++ "  cases value with\n"
+    ++ "  | zero =>\n"
+    ++ "      exact True.intro\n"
+    ++ "  | succ value =>\n"
+    ++ "      exact True.intro\n"
+  let casesAfterSiblingFormatted ←
+    Formatter.formatSourceWithEnv env casesAfterSiblingSource "cases-after-sibling.lean"
+  assertEq "a preceding tactic does not change cases body indentation"
+    casesAfterSiblingExpected casesAfterSiblingFormatted
+  assertTrue "cases after a sibling tactic preserve code"
+    (← codePreservedIgnoringWhitespace env casesAfterSiblingSource
+        casesAfterSiblingFormatted)
+
+  let inductionUsingAfterSiblingSource :=
+    "theorem inductionUsingAfterSibling (value : Nat) : True := by\n"
+    ++ "  classical\n"
+    ++ "  induction value using Nat.rec with\n"
+    ++ "  | zero =>\n"
+    ++ "    exact True.intro\n"
+    ++ "  | succ value hypothesis =>\n"
+    ++ "    exact True.intro\n"
+  let inductionUsingAfterSiblingExpected :=
+    "theorem inductionUsingAfterSibling (value : Nat) : True := by\n"
+    ++ "  classical\n"
+    ++ "  induction value using Nat.rec with\n"
+    ++ "  | zero =>\n"
+    ++ "      exact True.intro\n"
+    ++ "  | succ value hypothesis =>\n"
+    ++ "      exact True.intro\n"
+  let inductionUsingAfterSiblingFormatted ←
+    Formatter.formatSourceWithEnv env inductionUsingAfterSiblingSource
+      "induction-using-after-sibling.lean"
+  assertEq "a preceding tactic does not change induction body indentation"
+    inductionUsingAfterSiblingExpected inductionUsingAfterSiblingFormatted
+  assertTrue "induction after a sibling tactic preserves code"
+    (← codePreservedIgnoringWhitespace env inductionUsingAfterSiblingSource
+        inductionUsingAfterSiblingFormatted)
+
+  let longInductionHeaderSource :=
+    "theorem longInductionHeader : True := by\n"
+    ++ "  intro hpath\n"
+    ++ "  induction hpath generalizing leftVariableDefinitions rightVariableDefinitions leftCurrentSelectionSet rightCurrentSelectionSet leftFuel rightFuel with\n"
+    ++ "  | zero => trivial\n"
+  let longInductionHeaderExpected :=
+    "theorem longInductionHeader : True := by\n"
+    ++ "  intro hpath\n"
+    ++ "  induction hpath generalizing leftVariableDefinitions\n"
+    ++ "      rightVariableDefinitions leftCurrentSelectionSet\n"
+    ++ "      rightCurrentSelectionSet leftFuel rightFuel with\n"
+    ++ "  | zero => trivial\n"
+  let longInductionHeaderFormatted ←
+    Formatter.formatSourceWithEnv env longInductionHeaderSource
+      "long-induction-header.lean" { lineWidth := 60 }
+  assertEq "generalizing identifiers wrap at one shared continuation base"
+    longInductionHeaderExpected longInductionHeaderFormatted
+  assertTrue "long induction header formatting preserves code"
+    (← codePreservedIgnoringWhitespace env longInductionHeaderSource
+        longInductionHeaderFormatted)
+  let longInductionHeaderAgain ←
+    Formatter.formatSourceWithEnv env longInductionHeaderFormatted
+      "long-induction-header-formatted.lean" { lineWidth := 60 }
+  assertEq "long induction header formatting is idempotent"
+    longInductionHeaderFormatted longInductionHeaderAgain
+
   let inductionDefaultBodySource :=
     "theorem inductionDefaultBody (value : Nat) : True := by\n"
     ++ "  induction value with\n"
@@ -9989,6 +10087,33 @@ def assertFormattingExceptionChecks (env : Lean.Environment) : IO Unit := do
           match exception with
           | .lineOverflow _ => true
           | _ => false)
+  let attachedProofPayload :=
+    String.ofList (List.replicate (Formatter.maxLineWidth - 21) 'x')
+  let fittingAttachedProof :=
+    "theorem movedProofWithAttachedSuffix : target (by\n"
+    ++ s!"    exact {attachedProofPayload}) := by\n"
+    ++ "  trivial\n"
+  let movedAttachedProof :=
+    "theorem movedProofWithAttachedSuffix : target (by\n"
+    ++ s!"            exact {attachedProofPayload}) := by\n"
+    ++ "  trivial\n"
+  let fittingAttachedProofModule ←
+    SyntaxTree.parseModuleStringWithEnv env fittingAttachedProof
+      "fitting-proof-with-attached-suffix.lean"
+  let movedAttachedProofModule ←
+    SyntaxTree.parseModuleStringWithEnv env movedAttachedProof
+      "moved-proof-with-attached-suffix.lean"
+  assertTrue "proof line with attached suffix fits before structural movement"
+    (Formatter.linesFit fittingAttachedProof Formatter.maxLineWidth)
+  assertTrue "proof line with attached suffix overflows after structural movement"
+    (!Formatter.linesFit movedAttachedProof Formatter.maxLineWidth)
+  assertTrue "an attached suffix does not make a moved proof overflow actionable"
+    (!(Formatter.Diagnostics.formattingExceptions
+        fittingAttachedProofModule movedAttachedProofModule).any
+        fun exception =>
+          match exception with
+          | .lineOverflow _ => true
+          | _ => false)
   let contextualTacticPayloadLength :=
     Formatter.maxLineWidth - 4 - "context_classified_tactic first ".length
   let contextualTacticPayload :=
@@ -10224,6 +10349,28 @@ def assertFormattingExceptionChecks (env : Lean.Environment) : IO Unit := do
   assertTrue "atomic projection suffix overflow is exempt"
     (Formatter.Diagnostics.overflowOccurrences projectionChainModule
       { lineWidth := 100 }).isEmpty
+  let projectionMember := String.ofList (List.replicate 88 'x')
+  let fittingProjectionChain :=
+    "def value :=\n        (D." ++ projectionMember ++ "\n          argument)\n"
+  let movedProjectionChain :=
+    "def value :=\n          (D." ++ projectionMember ++ "\n            argument)\n"
+  let fittingProjectionChainModule ←
+    SyntaxTree.parseModuleStringWithEnv env fittingProjectionChain
+      "fitting-projection-chain-overflow-source.lean"
+  let movedProjectionChainModule ←
+    SyntaxTree.parseModuleStringWithEnv env movedProjectionChain
+      "moved-projection-chain-overflow.lean"
+  assertTrue "projection chain fits before structural movement"
+    (Formatter.linesFit fittingProjectionChain 100)
+  assertTrue "structurally moved projection chain demonstrates an overflow"
+    (!Formatter.linesFit movedProjectionChain 100)
+  assertTrue "moved indivisible projection chain does not report actionable overflow"
+    (!(Formatter.Diagnostics.formattingExceptions fittingProjectionChainModule
+        movedProjectionChainModule { lineWidth := 100 }).any
+        fun exception =>
+          match exception with
+          | .lineOverflow _ => true
+          | _ => false)
   let stringCommaOverflow :=
     "def messages := [\n  \""
     ++ String.ofList (List.replicate Formatter.maxLineWidth 'x')

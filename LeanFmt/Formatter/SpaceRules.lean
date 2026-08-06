@@ -287,29 +287,57 @@ def firstCommentColumn? (text : String) (firstLineColumn : Nat) : Option Nat :=
         | none => loop false rest
   loop true <| (normalizeLineEndings text).splitOn "\n"
 
-def alignCommentBoundaryLines (sourceIndent targetIndent : Nat) (followingIndent : String)
-    : List String → List String
-  | [] => []
-  | [line] =>
+def alignCommentBoundaryLines
+    (attachedSourceIndent attachedTargetIndent sourceFollowingIndent : Nat)
+    (followingIndent : String)
+    : Nat → Nat → Nat → List String → List String
+  | _, _, _, [] => []
+  | blockCommentDepth, blockSourceIndent, blockTargetIndent, line :: rest =>
       let stripped := stripLeadingHorizontalWhitespace line
-      [if stripped.isEmpty then
-        followingIndent
+      if 0 < blockCommentDepth then
+        let adjusted := shiftCommentLineIndent blockSourceIndent blockTargetIndent line
+        let nextDepth := blockCommentDepthAfterLine blockCommentDepth line
+        adjusted
+        :: alignCommentBoundaryLines attachedSourceIndent attachedTargetIndent
+            sourceFollowingIndent followingIndent nextDepth blockSourceIndent
+            blockTargetIndent rest
+      else if rest.isEmpty && stripped.isEmpty then
+        [followingIndent]
+      else if stripped.isEmpty then
+        ""
+        :: alignCommentBoundaryLines attachedSourceIndent attachedTargetIndent
+            sourceFollowingIndent followingIndent 0 0 0 rest
       else
-        shiftCommentLineIndent sourceIndent targetIndent line]
-  | line :: rest =>
-      shiftCommentLineIndent sourceIndent targetIndent line
-      :: alignCommentBoundaryLines sourceIndent targetIndent followingIndent rest
+        let sourceIndent := line.length - stripped.length
+        let nextDepth := blockCommentDepthAfterLine 0 line
+        let belongsToFollowingTree := sourceIndent == sourceFollowingIndent
+        let adjusted :=
+          if belongsToFollowingTree then
+            followingIndent ++ stripped
+          else
+            shiftCommentLineIndent attachedSourceIndent attachedTargetIndent line
+        let blockSourceIndent :=
+          if belongsToFollowingTree then sourceFollowingIndent else attachedSourceIndent
+        let blockTargetIndent :=
+          if belongsToFollowingTree then followingIndent.length else attachedTargetIndent
+        adjusted
+        :: alignCommentBoundaryLines attachedSourceIndent attachedTargetIndent
+            sourceFollowingIndent followingIndent nextDepth blockSourceIndent
+            blockTargetIndent rest
 
 def commentTriviaForTreeBoundary (text : String)
-    (sourceCommentColumn targetCommentColumn : Nat) (followingIndent : String)
+    (sourceCommentColumn targetCommentColumn sourceFollowingIndent : Nat)
+    (followingIndent : String)
     : String :=
   match (cleanTrivia text).splitOn "\n" with
   | [] => "\n" ++ followingIndent
   | firstLine :: rest =>
+      let firstBlockDepth := blockCommentDepthAfterLine 0 firstLine
       String.intercalate "\n"
       <| firstLine
           :: alignCommentBoundaryLines sourceCommentColumn targetCommentColumn
-              followingIndent rest
+              sourceFollowingIndent followingIndent firstBlockDepth sourceCommentColumn
+              targetCommentColumn rest
 
 def moveLeadingCommentAfterToken? (text : String) : Option String :=
   match (normalizeLineEndings text).splitOn "\n" with

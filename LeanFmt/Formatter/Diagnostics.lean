@@ -557,15 +557,19 @@ def overflowOccurrences (moduleTree : SyntaxTree.Module) (options : Options := {
     : List OverflowOccurrence :=
   overflowOccurrencesWith moduleTree options true
 
-def lineWidthAtToken?
-    (sourceMap : SyntaxTree.SourcePositionMap) (token : SyntaxTree.Token)
-    : Option Nat :=
+def lineTextAtToken? (sourceMap : SyntaxTree.SourcePositionMap) (token : SyntaxTree.Token)
+    : Option String :=
   let lineNumber := sourceMap.lineNumberAt token.span.start
   let fileMap := sourceMap.fileMap
   let line :=
     SyntaxTree.sourceText sourceMap.source
       (fileMap.lineStart lineNumber) (fileMap.lineStart (lineNumber + 1))
-  (SpaceRules.normalizeLineEndings line).splitOn "\n" |>.head? |>.map (·.length)
+  (SpaceRules.normalizeLineEndings line).splitOn "\n" |>.head?
+
+def lineWidthAtToken?
+    (sourceMap : SyntaxTree.SourcePositionMap) (token : SyntaxTree.Token)
+    : Option Nat :=
+  (lineTextAtToken? sourceMap token).map (·.length)
 
 def isolatedOverflowTokenIndex?
     (sourceMap : SyntaxTree.SourcePositionMap) (tokens : List SyntaxTree.Token)
@@ -592,6 +596,27 @@ def isolatedTokenSourceLineOverflowed
       | none => false
       | some sourceToken =>
           lineWidthAtToken? sourceMap sourceToken |>.any (lineWidth < ·)
+
+def overflowContainedInUnbreakableLineHead
+    (formattedMap : SyntaxTree.SourcePositionMap)
+    (formattedTokens : List SyntaxTree.Token)
+    (occurrence : OverflowOccurrence) (lineWidth : Nat)
+    : Bool :=
+  let lineStart := formattedMap.fileMap.lineStart occurrence.line
+  let contentStart :=
+    positionAfter lineStart
+      (occurrence.text.takeWhile SpaceRules.isHorizontalWhitespace).toString
+  let overflowStart := positionAfter lineStart (occurrence.text.take lineWidth).toString
+  let contentStop := positionAfter lineStart occurrence.text.trimAsciiEnd.toString
+  match formattedTokens.filter (tokenIntersects overflowStart contentStop) with
+  | [token] =>
+      contentStop <= token.span.stop
+      && (let leading :=
+            SyntaxTree.sourceText formattedMap.source contentStart token.span.start
+          leading.toList.all
+            fun char =>
+              char == '(' || char == '[' || char == '{' || char == '⟨' || char == '⟪')
+  | _ => false
 
 def sourceCommentLineTexts (moduleTree : SyntaxTree.Module) : List String :=
   (preservationFragments moduleTree).flatMap
@@ -663,6 +688,29 @@ def overflowCoveredBySpans
   let contentStop := positionAfter lineStart occurrence.text.trimAsciiEnd.toString
   spans.any (spanWithLineEndersCovers formattedTokens overflowStart contentStop)
 
+def overflowShiftedWithUnbreakableLineHead
+    (sourceMap formattedMap : SyntaxTree.SourcePositionMap)
+    (sourceTokens formattedTokens : List SyntaxTree.Token)
+    (unbreakableSpans : List SyntaxTree.Span)
+    (occurrence : OverflowOccurrence) (lineWidth : Nat)
+    : Bool :=
+  let lineStart := formattedMap.fileMap.lineStart occurrence.line
+  let contentStart :=
+    positionAfter lineStart
+      (occurrence.text.takeWhile SpaceRules.isHorizontalWhitespace).toString
+  let contentStop := positionAfter lineStart occurrence.text.trimAsciiEnd.toString
+  match formattedTokens.zipIdx.find?
+          fun (token, _) =>
+            contentStart <= token.span.start && token.span.start < contentStop with
+  | none => false
+  | some (formattedHead, index) =>
+      unbreakableSpans.any (fun span => span.start == formattedHead.span.start)
+      && match sourceTokens[index]? >>= lineTextAtToken? sourceMap with
+          | some sourceLine =>
+              sourceLine.length <= lineWidth
+              && sourceLine.trimAscii == occurrence.text.trimAscii
+          | none => false
+
 def formattingExceptions (sourceModule formattedModule : SyntaxTree.Module)
     (options : Options := {})
     : List FormattingException :=
@@ -693,6 +741,11 @@ def formattingExceptions (sourceModule formattedModule : SyntaxTree.Module)
         fun occurrence =>
           if overflowCoveredBySpans formattedMap formattedTokens
                 formattedUnbreakableOriginalSpans occurrence options.lineWidth
+              || overflowShiftedWithUnbreakableLineHead sourceMap formattedMap
+                  sourceTokens formattedTokens formattedUnbreakableOriginalSpans
+                  occurrence options.lineWidth
+              || overflowContainedInUnbreakableLineHead formattedMap formattedTokens
+                  occurrence options.lineWidth
               || sourceOverflowTexts.contains occurrence.text.trimAscii
               || commentOnlyOverflowMatchesSource formattedMap formattedTokens
                   formattedSyntaxCommentSpans sourceCommentLineTexts occurrence

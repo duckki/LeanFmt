@@ -1334,6 +1334,31 @@ indentation. An arrowless tactic alternative owns only its pattern; subsequent
 tactics remain peers in the surrounding tactic sequence because indenting them
 under the alternative changes Lean's parse.
 
+`cases` and `induction` keep `with` on the complete header. Their alternatives
+align with the tactic, and a multiline alternative body is indented two levels
+beneath it:
+
+```lean
+theorem example (value : Nat) : True := by
+  cases value with
+  | zero =>
+      exact True.intro
+  | succ value =>
+      exact True.intro
+```
+
+A long `induction ... generalizing` header wraps between generalized identifiers.
+The target remains attached to `induction`, and the final identifier remains
+attached to `with`:
+
+```lean
+  induction path generalizing leftVariableDefinitions
+      rightVariableDefinitions
+      leftCurrentSelectionSet
+      rightCurrentSelectionSet leftFuel rightFuel with
+  | nil => trivial
+```
+
 A pattern lambda uses its own physical start as the arm base. When `fun` starts
 between indentation boundaries, as after an opening parenthesis, the arms round
 up to the next boundary rather than inheriting the enclosing expression's base:

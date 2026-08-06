@@ -4,7 +4,84 @@ This document records the visual review of a complete Mathlib formatting run so
 the remaining layout work can be addressed without repeating the corpus review.
 It is a point-in-time work list, not part of the normative formatting style.
 
-## Current status: 2026-08-05
+## Current status: 2026-08-06
+
+### Tactic-sequence, identifier-clause, and renderer consistency checkpoint
+
+The current working tree was validated against exact Mathlib `v4.32.0` commit
+`81a5d257c8e410db227a6665ed08f64fea08e997`. The run used the Lake cache,
+selected all 8,264 tracked Lean files under `Mathlib`, set width 100, and did
+not pass `--jobs`. All 83 formatter batches passed code preservation,
+actionable-overflow, missing-rule, fallback, and idempotency checks. The first
+full post-format build passed all 8,654 targets in 3,724 seconds. Its resumed
+validation invocation took 4,079 seconds, with no increasing timing trend,
+worker failure, or memory pressure. After the peer-flow correction described
+below, the final formatter reran all 83 batches in 3,434 seconds and the
+incremental 8,654-target build passed in 7 seconds. The final tree changes 7,553
+files by 331,169 insertions and 290,592 deletions, and `git diff --check`
+passes.
+
+Fresh `graphql-lean` and `quantum-computing-lean` validation also passed with
+the automatic worker count. GraphQL's clean build took 85 seconds, its three
+formatter batches took 17, 9, and 8 seconds, and its post-format build took 67
+seconds. Twenty files changed by 449 insertions and 448 deletions; review found
+the `cases`, named-discriminant, ordinary-induction, and sibling-tactic changes
+logically consistent. Quantum restored its cache in 14 seconds, built in 45
+seconds, formatted in 15 seconds, rebuilt in 3 seconds, and produced no diff.
+The combined fresh external run took 340 seconds and reported no formatter
+exception or performance trend. After the peer-flow correction, all three
+GraphQL batches and its incremental build passed in 38 seconds; quantum
+formatting and its complete cached build passed in 20 seconds with no diff.
+
+This checkpoint repairs five general consistency gaps without adding a rule
+API. A same-indented tactic continuation that Lean stores inside a preceding
+non-owner tactic returns to the surrounding tactic sequence, so a preceding
+`classical` or ordinary sibling no longer changes elimination-body indentation.
+Induction headers now own flat `generalizing` identifier clauses, giving every
+name one continuation base while keeping `with` attached. Generic flow
+measurement counts comment trivia immediately before the next candidate break.
+Comment-boundary rendering distinguishes authored continuations from comments
+aligned with the following tree. Overflow diagnostics now recognize an
+indivisible qualified line head and an unchanged protected line shifted by
+required structural indentation.
+
+Six independent reviews covered non-overlapping Mathlib domains. They found no
+new direct `cases`, named-discriminant, `with`, or ordinary `induction`
+regression. The GraphQL diff review did find that recursively nested
+`generalizing` names formed a staircase when more than one internal boundary
+broke. Flattening those names into semantic peers makes every continuation use
+the same base; focused preservation and idempotency coverage, GraphQL, quantum,
+and the final 83-batch Mathlib rerun all pass. The reviews also confirmed that
+the corpus still has actionable families beyond this checkpoint:
+
+- protected or nested elimination bodies can retain the alternative's base,
+  including `Algebra/Polynomial/RuleOfSigns.lean:308` and
+  `CategoryTheory/Action/Monoidal.lean:293`;
+- standalone comments can detach to column zero or add an extra body level,
+  including `Geometry/RingedSpace/Stalks.lean:62`,
+  `Tactic/Linter/DocString.lean:168`, and
+  `Analysis/Normed/Group/Seminorm.lean:61`;
+- low-priority `<|` can occupy a line apart from a comment-forced operand, as in
+  `MeasureTheory/Measure/Haar/InnerProductSpace.lean:179`;
+- a trailing declaration `where` can detach at the wrong base, represented by
+  `MeasureTheory/Measure/Stieltjes.lean:524`;
+- protected proof, declaration-binder, and expression continuations can retain
+  stale token-relative columns, represented by
+  `Tactic/TacticAnalysis.lean:120` and
+  `RingTheory/PrincipalIdealDomain.lean:120`.
+
+Two targeted reviews after the final build found no remaining staircase,
+detached `with`, named-discriminant regression, or direct elimination-body
+error. Both independently reproduced only the protected/nested alternative-body
+family listed first above.
+
+The next promising checkpoint is the first family only: make a parser-owned
+`induction ... using` or nested elimination alternative expose the same direct
+body boundary as an ordinary elimination alternative. It should be implemented
+as the narrowest syntax ownership correction, with focused tests for both an
+ordinary sibling and a still-protected nested proof. Comment ownership,
+standalone `<|`, `where`, and peer-continuation bases should remain separate
+checkpoints because each changes a different governing invariant.
 
 ### Ordinary induction and tactic-context checkpoint
 

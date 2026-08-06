@@ -501,7 +501,8 @@ def WhitespaceState.defaultWhitespace (state : WhitespaceState) (token : SyntaxT
           let targetCommentColumn :=
             SpaceRules.firstCommentColumn? boundaryTrivia <| lineWidth state.currentLine
           SpaceRules.commentTriviaForTreeBoundary boundaryTrivia
-            (sourceCommentColumn.getD 0) (targetCommentColumn.getD 0) indentation
+            (sourceCommentColumn.getD 0) (targetCommentColumn.getD 0)
+            (state.sourceMap.columnAt token.span.start) indentation
         else if SpaceRules.hasCommentStart trivia
                 && SpaceRules.hasLineStructure trivia
                 && !commentTriviaStartsOnNewLine trivia then
@@ -513,7 +514,8 @@ def WhitespaceState.defaultWhitespace (state : WhitespaceState) (token : SyntaxT
             SpaceRules.firstCommentColumn? boundaryTrivia (lineWidth state.currentLine)
           let adjusted :=
             SpaceRules.commentTriviaForTreeBoundary boundaryTrivia
-              (sourceCommentColumn.getD 0) (targetCommentColumn.getD 0) indentation
+              (sourceCommentColumn.getD 0) (targetCommentColumn.getD 0)
+              (state.sourceMap.columnAt token.span.start) indentation
           if state.pendingCommandBoundary? == some .blankLine then
             ensureBlankLineBeforeIndentation adjusted indentation
           else
@@ -1796,16 +1798,18 @@ def FlowRenderContext.stateForPieceFit
   let nextBreakIndex := flow.nextBreakIndex index
   if nextBreakIndex == flow.segment.stop then
     state
-  else if groupedSuffixMayContinueAcrossRuleBreak flow.segment nextBreakIndex then
+  else
     match flow.segment.child? (nextBreakIndex - 1) with
     | some child =>
+        let suffixStop :=
+          if groupedSuffixMayContinueAcrossRuleBreak flow.segment nextBreakIndex then
+            flow.segment.stop
+          else
+            nextBreakIndex
         let suffixWidth :=
-          lineFitSuffixForChild state flow.segment (nextBreakIndex - 1)
-            flow.segment.stop child
+          lineFitSuffixForChild state flow.segment (nextBreakIndex - 1) suffixStop child
         { state with lineFitSuffixWidth := suffixWidth }
     | none => state
-  else
-    { state with lineFitSuffixWidth := 0 }
 
 def FlowRenderContext.measurePiece
     (flow : FlowRenderContext) (state : RenderState) (index : Nat)

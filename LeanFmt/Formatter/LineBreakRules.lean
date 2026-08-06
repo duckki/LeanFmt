@@ -1421,12 +1421,23 @@ def tacticEliminationHeaderBreaks (_context : RuleContext) (segment : Segment)
         match segment.parent with
         | .node (.tacticEliminationHeader targetIsNamed) _ => targetIsNamed
         | _ => false
+      let hasIdentifierClause :=
+        segment.indexes.any
+          fun index =>
+            (segment.child? index).any
+              fun
+              | .node .tacticIdentifierClause _ => true
+              | _ => false
       let targetBreak :=
-        if targetIsNamed then [] else [boundaryBreak? segment targetIndex 1].filterMap id
+        if targetIsNamed || hasIdentifierClause then
+          []
+        else
+          [boundaryBreak? segment targetIndex 1].filterMap id
       targetBreak
       ++ rest.filterMap
           fun index =>
             match segment.child? index with
+            | some (.node .tacticIdentifierClause _) => none
             | some (.node (.proofBody _) _) =>
                 boundaryBreak? segment index alternativeBodyIndentLevels
             | _ => boundaryBreak? segment index 1
@@ -1442,6 +1453,12 @@ def tacticAlternativeBodyBreaks (_context : RuleContext) (segment : Segment)
         | _ => none
   else
     []
+
+def tacticIdentifierClauseBreaks (_context : RuleContext) (segment : Segment)
+    : List BreakPoint :=
+  match nonemptyChildIndexes segment with
+  | [] | [_] => []
+  | _ :: rest => rest.filterMap fun index => boundaryBreak? segment index 2
 
 def quantifierBinderBreaks (context : RuleContext) (segment : Segment)
     : List BreakPoint :=
@@ -3379,6 +3396,12 @@ def tacticLayoutOwnerRule : LineBreakRule :=
 def tacticEliminationHeaderRule : LineBreakRule :=
   {
     name := "tacticEliminationHeader"
+    keepPrefixWithChildFirstLine :=
+      fun _ segment index =>
+        (segment.child? index).any
+          fun
+          | .node .tacticIdentifierClause _ => true
+          | _ => false
     flow := fun _ _ => true
     inheritBase := fun _ _ => true
     breakPoints := tacticEliminationHeaderBreaks
@@ -3402,6 +3425,15 @@ def tacticAlternativeRule : LineBreakRule :=
     inheritBase := fun _ _ => true
     roundUpBaseIndentation := true
     breakPoints := tacticAlternativeBodyBreaks
+  }
+
+def tacticIdentifierClauseRule : LineBreakRule :=
+  {
+    name := "tacticIdentifierClause"
+    useExistingBreaks := fun _ _ => true
+    flow := fun _ _ => true
+    inheritBase := fun _ _ => true
+    breakPoints := tacticIdentifierClauseBreaks
   }
 
 def ifThenElseRule : LineBreakRule :=
@@ -3982,6 +4014,7 @@ partial def ruleFor : SyntaxTree.Tree → Option LineBreakRule
   | .node (.raw `Lean.Parser.Tactic.induction) _ => some tacticLayoutOwnerRule
   | .node (.tacticEliminationTargets _) _ => some matchDiscriminantsRule
   | .node (.tacticEliminationHeader _) _ => some tacticEliminationHeaderRule
+  | .node .tacticIdentifierClause _ => some tacticIdentifierClauseRule
   | .node (.raw `Lean.Parser.Tactic.inductionAlts) _ =>
       some tacticAlternativeContainerRule
   | .node (.raw `Lean.Parser.Tactic.inductionAlt) _ => some tacticAlternativeRule

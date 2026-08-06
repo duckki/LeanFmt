@@ -65,6 +65,7 @@ inductive NodeKind where
   | lowPriorityInfixRhs
   | indexedInfix (kind : SyntaxNodeKind)
   | suffixGroup
+  | tacticIdentifierClause
   | tacticEliminationTargets (containsNamed : Bool)
   | tacticEliminationHeader (targetIsNamed : Bool)
   | namedDiscriminant
@@ -98,6 +99,7 @@ def nodeKindName : NodeKind → String
   | .lowPriorityInfixRhs => "LeanFmt.SyntaxTree.NodeKind.lowPriorityInfixRhs"
   | .indexedInfix kind => s!"LeanFmt.SyntaxTree.NodeKind.indexedInfix {kind}"
   | .suffixGroup => "LeanFmt.SyntaxTree.NodeKind.suffixGroup"
+  | .tacticIdentifierClause => "LeanFmt.SyntaxTree.NodeKind.tacticIdentifierClause"
   | .tacticEliminationTargets containsNamed =>
       s!"LeanFmt.SyntaxTree.NodeKind.tacticEliminationTargets {containsNamed}"
   | .tacticEliminationHeader targetIsNamed =>
@@ -249,9 +251,49 @@ private def annotateTacticNode (kind : SyntaxNodeKind) (children : Array Tree) :
     (.tactic kind summary.containsSequence summary.isOwner summary.containsOwner)
     children
 
+private def lineIndentation? (token : Token) : Option String :=
+  match token.leading.text.splitOn "\n" with
+  | [] | [_] => none
+  | lines => do
+      let indentation ← lines.getLast?
+      if indentation.toList.all fun char => char == ' ' || char == '\t' then
+        some indentation
+      else
+        none
+
+private def splitAlignedTacticSequenceContinuation? (tree : Tree)
+    : Option (Tree × Tree) := do
+  let .node (.tactic kind _ isOwner _) children := tree | none
+  if isOwner then
+    none
+  else
+    let contentIndexes :=
+      (List.range children.size).filter
+        fun index => children[index]?.any fun child => firstTacticToken? child |>.isSome
+    let continuationIndex ← contentIndexes.getLast?
+    let continuation ← children[continuationIndex]?
+    if !isTacticSequenceTree continuation then
+      none
+    else
+      let head := annotateTacticNode kind (children.set! continuationIndex .missing)
+      let headIndentation ← firstTacticToken? head >>= lineIndentation?
+      let continuationIndentation ← firstTacticToken? continuation >>= lineIndentation?
+      if headIndentation == continuationIndentation then
+        some (head, continuation)
+      else
+        none
+
 private partial def annotateTacticSequenceEntry : Tree → Tree
   | .node (.raw `null) children =>
-      .node (.raw `null) (children.map annotateTacticSequenceEntry)
+      let children :=
+        children.foldl
+          (fun result child =>
+            let child := annotateTacticSequenceEntry child
+            match splitAlignedTacticSequenceContinuation? child with
+            | some (head, continuation) => result.push head |>.push continuation
+            | none => result.push child)
+          #[]
+      .node (.raw `null) children
   | .node (.raw kind) children => annotateTacticNode kind children
   | tree => tree
 
@@ -1693,6 +1735,17 @@ def regroupCasesChildren (children : Array Tree) : Option (Array Tree) := do
       let header := .node (.tacticEliminationHeader targetIsNamed) headerChildren
       some <| #[header, alternatives] ++ trailingChildren
 
+def regroupTacticIdentifierClause? (tree : Tree) : Option Tree := do
+  let .node (.raw `null) children := tree | none
+  let keyword ← children[0]?
+  let identifierContainer ← children[1]?
+  let .node (.raw `null) identifiers := identifierContainer | none
+  let identifiers := identifiers.filter fun identifier => identifier.firstToken?.isSome
+  let first ← identifiers[0]?
+  let first := .node .suffixGroup #[keyword, first]
+  let children := identifiers.set! 0 first
+  some <| .node .tacticIdentifierClause <| children
+
 def regroupInductionChildren (children : Array Tree) : Option (Array Tree) := do
   let alternativesIndex ←
     children.findIdx?
@@ -1703,8 +1756,31 @@ def regroupInductionChildren (children : Array Tree) : Option (Array Tree) := do
         | _ => false
   let alternatives ← children[alternativesIndex]?
   let (withKeyword, alternatives) ← Tree.extractLeadingLexeme? "with" alternatives
-  let header :=
-    .node .suffixGroup <| childrenRange children 0 alternativesIndex ++ #[withKeyword]
+  let headerChildren :=
+    childrenRange children 0 alternativesIndex
+    |>.map
+        fun child =>
+          if child.firstToken?.any fun token => token.lexeme == "generalizing" then
+            (regroupTacticIdentifierClause? child).getD child
+          else
+            child
+  let suffixIndex ← previousContentIndex? headerChildren headerChildren.size
+  let suffix ← headerChildren[suffixIndex]?
+  let suffix :=
+    match suffix with
+    | .node .tacticIdentifierClause identifiers =>
+        match previousContentIndex? identifiers identifiers.size with
+        | some identifierIndex =>
+            match identifiers[identifierIndex]? with
+            | some identifier =>
+                .node .tacticIdentifierClause
+                  (identifiers.set! identifierIndex
+                    <| .node .suffixGroup #[identifier, withKeyword])
+            | none => .node .suffixGroup #[suffix, withKeyword]
+        | none => .node .suffixGroup #[suffix, withKeyword]
+    | _ => .node .suffixGroup #[suffix, withKeyword]
+  let headerChildren := headerChildren.set! suffixIndex suffix
+  let header := .node (.tacticEliminationHeader false) headerChildren
   let trailingChildren := childrenRange children (alternativesIndex + 1) children.size
   let bodyChildren :=
     match splitDefaultTacticAlternative? alternatives with
