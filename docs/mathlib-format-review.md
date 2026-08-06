@@ -6,9 +6,9 @@ It is a point-in-time work list, not part of the normative formatting style.
 
 ## Current status: 2026-08-05
 
-### Direct `cases` body checkpoint after `d87a9c6`
+### Direct `cases` body checkpoint through `d386d69`
 
-The working tree narrows the Mathlib `lemma` original-layout exception by one
+This checkpoint narrows the Mathlib `lemma` original-layout exception by one
 existing syntax fact: a lemma remains protected only when it contains no
 structurally rendered tactic layout owner.
 It does not add a rule API, inspect tokens in a line-break rule, or teach the
@@ -24,14 +24,22 @@ stable. Architecture coverage separately verifies both sides of the exception:
 a leaf lemma remains a `.proofLemma` island, while a lemma with a structural
 proof owner does not.
 
+The first complete Mathlib pass exposed one over-broad part of the ownership
+condition. A lemma containing `calc` was opened even though `calc` remained an
+original-layout island, which caused a preservation fallback around a nested
+`#adaptation_note`. Commit `d386d69` now requires a transparent structural owner
+and does not let a protected owner open its parent. The focused reproduction,
+local release gate, and the affected Mathlib batch all pass without fallback.
+
 The complete local release gate passed: build, tests, linter, fixture update and
 dry check, self-formatting, preservation, overflow, missing-rule, and idempotency
 checks were all clean. A fresh GraphQL and quantum validation passed in 305
 seconds with no formatting changes, exceptions, build failures, or worsening
 batch-time trend.
 
-At width 100, eight affected Mathlib modules passed preservation and idempotency
-formatting, and their combined 3,020-target build completed successfully. Direct
+At width 100, eight initially affected Mathlib modules passed preservation and
+idempotency formatting, and their combined 3,020-target build completed
+successfully. Direct
 `cases` bodies in `Algebra/CharP/MixedCharZero.lean`,
 `Analysis/Meromorphic/Order.lean`, `Data/ENat/Lattice.lean`,
 `Data/EReal/Operations.lean`, and
@@ -39,14 +47,38 @@ formatting, and their combined 3,020-target build completed successfully. Direct
 body indentation. The build emitted only accepted 100-column linter warnings;
 formatter diagnostics found no actionable overflow.
 
-This checkpoint deliberately does not reach through an outer structural owner.
-Nested `cases` bodies under induction alternatives remain source-preserved in
-`RingTheory/Etale/QuasiFinite.lean` and
+The complete Mathlib `v4.32.0` validation used the Lake cache, line width 100,
+only the `Mathlib` directory, and no formatter-jobs override. The clean
+pre-format build passed all 8,654 jobs in 5 seconds. All 83 formatter batches
+were covered with the final formatter; code preservation, missing-rule,
+fallback, and idempotency counts were zero. The seven previously documented
+actionable-width diagnostics were unchanged. The formatted tree changed 7,538
+files by 315,476 insertions and 275,279 deletions, and `git diff --check` passed.
+The full post-format build passed all 8,654 jobs in 3,706 seconds. After batches
+1-24 were rerun to ensure that every file used `d386d69`, a complete incremental
+build checked the current tree successfully, rebuilding or replaying 179 stale
+targets in 18 seconds. Batch times remained broadly stable, normally 30 to 60
+seconds, without worker failure or memory pressure.
+
+Independent review found one remaining direct alternative family. Arrowless
+alternatives such as `| cons h p` do not expose a `=>` boundary, so a body that
+begins on the next line can remain only one level below its alternative. This
+occurs in `RingTheory/PowerSeries/Binomial.lean:91` and
+`Combinatorics/SimpleGraph/Walk/Operations.lean:360,853,862`. The next fix should
+give every direct tactic alternative one body owner independent of whether the
+surface syntax contains `=>`; it should reuse the existing two-level body
+indentation and must not add a renderer or token-text exception.
+
+This checkpoint also deliberately does not reach through an outer structural
+owner. Nested `cases` bodies under induction alternatives remain
+source-preserved in `RingTheory/Etale/QuasiFinite.lean` and
 `Tactic/ComputeAsymptotics/Multiseries/Monomial/Basic.lean`. That is a distinct
 induction-alternative ownership family and should be the next review target, not
-an extension of this condition. Before that fix, run the complete Mathlib
-formatter and post-format build once for the current checkpoint so its corpus
-impact can be reviewed independently.
+an extension of this condition. Two previously documented `calc` shared-base
+examples also remain in
+`Analysis/Complex/ValueDistribution/CharacteristicFunction.lean:108` and
+`Analysis/InnerProductSpace/Projection/Basic.lean:468`. No detached comments or
+extension-tactic regressions were found.
 
 ### Structural `cases` checkpoint after `c9f4e8c`
 
