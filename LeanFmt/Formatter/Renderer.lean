@@ -615,14 +615,17 @@ def RenderState.segmentStartColumn (state : RenderState)
 def RenderState.traceSegment
     (state : RenderState) (segment : LineBreakRules.Segment) (ruleName : String)
     : RenderState :=
-  {
-    state with
-      trace :=
-        state.trace.recordSegment state.output
-          (fun token => state.defaultWhitespace token) segment ruleName
-          (state.segmentStartColumn segment) state.currentIndent
-          state.segmentIndentation state.pendingIndent? state.tailIndentation?
-  }
+  if state.trace.enabled then
+    {
+      state with
+        trace :=
+          state.trace.recordSegment state.output
+            (fun token => state.defaultWhitespace token) segment ruleName
+            (state.segmentStartColumn segment) state.currentIndent
+            state.segmentIndentation state.pendingIndent? state.tailIndentation?
+    }
+  else
+    state
 
 def RenderState.nextTokenColumn (state : RenderState) (token : SyntaxTree.Token)
     (preserveLines : Bool := false)
@@ -1858,32 +1861,32 @@ def FlowRenderContext.stateForForcedNestedChild?
     (flow : FlowRenderContext) (state : RenderState) (index : Nat)
     (child : SyntaxTree.Tree)
     (breakAfterPreviousChild : Bool)
-    (childFit : LayoutProbe) (pieceFit : LayoutProbe)
+    (childFit : Thunk LayoutProbe)
     (keepPrefixWithChildFirstLine : Bool)
     : Option RenderState :=
   match flow.breakAt? index with
   | some breakPoint =>
       if index == flow.segment.start then
-        if childFit.fits then
+        if childFit.get.fits then
           some state
         else
           some
           <| state.withPendingIndent
               (state.currentIndent + breakPoint.indentLevels * indentationSpaces)
       else if keepPrefixWithChildFirstLine then
-        if (OriginalTree.classify? child).isSome && !childFit.flat then
+        if (OriginalTree.classify? child).isSome && !childFit.get.flat then
           some <| flow.withBreak state breakPoint
         else
           none
       else if breakAfterPreviousChild
-              || !childFit.fits
+              || !childFit.get.fits
               || flow.hasSourceBreakAt index
               || commentForcesBreakAt state.source flow.segment index
               || (treeContainsMultilineOriginalEmission state.source child
-                  && !childFit.flat)
+                  && !childFit.get.flat)
               || treeContainsCommentForcedBreak state.source child
-              || (breakPoint.indentLevels == 0 && !pieceFit.flat)
-              || !pieceFit.fits then
+              || (let pieceFit := flow.measurePiece state index
+                  (breakPoint.indentLevels == 0 && !pieceFit.flat) || !pieceFit.fits) then
         some <| flow.withBreak state breakPoint
       else
         none
@@ -2512,17 +2515,19 @@ mutual
               state
           let childSegment := LineBreakRules.Segment.ofTree child
           let childContext := state.context.push flow.segment index
-          let childFit :=
-            flow.measureChild state index childContext childSegment
-              (index == flow.segment.start)
-          let pieceFit :=
-            if index == flow.segment.start || (flow.breakAt? index).isNone then
-              childFit
-            else
-              flow.measurePiece state index
-          let childFirstLineFits := flow.childFirstLineFits state index childContext child
-          let keepPrefixWithChildFirstLine :=
+          let childFit : Thunk LayoutProbe :=
+            ⟨fun _ =>
+              flow.measureChild state index childContext childSegment
+                (index == flow.segment.start)⟩
+          let keepsPrefixWithChildFirstLine :=
             flow.rule.keepPrefixWithChildFirstLine state.context flow.segment index
+          let childFirstLineFits :=
+            if keepsPrefixWithChildFirstLine then
+              flow.childFirstLineFits state index childContext child
+            else
+              false
+          let keepPrefixWithChildFirstLine :=
+            keepsPrefixWithChildFirstLine
             && (childFirstLineFits
                 || flow.childSourceFirstLineFitsAfterPrefix state index child)
             && !commentForcesBreakAt state.source flow.segment index
@@ -2539,15 +2544,20 @@ mutual
             renderFlowChildren rendered flow (index + 1)
               (renderedTreeIsMultiline before rendered child)
           match flow.stateForForcedNestedChild? state index child breakAfterPreviousChild
-                  childFit pieceFit keepPrefixWithChildFirstLine with
+                  childFit keepPrefixWithChildFirstLine with
           | some state => renderNestedAndContinue state
           | none =>
+              let childFit := childFit.get
               if segmentHasRuleSourceBreaks state.source childContext childSegment then
                 renderNestedAndContinue state
               else if childFit.fits then
                 renderFlowChildren (state.commitLayoutProbe childFit) flow (index + 1)
                   false
-              else if childFirstLineFits || keepPrefixWithChildFirstLine then
+              else if (if keepsPrefixWithChildFirstLine then
+                          childFirstLineFits
+                        else
+                          flow.childFirstLineFits state index childContext child)
+                      || keepPrefixWithChildFirstLine then
                 renderNestedAndContinue state
               else
                 let state :=

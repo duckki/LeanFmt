@@ -292,24 +292,14 @@ partial def firstToken? : Tree → Option Token
   | Tree.leaf token =>
       if token.lexeme.isEmpty then none else some token
   | Tree.node _ children =>
-      children.foldl
-        (fun found child =>
-          match found with
-          | some token => some token
-          | none => firstToken? child)
-        none
+      children.findSome? firstToken?
 
 partial def lastToken? : Tree → Option Token
   | Tree.missing => none
   | Tree.leaf token =>
       if token.lexeme.isEmpty then none else some token
   | Tree.node _ children =>
-      children.foldl
-        (fun found child =>
-          match lastToken? child with
-          | some token => some token
-          | none => found)
-        none
+      children.findSomeRev? lastToken?
 
 partial def extractLeadingLexeme? (lexeme : String) : Tree → Option (Tree × Tree)
   | .leaf token =>

@@ -99,10 +99,16 @@ def State.recordSegment
     state
 
 def State.pushPath (state : State) (index : Nat) : State :=
-  { state with segmentPath := state.segmentPath ++ [index] }
+  if state.enabled then
+    { state with segmentPath := state.segmentPath ++ [index] }
+  else
+    state
 
 def State.restorePathFrom (state parent : State) : State :=
-  { state with segmentPath := parent.segmentPath }
+  if state.enabled then
+    { state with segmentPath := parent.segmentPath }
+  else
+    state
 
 def State.shiftEntriesAfter (state : State) (entryCount lineOffset : Nat) : State :=
   if !state.enabled || lineOffset == 0 then
