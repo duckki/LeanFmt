@@ -352,15 +352,14 @@ private def isProtectedTacticTree : SyntaxTree.Tree → Bool
       let kindName := SyntaxTree.nodeKindName kind
       if isQuotationTree tree then
         false
-      else if isTacticKindName kindName then
-        match kind with
-        | .tactic rawKind _ isOwner _ =>
-            !isTacticSequenceKind rawKind && !isOwner
-        | .raw rawKind =>
-            !isTacticSequenceKind rawKind && !SyntaxTree.Tree.isTacticLayoutOwner tree
-        | _ => true
       else
-        false
+        match kind with
+        | .tactic rawKind _ isOwner _ => !isTacticSequenceKind rawKind && !isOwner
+        | .raw rawKind =>
+            isTacticKindName kindName
+            && !isTacticSequenceKind rawKind
+            && !SyntaxTree.Tree.isTacticLayoutOwner tree
+        | _ => false
   | _ => false
 
 private def tokenHasCommentTrivia (token : SyntaxTree.Token) : Bool :=
@@ -601,7 +600,8 @@ def LayoutIslandKind.hasUnbreakableLineLayout : LayoutIslandKind → Bool
   | .calc
   | .quotationLayout
   | .quotation
-  | .proofWidgetsJsx => true
+  | .proofWidgetsJsx
+  | .mathlibTactic => true
   | _ => false
 
 def LayoutIslandKind.isProof : LayoutIslandKind → Bool

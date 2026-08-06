@@ -888,11 +888,12 @@ from the lambda selected by Lean's layout parser.
 
 The escape hatch is intentionally narrow. If a non-proof syntax form is unsafe, prefer a
 specific transparent/default rule or a grouping change before adding another original
-source region. Core tactic nodes and extension tactic nodes identified by their parser
-namespace are original-source islands when they own nested tactic-sequence layout. This
-shared syntax classification covers extension-owned tactic grammars without cataloging
-individual libraries in the formatter and avoids protecting transparent tactic wrappers
-that do not own a sequence. Multiline custom braced term
+source region. Tactic nodes identified by their position in a tactic sequence are
+original-source islands unless they are structural layout owners. Namespace-based recognition
+remains a fallback for tactic syntax outside a direct sequence entry. This classification
+covers extension-owned tactic grammars without cataloging individual libraries in the
+formatter, including tactics whose declared names do not contain a `Tactic` namespace, and
+avoids protecting transparent structural owners. Multiline custom braced term
 syntax is also emitted from original source so leanfmt does not invent a layout for an
 extension-owned DSL whose braces may carry domain-specific structure.
 ProofWidgets JSX remains an original-source island, but its complete relative indentation
@@ -1096,10 +1097,10 @@ through direct `overflowOccurrences` analysis without being attributed to the fo
 The standalone analysis keeps layout-island and isolated-token exemptions, while the
 source-versus-formatted comparison temporarily removes those movable exemptions. This
 reports a movable quotation or isolated token that fit in source but was shifted past
-the limit, without reporting the same pre-existing source overflow. Proof and compound
-proof-layout islands remain exempt: their proof text is emitted as an indivisible
-source-layout unit, so no internal rule boundary is available to resolve an overflow
-introduced by a required structural move. For an isolated token, the
+the limit, without reporting the same pre-existing source overflow. Proof, compound
+proof-layout, and protected tactic islands remain exempt: their text is emitted as an
+indivisible source-layout unit, so no internal rule boundary is available to resolve an
+overflow introduced by a required structural move. For an isolated token, the
 comparison maps its token index back to the source and retains the exemption only when
 that token's original physical line already overflowed; this covers an unbreakable
 declaration name split away from an already-long command prefix.

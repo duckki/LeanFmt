@@ -157,6 +157,7 @@ def isTacticSequenceKind (kind : Lean.SyntaxNodeKind) : Bool :=
 
 def tacticKindOwnsStructuralLayout (kind : Lean.SyntaxNodeKind) : Bool :=
   kind == `Lean.Parser.Tactic.cases
+  || kind == `Lean.Parser.Tactic.induction
   || kind == `Lean.Parser.Tactic.inductionAlts
   || kind == `Lean.Parser.Tactic.inductionAlt
 
@@ -200,9 +201,7 @@ partial def tacticLayoutSummary : Tree → TacticLayoutSummary
         || ((match kind with
               | .raw rawKind => tacticKindOwnsStructuralLayout rawKind
               | _ => false)
-            && (children.zip childSummaries).any
-                fun (child, summary) =>
-                  !isTacticSequenceTree child && summary.containsSequence)
+            && childSummaries.any (·.containsSequence))
       let visibleOwner :=
         isOwner
         && (!isCalcTree tree
@@ -238,19 +237,31 @@ partial def protectNestedTacticSequences : Tree → Tree
       .node kind (children.map protectNestedTacticSequences)
   | tree => tree
 
+private def annotateTacticNode (kind : SyntaxNodeKind) (children : Array Tree) : Tree :=
+  let tree := .node (.raw kind) children
+  let summary := tacticLayoutSummary tree
+  let children :=
+    if summary.isOwner then
+      children.map protectNestedTacticSequences
+    else
+      children
+  .node
+    (.tactic kind summary.containsSequence summary.isOwner summary.containsOwner)
+    children
+
+private partial def annotateTacticSequenceEntry : Tree → Tree
+  | .node (.raw `null) children =>
+      .node (.raw `null) (children.map annotateTacticSequenceEntry)
+  | .node (.raw kind) children => annotateTacticNode kind children
+  | tree => tree
+
 def annotateTacticTree : Tree → Tree
   | tree@(.node (.raw kind) children) =>
       let kindName := nodeKindName (.raw kind)
-      if isCoreTacticKindName kindName || isExtensionTacticKindName kindName then
-        let summary := tacticLayoutSummary tree
-        let children :=
-          if summary.isOwner then
-            children.map protectNestedTacticSequences
-          else
-            children
-        .node
-          (.tactic kind summary.containsSequence summary.isOwner summary.containsOwner)
-          children
+      if isTacticSequenceKind kind then
+        annotateTacticNode kind (children.map annotateTacticSequenceEntry)
+      else if isCoreTacticKindName kindName || isExtensionTacticKindName kindName then
+        annotateTacticNode kind children
       else
         tree
   | tree => tree
@@ -1627,7 +1638,7 @@ private partial def casesTargetGroupContainsNamedDiscriminant : Tree → Bool
       children.any casesTargetGroupContainsNamedDiscriminant
   | _ => false
 
-def splitCasesDefaultAlternative? (alternatives : Tree) : Option (Tree × Tree) := do
+def splitDefaultTacticAlternative? (alternatives : Tree) : Option (Tree × Tree) := do
   let .node kind children := unwrapSingleNullTree alternatives | none
   if !nodeKindHasRawKind `Lean.Parser.Tactic.inductionAlts kind then
     none
@@ -1672,7 +1683,7 @@ def regroupCasesChildren (children : Array Tree) : Option (Array Tree) := do
   let children := children.set! suffixIndex suffix
   let headerChildren := childrenRange children 0 alternativesIndex
   let trailingChildren := childrenRange children (alternativesIndex + 1) children.size
-  match splitCasesDefaultAlternative? alternatives with
+  match splitDefaultTacticAlternative? alternatives with
   | some (defaultAlternative, explicitAlternatives) =>
       let header :=
         .node (.tacticEliminationHeader targetIsNamed)
@@ -1681,6 +1692,26 @@ def regroupCasesChildren (children : Array Tree) : Option (Array Tree) := do
   | none =>
       let header := .node (.tacticEliminationHeader targetIsNamed) headerChildren
       some <| #[header, alternatives] ++ trailingChildren
+
+def regroupInductionChildren (children : Array Tree) : Option (Array Tree) := do
+  let alternativesIndex ←
+    children.findIdx?
+      fun child =>
+        match unwrapSingleNullTree child with
+        | .node (.raw `Lean.Parser.Tactic.inductionAlts) _ => true
+        | .node (.tactic `Lean.Parser.Tactic.inductionAlts _ _ _) _ => true
+        | _ => false
+  let alternatives ← children[alternativesIndex]?
+  let (withKeyword, alternatives) ← Tree.extractLeadingLexeme? "with" alternatives
+  let header :=
+    .node .suffixGroup <| childrenRange children 0 alternativesIndex ++ #[withKeyword]
+  let trailingChildren := childrenRange children (alternativesIndex + 1) children.size
+  let bodyChildren :=
+    match splitDefaultTacticAlternative? alternatives with
+    | some (defaultAlternative, explicitAlternatives) =>
+        #[defaultAlternative, explicitAlternatives]
+    | none => #[alternatives]
+  some <| #[header] ++ bodyChildren ++ trailingChildren
 
 def regroupNamedDiscriminant? (children : Array Tree) : Option Tree :=
   if children.size == 2 then do
@@ -1694,6 +1725,19 @@ def regroupNamedDiscriminant? (children : Array Tree) : Option Tree :=
   else
     none
 
+def regroupTacticAlternativeChildren (children : Array Tree) : Array Tree :=
+  let regrouped? : Option (Array Tree) := do
+    let lhs ← children[0]?
+    let .node (.raw `null) rhsChildren ← children[1]? | none
+    let bodyIndex ← rhsChildren.findIdx? Tree.isTacticSequenceTree
+    let body ← rhsChildren[bodyIndex]?
+    let header := .node .suffixGroup <| #[lhs] ++ childrenRange rhsChildren 0 bodyIndex
+    some
+    <| #[header, body]
+        ++ childrenRange rhsChildren (bodyIndex + 1) rhsChildren.size
+        ++ childrenRange children 2 children.size
+  regrouped?.getD children
+
 def regroupRawNode
     (infixPrecedences : InfixPrecedenceMap)
     (kind : SyntaxNodeKind) (children : Array Tree)
@@ -1704,6 +1748,10 @@ def regroupRawNode
     (regroupNamedDiscriminant? children).getD <| .node (.raw kind) children
   else if kind == `Lean.Parser.Tactic.cases then
     .node (.raw kind) ((regroupCasesChildren children).getD children)
+  else if kind == `Lean.Parser.Tactic.induction then
+    .node (.raw kind) ((regroupInductionChildren children).getD children)
+  else if kind == `Lean.Parser.Tactic.inductionAlt then
+    .node (.raw kind) (regroupTacticAlternativeChildren children)
   else if isIfThenElseKind kind then
     regroupIfThenElseChain kind children
   else if kind == `Lean.Parser.Term.app && children.size == 2 then

@@ -1329,6 +1329,11 @@ also stays attached to `=>`, and its nested body owns subsequent breaks.
 
 Equation-style declaration arms follow the same alternative layout.
 
+Tactic alternatives that own a body after `=>` use the same two-level body
+indentation. An arrowless tactic alternative owns only its pattern; subsequent
+tactics remain peers in the surrounding tactic sequence because indenting them
+under the alternative changes Lean's parse.
+
 A pattern lambda uses its own physical start as the arm base. When `fun` starts
 between indentation boundaries, as after an opening parenthesis, the arms round
 up to the next boundary rather than inheriting the enclosing expression's base:

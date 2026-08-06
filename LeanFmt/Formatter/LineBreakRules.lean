@@ -1385,7 +1385,8 @@ def alternativeBodyIndentLevels : Nat :=
 
 def tacticLayoutOwnerBreaks (context : RuleContext) (segment : Segment)
     : List BreakPoint :=
-  if segment.rawKind? == some `Lean.Parser.Tactic.cases then
+  if segment.rawKind? == some `Lean.Parser.Tactic.cases
+      || segment.rawKind? == some `Lean.Parser.Tactic.induction then
     match defaultPresentChildIndexes segment with
     | [] | [_] => []
     | _ :: rest =>
@@ -1430,11 +1431,15 @@ def tacticEliminationHeaderBreaks (_context : RuleContext) (segment : Segment)
                 boundaryBreak? segment index alternativeBodyIndentLevels
             | _ => boundaryBreak? segment index 1
 
-def tacticAlternativeBodyBreaks (context : RuleContext) (segment : Segment)
+def tacticAlternativeBodyBreaks (_context : RuleContext) (segment : Segment)
     : List BreakPoint :=
-  if parentIsRawKind context `Lean.Parser.Tactic.inductionAlt
-      && childStartsWithLexeme segment segment.start "=>" then
-    [boundaryBreak? segment (segment.start + 1) alternativeBodyIndentLevels].filterMap id
+  if segment.rawKind? == some `Lean.Parser.Tactic.inductionAlt then
+    segment.indexes.filterMap
+      fun index =>
+        match segment.child? index with
+        | some (.node (.proofBody _) _) =>
+            boundaryBreak? segment index alternativeBodyIndentLevels
+        | _ => none
   else
     []
 
@@ -3049,7 +3054,6 @@ def nullBreaks (context : RuleContext) (segment : Segment) : List BreakPoint :=
   ++ inductiveAlternativeBreaks context segment
   ++ tacticAlternativeSequenceBreaks context segment
   ++ tacticSequenceItemBreaks context segment
-  ++ tacticAlternativeBodyBreaks context segment
   ++ quantifierBinderBreaks context segment
   ++ extendedBinderCollectionBreaks context segment
   ++ binderIdentifierBreaks context segment
@@ -3097,8 +3101,6 @@ def nullBreaksMandatory (context : RuleContext) (segment : Segment) : Bool :=
 def nullRule : LineBreakRule :=
   {
     name := "null"
-    useExistingBreaks :=
-      fun context segment => !(tacticAlternativeBodyBreaks context segment).isEmpty
     mandatory := nullBreaksMandatory
     flow :=
       fun context segment =>
@@ -3112,7 +3114,6 @@ def nullRule : LineBreakRule :=
         || !(allowUnusedTacticIdentifierBreaks context segment).isEmpty
         || !(assertNotExistsIdentifierBreaks context segment).isEmpty
         || !(exportItemBreaks context segment).isEmpty
-        || !(tacticAlternativeBodyBreaks context segment).isEmpty
         || !(infixAlternativeBreaks context segment).isEmpty
     inheritBase := nullInheritBase
     breakPoints := nullBreaks
@@ -3399,10 +3400,8 @@ def tacticAlternativeRule : LineBreakRule :=
     useExistingBreaks := fun _ _ => true
     flow := fun _ _ => true
     inheritBase := fun _ _ => true
-    keepPrefixWithChildFirstLine :=
-      fun _ segment index => childStartsWithLexeme segment index "=>"
     roundUpBaseIndentation := true
-    breakPoints := defaultBreaks
+    breakPoints := tacticAlternativeBodyBreaks
   }
 
 def ifThenElseRule : LineBreakRule :=
@@ -3980,6 +3979,7 @@ partial def ruleFor : SyntaxTree.Tree → Option LineBreakRule
   | .node (.raw `Lean.Parser.Tactic.locationHyp) _ => some defaultRule
   | .node (.raw `Lean.Parser.Tactic.exact) _ => some defaultRule
   | .node (.raw `Lean.Parser.Tactic.cases) _ => some tacticLayoutOwnerRule
+  | .node (.raw `Lean.Parser.Tactic.induction) _ => some tacticLayoutOwnerRule
   | .node (.tacticEliminationTargets _) _ => some matchDiscriminantsRule
   | .node (.tacticEliminationHeader _) _ => some tacticEliminationHeaderRule
   | .node (.raw `Lean.Parser.Tactic.inductionAlts) _ =>

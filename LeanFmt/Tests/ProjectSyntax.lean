@@ -1,6 +1,7 @@
 import Lean
 
 syntax (name := projectSyntax) "project_syntax" : term
+syntax (name := contextClassifiedTactic) "context_classified_tactic " ident ident : tactic
 elab (name := projectNoteCommand) "#project_note " (docComment)? : command =>
   pure ()
 

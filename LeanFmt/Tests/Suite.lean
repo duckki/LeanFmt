@@ -30,6 +30,21 @@ partial def findTreeNode? (target : SyntaxTree.NodeKind)
           none
   | _ => none
 
+partial def findTacticTree? (target : Lean.SyntaxNodeKind)
+    : SyntaxTree.Tree → Option SyntaxTree.Tree
+  | tree@(.node (.tactic kind _ _ _) children) =>
+      if kind == target then
+        some tree
+      else
+        children.foldl
+          (fun found child => found.orElse fun _ => findTacticTree? target child)
+          none
+  | .node _ children =>
+      children.foldl
+        (fun found child => found.orElse fun _ => findTacticTree? target child)
+        none
+  | _ => none
+
 partial def countTreeNodes (target : SyntaxTree.NodeKind) : SyntaxTree.Tree → Nat
   | .node kind children =>
       (if kind == target then 1 else 0)
@@ -7119,6 +7134,22 @@ def assertMathlibOwnershipConsistencyShapes (env : Lean.Environment) : IO Unit :
   assertEq "core tactic families keep their structural layout"
     tacticFamilySource tacticFamilyFormatted
 
+  let contextualTacticSource :=
+    "theorem contextualTacticCoverage (value : Nat) : True := by\n"
+    ++ "  context_classified_tactic first second\n"
+    ++ "  induction value with\n"
+    ++ "  | zero => trivial\n"
+    ++ "  | succ value hypothesis => trivial\n"
+  let contextualTacticTree <- SyntaxTree.parseModuleStringWithEnv env
+                                contextualTacticSource "contextual-tactic-coverage.lean"
+  assertTrue "tactic entries are classified by their parser context"
+    ((findTacticTree? `contextClassifiedTactic contextualTacticTree.tree).isSome)
+  assertTrue "context-classified tactics retain their source layout"
+    ((findTacticTree? `contextClassifiedTactic contextualTacticTree.tree).any
+      Formatter.OriginalTree.shouldEmit)
+  assertTrue "context-classified tactics do not become missing rules"
+    (Formatter.Diagnostics.missingRuleOccurrencesForModule contextualTacticTree).isEmpty
+
   let precedingTacticSource :=
     "theorem tacticBeforeCases (value : Nat) : True := by\n"
     ++ "  unfold Example at hypothesis ⊢\n"
@@ -7191,6 +7222,122 @@ def assertMathlibOwnershipConsistencyShapes (env : Lean.Environment) : IO Unit :
       "one-level-cases-body-formatted.lean"
   assertEq "two-level cases body formatting is idempotent"
     oneLevelCasesBodyFormatted oneLevelCasesBodyAgain
+
+  let multilineCasesBodySource :=
+    "theorem multilineCasesBody (value : Nat) : True := by\n"
+    ++ "  cases value with\n"
+    ++ "  | zero => trivial\n"
+    ++ "  | succ value =>\n"
+    ++ "    simp only [Nat.add_zero, Nat.zero_add,\n"
+    ++ "      Nat.add_assoc]\n"
+    ++ "    exact True.intro\n"
+  let multilineCasesBodyExpected :=
+    "theorem multilineCasesBody (value : Nat) : True := by\n"
+    ++ "  cases value with\n"
+    ++ "  | zero => trivial\n"
+    ++ "  | succ value =>\n"
+    ++ "      simp only [Nat.add_zero, Nat.zero_add,\n"
+    ++ "        Nat.add_assoc]\n"
+    ++ "      exact True.intro\n"
+  let multilineCasesBodyTree ←
+    SyntaxTree.parseModuleStringWithEnv env multilineCasesBodySource
+      "multiline-cases-body.lean"
+  let ownedAlternativeHasDirectBody :=
+    match findTreeNode?
+            (.tactic `Lean.Parser.Tactic.inductionAlt true true true)
+            multilineCasesBodyTree.tree with
+    | some (.node _ children) =>
+        match children[0]?, children[1]? with
+        | some (SyntaxTree.Tree.node .suffixGroup _),
+          some (SyntaxTree.Tree.node (.proofBody _) _) => true
+        | _, _ => false
+    | _ => false
+  assertTrue "a tactic alternative groups its header separately from its owned body"
+    ownedAlternativeHasDirectBody
+  let multilineCasesBodyFormatted ←
+    Formatter.formatSourceWithEnv env multilineCasesBodySource "multiline-cases-body.lean"
+  assertEq "a multiline owned cases body uses two indentation levels"
+    multilineCasesBodyExpected multilineCasesBodyFormatted
+  assertTrue "multiline owned cases body formatting preserves code"
+    (← codePreservedIgnoringWhitespace env multilineCasesBodySource
+        multilineCasesBodyFormatted)
+  let multilineCasesBodyAgain ←
+    Formatter.formatSourceWithEnv env multilineCasesBodyFormatted
+      "multiline-cases-body-formatted.lean"
+  assertEq "multiline owned cases body formatting is idempotent"
+    multilineCasesBodyFormatted multilineCasesBodyAgain
+
+  let arrowlessCasesContinuationSource :=
+    "theorem arrowlessCasesContinuation (value : Nat) : True := by\n"
+    ++ "  cases value with\n"
+    ++ "  | zero => trivial\n"
+    ++ "  | succ value\n"
+    ++ "  have h : True := True.intro\n"
+    ++ "  exact h\n"
+  let arrowlessCasesContinuationFormatted ←
+    Formatter.formatSourceWithEnv env arrowlessCasesContinuationSource
+      "arrowless-cases-continuation.lean"
+  assertEq "tactics after an arrowless alternative remain sequence peers"
+    arrowlessCasesContinuationSource arrowlessCasesContinuationFormatted
+  assertTrue "arrowless cases continuation formatting preserves code"
+    (← codePreservedIgnoringWhitespace env arrowlessCasesContinuationSource
+        arrowlessCasesContinuationFormatted)
+
+  let multilineInductionBodySource :=
+    "theorem multilineInductionBody (value : Nat) : True := by\n"
+    ++ "  induction value with\n"
+    ++ "  | zero => trivial\n"
+    ++ "  | succ value hypothesis =>\n"
+    ++ "    simp only [Nat.add_zero, Nat.zero_add,\n"
+    ++ "      Nat.add_assoc]\n"
+    ++ "    exact True.intro\n"
+  let multilineInductionBodyExpected :=
+    "theorem multilineInductionBody (value : Nat) : True := by\n"
+    ++ "  induction value with\n"
+    ++ "  | zero => trivial\n"
+    ++ "  | succ value hypothesis =>\n"
+    ++ "      simp only [Nat.add_zero, Nat.zero_add,\n"
+    ++ "        Nat.add_assoc]\n"
+    ++ "      exact True.intro\n"
+  let multilineInductionBodyFormatted ←
+    Formatter.formatSourceWithEnv env multilineInductionBodySource
+      "multiline-induction-body.lean"
+  assertEq "an induction alternative uses the shared two-level body indentation"
+    multilineInductionBodyExpected multilineInductionBodyFormatted
+  assertTrue "multiline induction body formatting preserves code"
+    (← codePreservedIgnoringWhitespace env multilineInductionBodySource
+        multilineInductionBodyFormatted)
+  let multilineInductionBodyAgain ←
+    Formatter.formatSourceWithEnv env multilineInductionBodyFormatted
+      "multiline-induction-body-formatted.lean"
+  assertEq "multiline induction body formatting is idempotent"
+    multilineInductionBodyFormatted multilineInductionBodyAgain
+
+  let inductionDefaultBodySource :=
+    "theorem inductionDefaultBody (value : Nat) : True := by\n"
+    ++ "  induction value with\n"
+    ++ "    simp only [Nat.add_zero]\n"
+    ++ "    | zero => trivial\n"
+    ++ "    | succ value hypothesis => trivial\n"
+  let inductionDefaultBodyExpected :=
+    "theorem inductionDefaultBody (value : Nat) : True := by\n"
+    ++ "  induction value with\n"
+    ++ "      simp only [Nat.add_zero]\n"
+    ++ "  | zero => trivial\n"
+    ++ "  | succ value hypothesis => trivial\n"
+  let inductionDefaultBodyFormatted ←
+    Formatter.formatSourceWithEnv env inductionDefaultBodySource
+      "induction-default-body.lean"
+  assertEq "an induction default body does not indent its explicit alternatives"
+    inductionDefaultBodyExpected inductionDefaultBodyFormatted
+  assertTrue "induction default-body formatting preserves code"
+    (← codePreservedIgnoringWhitespace env inductionDefaultBodySource
+        inductionDefaultBodyFormatted)
+  let inductionDefaultBodyAgain ←
+    Formatter.formatSourceWithEnv env inductionDefaultBodyFormatted
+      "induction-default-body-formatted.lean"
+  assertEq "induction default-body formatting is idempotent"
+    inductionDefaultBodyFormatted inductionDefaultBodyAgain
 
   let casesWithoutWithSource :=
     "theorem casesWithoutWith (value : Nat) : True := by\n" ++ "  cases value\n"
@@ -9842,6 +9989,49 @@ def assertFormattingExceptionChecks (env : Lean.Environment) : IO Unit := do
           match exception with
           | .lineOverflow _ => true
           | _ => false)
+  let contextualTacticPayloadLength :=
+    Formatter.maxLineWidth - 4 - "context_classified_tactic first ".length
+  let contextualTacticPayload :=
+    String.ofList (List.replicate contextualTacticPayloadLength 'x')
+  let fittingContextualTactic :=
+    "theorem fittingContextualTactic (value : Nat) : True := by\n"
+    ++ "  induction value with\n"
+    ++ "  | zero =>\n"
+    ++ "    context_classified_tactic first "
+    ++ contextualTacticPayload
+    ++ "\n"
+    ++ "    induction value with\n"
+    ++ "    | zero => trivial\n"
+    ++ "    | succ value hypothesis => trivial\n"
+    ++ "  | succ value hypothesis => trivial\n"
+  let movedContextualTactic :=
+    "theorem fittingContextualTactic (value : Nat) : True := by\n"
+    ++ "  induction value with\n"
+    ++ "  | zero =>\n"
+    ++ "      context_classified_tactic first "
+    ++ contextualTacticPayload
+    ++ "\n"
+    ++ "      induction value with\n"
+    ++ "      | zero => trivial\n"
+    ++ "      | succ value hypothesis => trivial\n"
+    ++ "  | succ value hypothesis => trivial\n"
+  let fittingContextualTacticModule ←
+    SyntaxTree.parseModuleStringWithEnv env fittingContextualTactic
+      "fitting-contextual-tactic-overflow-source.lean"
+  let movedContextualTacticModule ←
+    SyntaxTree.parseModuleStringWithEnv env movedContextualTactic
+      "moved-contextual-tactic-overflow.lean"
+  assertTrue "context-classified tactic fits before structural movement"
+    (Formatter.linesFit fittingContextualTactic Formatter.maxLineWidth)
+  assertTrue "structurally moved tactic demonstrates an unbreakable overflow"
+    (!Formatter.linesFit movedContextualTactic Formatter.maxLineWidth)
+  assertTrue "moved context-classified tactic does not report actionable overflow"
+    (!(Formatter.Diagnostics.formattingExceptions
+        fittingContextualTacticModule movedContextualTacticModule).any
+        fun exception =>
+          match exception with
+          | .lineOverflow _ => true
+          | _ => false)
   let calcStep := String.ofList (List.replicate (Formatter.maxLineWidth - 20) 'x')
   let fittingCalc :=
     "def fittingCalcOverflow := calc\n" ++ "  " ++ calcStep ++ " = right := proof\n"
@@ -12144,7 +12334,7 @@ def runCollectionAndDeclarationTests (env : Lean.Environment) : IO Unit := do
   assertExportBreaksLongList env
   assertBangApplicationDiagnostics env
 
-def runCliAndArchitectureTests (env : Lean.Environment) : IO Unit := do
+def runCliAndArchitectureTests (env projectSyntaxEnv : Lean.Environment) : IO Unit := do
   Lean.initSearchPath (← Lean.findSysroot)
   let lastExact ← IO.mkRef none
   let loader : LeanFmt.Driver.EnvironmentLoader := { default := env, lastExact }
@@ -12160,7 +12350,7 @@ def runCliAndArchitectureTests (env : Lean.Environment) : IO Unit := do
   assertWorkersUseInputLakeRoot
   assertImportFilesGroupByHeader
   assertRecursiveWorkerChecksTargetToolchain
-  assertFormattingExceptionChecks env
+  assertFormattingExceptionChecks projectSyntaxEnv
   assertCliChecksStillFormatUnlessCheck env loader
   assertCliFormatsDirectory env loader
   assertCliFormatsDirectoryRecursively env loader
@@ -12207,7 +12397,7 @@ def runTestGroups (env : Lean.Environment) : IO Unit := do
       ("expression-renderer", runExpressionAndRendererTests projectSyntaxEnv),
       ("control-flow", runControlFlowTests projectSyntaxEnv),
       ("collection-declaration", runCollectionAndDeclarationTests env),
-      ("cli-architecture", runCliAndArchitectureTests env)
+      ("cli-architecture", runCliAndArchitectureTests env projectSyntaxEnv)
     ]
   for (_name, group) in groups do
     group

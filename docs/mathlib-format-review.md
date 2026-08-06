@@ -6,6 +6,71 @@ It is a point-in-time work list, not part of the normative formatting style.
 
 ## Current status: 2026-08-05
 
+### Ordinary induction and tactic-context checkpoint
+
+The post-rebase baseline used exact Mathlib `v4.32.0` commit
+`81a5d257c8e410db227a6665ed08f64fea08e997`, the Lake cache, width 100, only
+the `Mathlib` directory, and no formatter-jobs override. All 83 batches retained
+the previous checkpoint's zero code-change, missing-rule, fallback, and
+idempotency counts. Its seven known actionable-width reports were unchanged.
+The baseline output changed 7,530 files by 315,024 insertions and 274,841
+deletions. Its complete post-format build passed all 8,654 jobs in 4,636
+seconds; this was slower than the prior 3,706-second checkpoint build, while
+formatter batch times remained stable.
+
+The current checkpoint makes ordinary `induction` a structural layout owner,
+groups its complete `... with` header separately from its alternatives, and
+groups each parser-owned alternative header separately from its `=>` body.
+The shared elimination-owner rule then gives both `cases` and `induction`
+bodies two indentation levels without checking token text in the line-break
+rule. Arrowless alternatives remain outer tactic-sequence peers because Lean
+does not parse them as body owners.
+
+The first full review found that an induction's default tactic and following
+explicit alternatives were still grouped together. The shared default-tactic
+split now isolates only that default body: it receives the two-level body
+indent, while later `|` alternatives return to the induction base. Focused
+coverage and targeted formatting/builds include
+`Computability/TuringMachine/Config.lean`,
+`Computability/TuringMachine/StackTuringMachine.lean`,
+`Analysis/Calculus/ContDiff/Basic.lean`, and `Data/Nat/Digits/Defs.lean`.
+
+The same run exposed a missing rule for `Congr!.congr!`. Its declared name does
+not contain a `Tactic` namespace even though Lean places it directly in a tactic
+sequence. Tactic entries are now annotated from that parser context, and the
+original-layout classifier trusts the structural annotation. This avoids a
+named exception and covers other project tactics with arbitrary namespaces.
+Because protected tactic text is emitted without internal rule boundaries, it
+now receives the same unbreakable-overflow exemption as protected proof text.
+That makes overflow diagnostics consistent with renderer ownership instead of
+hiding a formatter breakpoint that could actually be used.
+
+The definitive final-binary sweep passed all 83 batches in 3,151 seconds with
+zero code-change, actionable-overflow, missing-rule, fallback, and idempotency
+counts. Batch times were usually 31 to 56 seconds; the historically heavy batch
+47 completed in 62 seconds. There was no worker failure, memory pressure, or
+worsening timing trend. The final tree changes 7,551 files by 329,544
+insertions and 288,982 deletions, has SHA-256 diff digest
+`acd99e8d1e56bb2b9078ff2b40672366a7b56c92c4842abcf607e830d75435fb`,
+and passes `git diff --check`.
+
+A complete post-format build before the reviewer correction passed all 8,654
+jobs in 3,716 seconds. After correcting the default-alternative grouping, a
+focused 1,998-job build and then a complete incremental 8,654-job build passed
+on the definitive tree. Build output contained only accepted Mathlib long-line
+and long-file warnings.
+
+Independent review found no further regression in ordinary `=>` bodies,
+arrowless alternatives, nested induction, comments, delimiters, or custom
+tactics. Three separate ownership families remain intentionally deferred:
+
+- the long protected branch in `RingTheory/PowerSeries/Binomial.lean:91`;
+- nested `cases` beneath an outer protected alternative, represented by
+  `Computability/AkraBazzi/GrowsPolynomially.lean:279`;
+- some `induction ... using` headers, represented by
+  `Analysis/Meromorphic/Divisor.lean:333` and
+  `CategoryTheory/Filtered/Basic.lean:229`.
+
 ### Direct `cases` body checkpoint through `d386d69`
 
 This checkpoint narrows the Mathlib `lemma` original-layout exception by one
@@ -60,14 +125,30 @@ build checked the current tree successfully, rebuilding or replaying 179 stale
 targets in 18 seconds. Batch times remained broadly stable, normally 30 to 60
 seconds, without worker failure or memory pressure.
 
-Independent review found one remaining direct alternative family. Arrowless
-alternatives such as `| cons h p` do not expose a `=>` boundary, so a body that
-begins on the next line can remain only one level below its alternative. This
-occurs in `RingTheory/PowerSeries/Binomial.lean:91` and
-`Combinatorics/SimpleGraph/Walk/Operations.lean:360,853,862`. The next fix should
-give every direct tactic alternative one body owner independent of whether the
-surface syntax contains `=>`; it should reuse the existing two-level body
-indentation and must not add a renderer or token-text exception.
+Independent review found one remaining owned-alternative family. A multiline
+body parsed after `=>` can remain only one level below its alternative when its
+protected source layout is reached through the parser's `null` wrapper or a
+protected `induction` shell. The structural fix groups the pattern and `=>` as
+one suffix header, exposes the existing proof body directly, and applies the
+shared two-level indentation at that semantic boundary. It also groups an
+`induction ... with` header separately from its alternatives and routes that
+owner through the same elimination-layout rule as `cases`. The line-break rule
+no longer checks the `=>` token, and no renderer behavior or rule API changes.
+
+Focused Mathlib formatting and builds passed for ordinary induction bodies in
+`Combinatorics/Derangements/Finite.lean` and
+`Combinatorics/SimpleGraph/Walk/Operations.lean`. The long protected body in
+`RingTheory/PowerSeries/Binomial.lean:91` and the `induction ... using` shape in
+`Analysis/Meromorphic/Divisor.lean:333` remain unchanged; they are separate
+protected-layout and header-ownership follow-ups rather than extensions of this
+checkpoint.
+
+The superficially similar arrowless alternatives in
+`Combinatorics/SimpleGraph/Walk/Operations.lean:360,853,862` are not body owners.
+Lean parses their following tactics as peers in the outer tactic sequence;
+indentation beneath the alternative leaves its goal unsolved and produces an
+unexpected command. They must remain at the sequence indentation unless the
+author writes `=>`.
 
 This checkpoint also deliberately does not reach through an outer structural
 owner. Nested `cases` bodies under induction alternatives remain
