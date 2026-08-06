@@ -278,12 +278,20 @@ def defaultWorkerJobs (hardwareConcurrency : Nat) : Nat :=
 def configuredWorkerJobs (options : Options) : Nat :=
   max 1 <| options.workerJobs?.getD (defaultWorkerJobs options.hardwareConcurrency)
 
-partial def splitIntoBatchCount (batchCount : Nat) (items : List α) : List (List α) :=
+/-- Spread files from largest to smallest across the available worker batches. -/
+def spreadSizedItems (batchCount : Nat) (items : List (α × Nat)) : List (List α) :=
   if batchCount == 0 || items.isEmpty then
     []
   else
-    let batchSize := (items.length + batchCount - 1) / batchCount
-    items.take batchSize :: splitIntoBatchCount (batchCount - 1) (items.drop batchSize)
+    let batchCount := min batchCount items.length
+    let sorted := items.mergeSort fun left right => right.2 < left.2
+    let (_, batches) :=
+      sorted.foldl
+        (fun (index, batches) (item, _) =>
+          let batchIndex := index % batchCount
+          (index + 1, batches.set! batchIndex (item :: batches[batchIndex]!)))
+        (0, Array.replicate batchCount [])
+    batches.toList.map List.reverse
 
 def parseLakeEnvironment (output : String)
     : Except String (Array (String × Option String)) := do
@@ -465,14 +473,15 @@ def formatDefaultEnvironmentFiles
 def runDefaultEnvironmentFiles
     (process : WorkerProcessContext)
     (loader : EnvironmentLoader) (options : Options) (cwd? : Option FilePath)
-    (files : List FilePath)
+    (sizedFiles : List (FilePath × Nat))
     : IO UInt32 := do
-  if files.isEmpty then
+  if sizedFiles.isEmpty then
     return 0
+  let files := sizedFiles.map (·.1)
   let requestedJobs := configuredWorkerJobs options
-  let batches :=
-    (splitIntoBatchCount (min requestedJobs files.length) files).map
-      fun files => { files, environmentCount := 1 }
+  let batchCount := min files.length requestedJobs
+  let fileBatches := spreadSizedItems batchCount sizedFiles
+  let batches := fileBatches.map fun files => { files, environmentCount := 1 }
   if batches.length ≤ 1 then
     formatDefaultEnvironmentFiles loader options files
   else
@@ -484,8 +493,9 @@ def runMixedWorkerBatches
     (loader : EnvironmentLoader) (options : Options) (cwd? : Option FilePath)
     (files : List FilePath)
     : IO UInt32 := do
+  let requestedJobs := configuredWorkerJobs options
   let ((defaultFiles, importFiles), partitionMs) ←
-    timeIO <| partitionDefaultEnvironmentFiles loader files
+    timeIO <| partitionDefaultEnvironmentFiles loader requestedJobs files
   profileLine options
     s!"partition: files={files.length} default={defaultFiles.length} import={importFiles.length} elapsed={partitionMs}ms"
   let (process?, setupMs) ←

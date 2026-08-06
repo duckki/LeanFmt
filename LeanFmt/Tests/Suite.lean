@@ -9370,11 +9370,25 @@ def assertDefaultEnvironmentPartition (env : Lean.Environment) : IO Unit := do
       IO.FS.writeFile importedSyntax
         "import Missing.Module\n\ntheorem product : lhs ⬝ rhs := by trivial\n"
       let (defaultFiles, importFiles) ←
-        LeanFmt.Driver.partitionDefaultEnvironmentFiles loader [ordinary, importedSyntax]
+        LeanFmt.Driver.partitionDefaultEnvironmentFiles loader 2
+          [ordinary, importedSyntax]
       assertEq "ordinary imported files use the default environment"
-        (toString [ordinary]) (toString defaultFiles)
+        (toString [ordinary]) (toString (defaultFiles.map (·.1)))
       assertEq "unknown imported syntax requires the import environment"
         (toString [importedSyntax]) (toString importFiles)
+
+def assertFormattingFilesAreSpread : IO Unit := do
+  let batches :=
+    LeanFmt.Driver.spreadSizedItems 2
+      [("largest", 100), ("first", 20), ("second", 15), ("third", 10)]
+  assertTrue "large files are spread across worker batches"
+    (batches.contains ["largest", "second"])
+  assertEq "size-based batching retains every input"
+    (toString ["first", "largest", "second", "third"])
+    (toString (batches.flatten.mergeSort (· < ·)))
+  let zeroSizeBatches := LeanFmt.Driver.spreadSizedItems 2 [("first", 0), ("second", 0)]
+  assertTrue "zero-size inputs still use every requested worker batch"
+    (zeroSizeBatches.all (·.length == 1))
 
 def assertWorkersUseInputLakeRoot : IO Unit := do
   IO.FS.withTempDir
@@ -12079,6 +12093,7 @@ def runCliAndArchitectureTests (env : Lean.Environment) : IO Unit := do
   assertExportedEnvironmentSkipsPrivateTransitiveImports
   assertExportedEnvironmentIncludesMetaIrClosure
   assertDefaultEnvironmentPartition env
+  assertFormattingFilesAreSpread
   assertWorkersUseInputLakeRoot
   assertImportFilesGroupByHeader
   assertRecursiveWorkerChecksTargetToolchain

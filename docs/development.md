@@ -477,7 +477,9 @@ the corresponding existing clone there. Set
 the automatic worker count uses the machine's hardware concurrency for both default
 and imported environments. Multi-file package formatter invocations first process
 files that parse in leanfmt's default Lean environment, then process files that need
-imported syntax in short-lived workers. The parent asks Lake
+imported syntax in short-lived workers. Default-environment classification runs in
+bounded parallel batches and records source sizes from the same file reads; the worker
+scheduler spreads large files across its batches. The parent asks Lake
 for the target package's augmented process environment once and launches workers
 directly with it. Imported files are grouped by exact normalized import header. A group
 is never split across workers, even when it contains many files, and every group gets

@@ -15,16 +15,52 @@ def sourceParsesWithDefaultEnvironment
   catch _ =>
     pure false
 
-def partitionDefaultEnvironmentFiles (loader : EnvironmentLoader) (files : List FilePath)
-    : IO (List FilePath × List FilePath) := do
+private structure ClassifiedFile where
+  path : FilePath
+  usesDefaultEnvironment : Bool
+  sourceSize : Nat
+
+private partial def splitIntoBatchCount (batchCount : Nat) (items : List α)
+    : List (List α) :=
+  if batchCount == 0 || items.isEmpty then
+    []
+  else
+    let batchSize := (items.length + batchCount - 1) / batchCount
+    items.take batchSize :: splitIntoBatchCount (batchCount - 1) (items.drop batchSize)
+
+private def classifyFiles (loader : EnvironmentLoader) (files : List FilePath)
+    : IO (List ClassifiedFile) := do
+  files.mapM
+    fun file => do
+      let source ← IO.FS.readFile file
+      pure
+        {
+          path := file
+          usesDefaultEnvironment :=
+            ← sourceParsesWithDefaultEnvironment loader source file.toString
+          sourceSize := source.length
+        }
+
+/--
+During classification, read each file once to determine its required environment and
+estimate its formatting cost. Classification batches share the immutable default
+environment and run in parallel, while their results retain input order.
+-/
+def partitionDefaultEnvironmentFiles
+    (loader : EnvironmentLoader) (workerJobs : Nat) (files : List FilePath)
+    : IO (List (FilePath × Nat) × List FilePath) := do
+  let batches := splitIntoBatchCount (min (max 1 workerJobs) files.length) files
+  let tasks ←
+    batches.mapM fun batch => IO.asTask (prio := .dedicated) (classifyFiles loader batch)
+  let classifiedBatches ← tasks.mapM fun task => IO.ofExcept task.get
   let mut defaultFiles := []
   let mut importFiles := []
-  for file in files do
-    let source ← IO.FS.readFile file
-    if (← sourceParsesWithDefaultEnvironment loader source file.toString) then
-      defaultFiles := file :: defaultFiles
-    else
-      importFiles := file :: importFiles
+  for batch in classifiedBatches do
+    for file in batch do
+      if file.usesDefaultEnvironment then
+        defaultFiles := (file.path, file.sourceSize) :: defaultFiles
+      else
+        importFiles := file.path :: importFiles
   pure (defaultFiles.reverse, importFiles.reverse)
 
 def isLeanFile (path : FilePath) : Bool := path.extension == some "lean"

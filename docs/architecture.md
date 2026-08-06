@@ -82,9 +82,11 @@ Formatting a file follows this pipeline:
    and locally declared operators without inspecting token text. The CLI first tries
    the default environment, then loads an import-specific
    environment when project syntax requires it. For multi-file package formatting,
-   files that use the default environment are balanced across worker processes using
-   the machine's hardware concurrency. Imported files are grouped by exact normalized
-   import header, and every file in one group stays in the same worker. The parent
+   a bounded parallel classification pass reads each file once, determines whether it
+   needs an import-specific environment, and records its source size. Files that use the
+   default environment are sorted by size and spread across worker processes, keeping
+   large files from collecting in one batch. Imported files are grouped by exact
+   normalized import header, and every file in one group stays in the same worker. The parent
    obtains the target package's augmented environment from Lake once, then starts all
    formatter workers directly with that process environment.
 
