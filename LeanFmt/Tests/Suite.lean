@@ -3358,6 +3358,51 @@ def assertNestedProofLayoutFollowsPendingIndent (env : Lean.Environment) : IO Un
       "nested-proof-layout-pending-indent-formatted.lean" { lineWidth := 100 }
   assertEq "nested proof layout is idempotent" result.formatted formattedAgain
 
+  let attachedFieldSource :=
+    "def nestedAttachedProofField (selectedValue : Nat) :=\n"
+    ++ "  VeryLongConstructorNameForProofFieldTesting <| {\n"
+    ++ "    object :=\n"
+    ++ "      anotherVeryLongConstructorNameForProofFieldTesting\n"
+    ++ "        { nestedValue := selectedValue\n"
+    ++ "          anotherNestedValue := selectedValue }\n"
+    ++ "    proof selectedValue := by\n"
+    ++ "      cases selectedValue with\n"
+    ++ "      | zero => exact True.intro\n"
+    ++ "      | succ n => exact True.intro }\n"
+  let attachedFieldExpected :=
+    "def nestedAttachedProofField\n"
+    ++ "    (selectedValue : Nat) :=\n"
+    ++ "  VeryLongConstructorNameForProofFieldTesting\n"
+    ++ "  <|\n"
+    ++ "    {\n"
+    ++ "      object :=\n"
+    ++ "        anotherVeryLongConstructorNameForProofFieldTesting\n"
+    ++ "          {\n"
+    ++ "            nestedValue := selectedValue\n"
+    ++ "            anotherNestedValue :=\n"
+    ++ "              selectedValue\n"
+    ++ "          }\n"
+    ++ "      proof selectedValue := by\n"
+    ++ "        cases selectedValue with\n"
+    ++ "        | zero => exact True.intro\n"
+    ++ "        | succ n => exact True.intro\n"
+    ++ "    }\n"
+  let attachedFieldResult ←
+    Formatter.formatSourceWithEnvDetailed env attachedFieldSource
+      "nested-attached-proof-field.lean" { lineWidth := 40 }
+  assertTrue "a nested attached proof field does not fall back"
+    (!attachedFieldResult.fellBack)
+  assertEq "a structure field keeps its proof introducer with the assignment"
+    attachedFieldExpected attachedFieldResult.formatted
+  assertTrue "an attached structure-field proof preserves code"
+    (← codePreservedIgnoringWhitespace env attachedFieldSource
+        attachedFieldResult.formatted)
+  let attachedFieldAgain ←
+    Formatter.formatSourceWithEnv env attachedFieldResult.formatted
+      "nested-attached-proof-field-formatted.lean" { lineWidth := 40 }
+  assertEq "attached structure-field proof formatting is idempotent"
+    attachedFieldResult.formatted attachedFieldAgain
+
 def assertMovedProofLayoutIslandKeepsContinuationIndentation (env : Lean.Environment)
     : IO Unit := do
   let source :=

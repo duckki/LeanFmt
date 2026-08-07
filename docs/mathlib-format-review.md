@@ -6,6 +6,77 @@ It is a point-in-time work list, not part of the normative formatting style.
 
 ## Current status: 2026-08-06
 
+### Attached structure-field body checkpoint
+
+This checkpoint fixes an existing line-break consistency bug for structure
+fields. Declarations and local bindings already use `delimiterValueBreak?` to
+keep a `by` or `do` value introducer attached to `:=`; structure fields
+duplicated older delimiter logic and always offered a break after `:=`. The
+structure-field rule now reuses the same helper, so fields format as
+`field := by` or `field := do` and the body receives its normal indentation.
+The change adds no rule API, syntax grouping, renderer syntax check, exception,
+or specialized rule.
+
+Focused coverage uses a narrow-width nested, multi-field structure value. It
+checks that a proof introducer stays attached, its `cases` body remains
+properly nested, an ordinary long field value can still break after `:=`, and
+formatting preserves code without fallback and is idempotent. The normative
+style documentation now records the same attachment rule.
+
+The complete local release gate passed: `lake build`, `lake test`, `make lint`,
+fixture regeneration and dry checking, self-formatting, preservation,
+actionable-overflow, missing-rule, fallback, idempotency, and
+`git diff --check` were all clean.
+
+Fresh GraphQL and quantum validation used the automatic worker count and no
+`--jobs` option. Both projects passed their initial build, every formatter
+batch, preservation and idempotency checks, and the final build. GraphQL
+formatted 280 Lean files in three batches, rebuilt in 62 seconds, and retained
+the preceding checkpoint's six-file, 218-insertion, 215-deletion diff exactly.
+Quantum restored its Lake cache, built in 42 seconds, formatted in 15 seconds,
+rebuilt in 3 seconds, and produced no diff. The combined run took 330 seconds,
+down from 391 seconds at the preceding checkpoint.
+
+The definitive Mathlib run used a pristine checkout of exact `v4.32.0` commit
+`81a5d257c8e410db227a6665ed08f64fea08e997`, the populated Lake cache, width
+100, only the 8,264 tracked Lean files under `Mathlib`, and no `--jobs`
+override. The initial and final builds each passed all 8,654 jobs in 3,705 and
+3,706 seconds. All 83 formatter batches passed code preservation,
+actionable-overflow, missing-rule, fallback, and idempotency checks. The full
+validation took 11,109 seconds. The approximately 3,698-second formatter phase
+is 4.3 percent above the preceding 3,546-second sweep, within observed
+run-to-run and logging variance; batch times showed no increasing trend, and
+GraphQL was faster. There is no performance-regression signal.
+
+The resulting Mathlib tree changes 7,552 files by 333,953 insertions and
+293,420 deletions, has SHA-256 diff digest
+`d4f8006fd6d22db911f1ada4f96171a282aad5baf39ff7b8f64d780fb04cddc2`,
+and passes `git diff --check`. A raw comparison with the preceding reused
+checkout included four files whose differences came from its intermediate
+formatting history. Reformatting identical pristine inputs with the committed
+and current binaries isolated the true checkpoint delta: 32 files, 63 hunks,
+69 `:= by` or `:= do` attachments, 603 insertions, and 673 deletions.
+
+Four independent reviews covered disjoint file sets and a complete global
+scan. They found no incorrect or missing break, stranded comment, indentation
+regression, or out-of-scope change. Nested tactics, `match`, `if`, loops,
+quotations, exception handlers, constructors, and multiline strings retain
+their relative indentation. Two expressions now fit on one line at 100
+columns because the corrected field-body base gives them more room; both are
+valid direct consequences of the fix. Long indivisible lines begin at the
+correct structural base. The full build emitted only accepted Mathlib
+long-line and long-file warnings.
+
+The initially considered `<| by`, `(by`, and structure-field `:= by` examples
+do not share one clean implementation boundary. This checkpoint intentionally
+handles only structure fields. The next promising checkpoint is one
+application-boundary ownership form, starting with focused expectations for a
+moved `<| by` argument. Existing coverage currently accepts an outdented proof
+body there, so its governing style and ownership invariant must be settled
+before implementation. Stop for review if correcting it requires changing
+general protected-proof emission; do not combine it with parenthesized proofs
+or the remaining nested-alternative family.
+
 ### Trailing proof-argument ownership checkpoint
 
 This checkpoint fixes nested elimination layout inside a direct proof argument

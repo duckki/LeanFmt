@@ -1170,14 +1170,7 @@ def structInstFieldBreaks (context : RuleContext) (segment : Segment) : List Bre
 
 def structInstFieldBodyBreaks (_context : RuleContext) (segment : Segment)
     : List BreakPoint :=
-  let assignmentBreak :=
-    match segment.indexes.find? fun index => childStartsWithLexeme segment index ":=" with
-    | some assignmentIndex =>
-        match (nonemptyChildIndexes segment).find?
-                fun index => assignmentIndex < index with
-        | some valueIndex => [boundaryBreak? segment valueIndex 1].filterMap id
-        | none => []
-    | none => []
+  let assignmentBreak := [delimiterValueBreak? segment ":="].filterMap id
   let equationBreak :=
     match segment.indexes.find?
             fun index =>

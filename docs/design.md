@@ -1543,6 +1543,16 @@ before `}`. Comma-separated fields remain flat when they fit. Newline-separated
 fields without commas are structurally multiline because Lean's layout syntax
 requires those boundaries.
 
+A field value introduced by `by` or `do` keeps that introducer with `:=`, just
+as a declaration value does. The body breaks after the introducer:
+
+```lean
+{
+  map value := by
+    exact proof
+}
+```
+
 Multiple sources in a structure update align as peers before the `with` suffix:
 
 ```lean
