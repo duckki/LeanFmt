@@ -7805,6 +7805,136 @@ def assertMathlibOwnershipConsistencyShapes (env : Lean.Environment) : IO Unit :
       "nested-cases-ownership-formatted.lean"
   assertEq "nested cases formatting is idempotent" nestedCasesFormatted nestedCasesAgain
 
+  let nestedSufficesSource :=
+    "theorem nestedSufficesOwnership (n : Nat) : True := by\n"
+    ++ "  suffices True by\n"
+    ++ "    cases n with\n"
+    ++ "    | zero =>\n"
+    ++ "      exact True.intro\n"
+    ++ "    | succ n =>\n"
+    ++ "      exact True.intro\n"
+    ++ "  exact this\n"
+  let nestedSufficesExpected :=
+    "theorem nestedSufficesOwnership (n : Nat) : True := by\n"
+    ++ "  suffices True by\n"
+    ++ "    cases n with\n"
+    ++ "    | zero =>\n"
+    ++ "        exact True.intro\n"
+    ++ "    | succ n =>\n"
+    ++ "        exact True.intro\n"
+    ++ "  exact this\n"
+  let nestedSufficesFormatted ←
+    Formatter.formatSourceWithEnv env nestedSufficesSource
+      "nested-suffices-ownership.lean"
+  assertEq "a suffices proof exposes its nested elimination owner"
+    nestedSufficesExpected nestedSufficesFormatted
+  assertTrue "nested suffices formatting preserves code"
+    (← codePreservedIgnoringWhitespace env nestedSufficesSource nestedSufficesFormatted)
+  let nestedSufficesAgain ←
+    Formatter.formatSourceWithEnv env nestedSufficesFormatted
+      "nested-suffices-ownership-formatted.lean"
+  assertEq "nested suffices formatting is idempotent"
+    nestedSufficesFormatted nestedSufficesAgain
+
+  let nestedHaveSource :=
+    "theorem nestedHaveOwnership (n : Nat) : True := by\n"
+    ++ "  have h : True := by\n"
+    ++ "    induction n with\n"
+    ++ "    | zero =>\n"
+    ++ "      exact True.intro\n"
+    ++ "    | succ n ih =>\n"
+    ++ "      exact ih\n"
+    ++ "  exact h\n"
+  let nestedHaveExpected :=
+    "theorem nestedHaveOwnership (n : Nat) : True := by\n"
+    ++ "  have h : True := by\n"
+    ++ "    induction n with\n"
+    ++ "    | zero =>\n"
+    ++ "        exact True.intro\n"
+    ++ "    | succ n ih =>\n"
+    ++ "        exact ih\n"
+    ++ "  exact h\n"
+  let nestedHaveFormatted ←
+    Formatter.formatSourceWithEnv env nestedHaveSource "nested-have-ownership.lean"
+  assertEq "a have proof exposes its nested elimination owner"
+    nestedHaveExpected nestedHaveFormatted
+  assertTrue "nested have formatting preserves code"
+    (← codePreservedIgnoringWhitespace env nestedHaveSource nestedHaveFormatted)
+  let nestedHaveAgain ←
+    Formatter.formatSourceWithEnv env nestedHaveFormatted
+      "nested-have-ownership-formatted.lean"
+  assertEq "nested have formatting is idempotent" nestedHaveFormatted nestedHaveAgain
+
+  let detachedHaveProofSource :=
+    "theorem detachedHaveProofOwnership (n : Nat) : True := by\n"
+    ++ "  have h :\n"
+    ++ "      True :=\n"
+    ++ "    by\n"
+    ++ "      cases n with\n"
+    ++ "      | zero =>\n"
+    ++ "          exact True.intro\n"
+    ++ "      | succ n =>\n"
+    ++ "          exact True.intro\n"
+    ++ "  exact h\n"
+  let detachedHaveProofExpected :=
+    "theorem detachedHaveProofOwnership (n : Nat) : True := by\n"
+    ++ "  have h :\n"
+    ++ "      True := by\n"
+    ++ "    cases n with\n"
+    ++ "    | zero =>\n"
+    ++ "        exact True.intro\n"
+    ++ "    | succ n =>\n"
+    ++ "        exact True.intro\n"
+    ++ "  exact h\n"
+  let detachedHaveProofFormatted ←
+    Formatter.formatSourceWithEnv env detachedHaveProofSource
+      "detached-have-proof-ownership.lean"
+  assertEq "a detached proof introducer rejoins its assignment"
+    detachedHaveProofExpected detachedHaveProofFormatted
+  assertTrue "detached have proof formatting preserves code"
+    (← codePreservedIgnoringWhitespace env detachedHaveProofSource
+        detachedHaveProofFormatted)
+  let detachedHaveProofAgain ←
+    Formatter.formatSourceWithEnv env detachedHaveProofFormatted
+      "detached-have-proof-ownership-formatted.lean"
+  assertEq "detached have proof formatting is idempotent"
+    detachedHaveProofFormatted detachedHaveProofAgain
+
+  let matchArmProofSource :=
+    "theorem matchArmProofOwnership (n : Nat) : True := by\n"
+    ++ "  exact\n"
+    ++ "    match n with\n"
+    ++ "    | _ => by\n"
+    ++ "      have h : True := by\n"
+    ++ "        cases n with\n"
+    ++ "        | zero => exact True.intro\n"
+    ++ "        | succ n => exact True.intro\n"
+    ++ "      exact h\n"
+  let matchArmProofExpected :=
+    "theorem matchArmProofOwnership (n : Nat) : True := by\n"
+    ++ "  exact\n"
+    ++ "    match n with\n"
+    ++ "    | _ => by\n"
+    ++ "      have h : True := by\n"
+    ++ "        cases n with\n"
+    ++ "        | zero => exact True.intro\n"
+    ++ "        | succ n => exact True.intro\n"
+    ++ "      exact h\n"
+  let matchArmProofResult ←
+    Formatter.formatSourceWithEnvDetailed env matchArmProofSource
+      "match-arm-proof-ownership.lean"
+  assertTrue "a match arm proof remains owned by the match" !matchArmProofResult.fellBack
+  assertEq "a tactic does not extract a proof through a nested term owner"
+    matchArmProofExpected matchArmProofResult.formatted
+  assertTrue "match arm proof formatting preserves code"
+    (← codePreservedIgnoringWhitespace env matchArmProofSource
+        matchArmProofResult.formatted)
+  let matchArmProofAgain ←
+    Formatter.formatSourceWithEnv env matchArmProofResult.formatted
+      "match-arm-proof-ownership-formatted.lean"
+  assertEq "match arm proof formatting is idempotent"
+    matchArmProofResult.formatted matchArmProofAgain
+
   let unsupportedTacticOwnerSource :=
     "theorem firstAlternativeLayout : True := by\n"
     ++ "  all_goals\n"

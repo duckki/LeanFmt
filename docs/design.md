@@ -1190,6 +1190,11 @@ def pipeHave :=
 
 A `have` that contains a protected proof body keeps a separate operand boundary
 so the proof and its following body continue to move as one layout island.
+When the final proof argument of `have`, `suffices`, or another tactic contains
+a structural `cases` or `induction`, the tactic header remains protected while
+the proof body exposes the existing elimination layout. Nested alternative
+bodies therefore receive the same two-level indentation as a direct
+elimination tactic.
 
 ## Conditionals
 

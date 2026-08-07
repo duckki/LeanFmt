@@ -239,17 +239,68 @@ partial def protectNestedTacticSequences : Tree → Tree
       .node kind (children.map protectNestedTacticSequences)
   | tree => tree
 
+-- Expose a final structural proof argument without separating its introducer from its body.
+private def isTrailingProofArgumentEnvelope : NodeKind → Bool
+  | .raw `null => true
+  | .raw kind =>
+      let kindName := nodeKindName (.raw kind)
+      kindName.startsWith "Lean.Parser.Term." && kindName.endsWith "Decl"
+  | _ => false
+
+private partial def splitTrailingOwnedProofBody? : Tree → Option (Tree × Tree)
+  | body@(.node (.proofBody true) _) => some (.missing, body)
+  | .node (.tactic _ _ _ _) _ => none
+  | tree@(.node kind children) => do
+      let kindName := nodeKindName kind
+      if isCoreTacticKindName kindName || isExtensionTacticKindName kindName then
+        none
+      else
+        let directBodyIndex? :=
+          children.findIdx?
+            fun
+            | .node (.proofBody true) _ => true
+            | _ => false
+        match directBodyIndex? with
+        | some index =>
+            if (List.range' (index + 1) (children.size - (index + 1))).any
+                fun laterIndex =>
+                  children[laterIndex]?.any
+                    fun child =>
+                      (firstTacticToken? child).isSome then
+              none
+            else
+              some (.missing, tree)
+        | none =>
+            if !isTrailingProofArgumentEnvelope kind then
+              none
+            let index ←
+              children.findIdx? fun child => (splitTrailingOwnedProofBody? child).isSome
+            if (List.range' (index + 1) (children.size - (index + 1))).any
+                fun laterIndex =>
+                  children[laterIndex]?.any
+                    fun child =>
+                      (firstTacticToken? child).isSome then
+              none
+            else
+              let child ← children[index]?
+              let (shellChild, body) ← splitTrailingOwnedProofBody? child
+              some (.node kind (children.set! index shellChild), body)
+  | _ => none
+
 private def annotateTacticNode (kind : SyntaxNodeKind) (children : Array Tree) : Tree :=
   let tree := .node (.raw kind) children
   let summary := tacticLayoutSummary tree
-  let children :=
-    if summary.isOwner then
-      children.map protectNestedTacticSequences
-    else
-      children
-  .node
-    (.tactic kind summary.containsSequence summary.isOwner summary.containsOwner)
-    children
+  if summary.isOwner then
+    .node
+      (.tactic kind summary.containsSequence true summary.containsOwner)
+      (children.map protectNestedTacticSequences)
+  else
+    match splitTrailingOwnedProofBody? (.node (.raw `null) children) with
+    | some (.node _ shellChildren, body) =>
+        let shell := .node (.tactic kind false false false) shellChildren
+        .node .suffixGroup #[shell, body]
+    | _ =>
+        .node (.tactic kind summary.containsSequence false summary.containsOwner) children
 
 private def lineIndentation? (token : Token) : Option String :=
   match token.leading.text.splitOn "\n" with

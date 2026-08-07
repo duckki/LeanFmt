@@ -6,6 +6,94 @@ It is a point-in-time work list, not part of the normative formatting style.
 
 ## Current status: 2026-08-06
 
+### Trailing proof-argument ownership checkpoint
+
+This checkpoint fixes nested elimination layout inside a direct proof argument
+without adding a line-break rule, renderer syntax check, exception, or rule
+API. Syntax regrouping may expose the complete final proof argument of a
+non-owner tactic through transparent parser or local-declaration wrappers. Its
+introducer remains attached to the argument, so `:= by` stays on one line when
+it fits, while the existing elimination owner gives `cases` and `induction`
+alternative bodies their normal two-level indentation. A tactic shell, a
+nested term owner, or a later token-bearing sibling stops the traversal.
+
+The GraphQL review caught the important ownership detail. Detaching `by` from
+`:=` made the following `cases` appear too far right. Keeping `:= by` together
+establishes the proof body's correct base, after which the new indentation is
+right. The corrected output has this shape:
+
+```lean
+  have hprefixCollect :
+      LongResultType := by
+    cases prefixFields with
+    | nil =>
+        contradiction
+    | cons firstPrefix restPrefix =>
+        simpa using ...
+```
+
+An initially broader recursive search found a `by` inside a nested `match` arm
+and treated it as the surrounding `exact` tactic's direct proof argument. In
+`Data/Seq/Parallel.lean` that moved a `have` out of the arm, changed how Lean
+reparsed the intermediate text, and correctly triggered preservation fallback.
+The final implementation instead follows only direct proof arguments and
+declaration envelopes. Focused coverage now checks nested `have` and
+`suffices`, a previously detached `:= by`, the nested-`match` boundary, code
+preservation, fallback, and idempotency.
+
+The complete local release gate passed: `lake build`, `lake test`, `make lint`,
+fixture regeneration and dry checking, self-formatting, preservation,
+actionable-overflow, missing-rule, fallback, idempotency, and
+`git diff --check` were all clean.
+
+Fresh GraphQL and quantum validation used the automatic worker count and no
+`--jobs` option. Both projects passed their initial build, every formatter
+batch, preservation and idempotency checks, and the final build. GraphQL
+formatted 280 Lean files in three batches, rebuilt successfully, and changed
+six files by 218 insertions and 215 deletions. Quantum restored its Lake cache,
+formatted cleanly in 18 seconds, rebuilt in 3 seconds, and produced no diff.
+The combined run took 391 seconds. Its timing profile is consistent with the
+preceding checkpoints and shows no performance regression.
+
+The definitive Mathlib run used exact `v4.32.0` commit
+`81a5d257c8e410db227a6665ed08f64fea08e997`, the Lake cache, width 100, only
+the 8,264 tracked Lean files under `Mathlib`, and no `--jobs` override. All 83
+formatter batches passed code preservation, actionable-overflow, missing-rule,
+fallback, and idempotency checks. Most batches took 33 to 61 seconds; the
+historically heavier batch 47 took 70 seconds, and batch 22 took 64 seconds
+after the invalid broad implementation had taken 109 seconds. There was no
+increasing timing trend, worker failure, or memory pressure. The complete
+formatted-tree build passed all 8,654 jobs in 7 seconds, and the definitive
+validation took 3,546 seconds.
+
+The Mathlib tree changes 7,553 files by 334,303 insertions and 293,696
+deletions, has SHA-256 diff digest
+`f34d2c9cd5e513ab11f41014b82e394fd03c97f83730d82eba4e7e2678ee1971`,
+and passes `git diff --check`. Relative to the preceding validated formatting
+checkpoint, this change affects 88 files by 632 insertions and 602 deletions.
+Review confirms the intended nested `cases` and `induction` body movement in
+representatives such as `Logic/Relation.lean` and
+`Computability/AkraBazzi/GrowsPolynomially.lean`. The build emitted only the
+accepted Mathlib long-line and long-file warnings; no warning identified a new
+logical indentation error from this checkpoint.
+
+The remaining proof-layout reports are not regressions from this fix. They
+cluster around a broader direct-argument family: proof arguments after `<|`,
+inside parentheses, after `fun ... =>`, and named structure or declaration
+fields where `:= by` can still detach. A smaller set of nested alternative
+bodies also remains hidden by other protected term owners, including
+`Analysis/InnerProductSpace/Reproducing.lean` and
+`Tactic/GRewrite/Elab.lean`.
+
+The next promising checkpoint is proof-argument attachment at one existing
+syntax boundary, starting with focused examples for `<| by`, `(by`, and a
+named `:= by` field. Before implementing it, verify that those forms expose one
+common complete direct argument without searching through arbitrary terms. A
+clean fix should reuse syntax regrouping and existing attachment/body layout;
+stop for review if it requires opening general proof islands or teaching the
+renderer or line-break rules about proof tokens. Do not combine the remaining
+nested-alternative family into that checkpoint.
+
 ### Multiline-original overflow checkpoint
 
 The syntax tree and line-break rule were already correct for the remaining
