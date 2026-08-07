@@ -7246,6 +7246,32 @@ def assertMathlibOwnershipConsistencyShapes (env : Lean.Environment) : IO Unit :
   assertEq "two-level cases body formatting is idempotent"
     oneLevelCasesBodyFormatted oneLevelCasesBodyAgain
 
+  let overflowingCasesBodySource :=
+    "theorem overflowingCasesBody (value : Nat) : True := by\n"
+    ++ "  cases value with\n"
+    ++ "  | zero => trivial\n"
+    ++ "  | succ value =>\n"
+    ++ "  exact xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n"
+  let overflowingCasesBodyExpected :=
+    "theorem overflowingCasesBody (value : Nat) : True := by\n"
+    ++ "  cases value with\n"
+    ++ "  | zero => trivial\n"
+    ++ "  | succ value =>\n"
+    ++ "      exact xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n"
+  let overflowingCasesBodyFormatted ←
+    Formatter.formatSourceWithEnv env overflowingCasesBodySource
+      "overflowing-cases-body.lean" { lineWidth := 100 }
+  assertEq "an unbreakable proof line does not discard alternative-body indentation"
+    overflowingCasesBodyExpected overflowingCasesBodyFormatted
+  assertTrue "overflowing cases body formatting preserves code"
+    (← codePreservedIgnoringWhitespace env overflowingCasesBodySource
+        overflowingCasesBodyFormatted)
+  let overflowingCasesBodyAgain ←
+    Formatter.formatSourceWithEnv env overflowingCasesBodyFormatted
+      "overflowing-cases-body-formatted.lean" { lineWidth := 100 }
+  assertEq "overflowing cases body formatting is idempotent"
+    overflowingCasesBodyFormatted overflowingCasesBodyAgain
+
   let multilineCasesBodySource :=
     "theorem multilineCasesBody (value : Nat) : True := by\n"
     ++ "  cases value with\n"

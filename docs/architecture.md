@@ -406,7 +406,9 @@ Rule methods mean:
 - `useExistingBreaks`: source breaks at this rule's break points are tried before flat
   layout and can override fitting flat output. For a non-flow rule, one accepted source
   break activates the rule's complete break-point set; partial source layouts are not
-  rendered.
+  rendered. If that structural layout moves a multiline original-layout child and the
+  moved child overflows, the renderer keeps the rule layout instead of accepting a flat
+  probe that cannot remove the child's physical source break.
 - `atomic`: the segment is always rendered flat internally. Its parent still measures
   its complete width and may break before it. Interpolated strings use this so `s!` and
   interpolation contents cannot split independently.
@@ -549,7 +551,9 @@ For each segment:
    For non-flow rules, any accepted source break applies all rule breaks. For flow rules,
    try the accepted source-break candidate once before flat layout. If it does not fit,
    retain that rejection and continue to flat layout and computed wrapping without
-   reconstructing the rejected candidate.
+   reconstructing the rejected candidate. When a multiline original-layout child makes
+   the source-break candidate overflow, skip the misleading flat probe and apply the
+   rule layout because the child keeps its physical source break in either candidate.
 9. Try flat rendering when allowed.
 10. For rules that prefer child layouts, try the recursively rendered children when
     the rule-specific prefix remains flat and the complete child layout fits.

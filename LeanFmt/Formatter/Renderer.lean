@@ -2105,7 +2105,11 @@ mutual
         else
           match renderSegmentWithSourceBreaksIfFits? state segment sourceBreaks with
           | some rendered => rendered
-          | none => renderFlatOrRuleLayout ()
+          | none =>
+              if segmentContainsMultilineOriginalEmission state.source segment then
+                renderRuleLayout state segment rule breakPoints isFlow
+              else
+                renderFlatOrRuleLayout ()
     | none => renderFlatOrRuleLayout ()
 
   partial def renderNestedSegment

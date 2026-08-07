@@ -6,6 +6,94 @@ It is a point-in-time work list, not part of the normative formatting style.
 
 ## Current status: 2026-08-06
 
+### Multiline-original overflow checkpoint
+
+The syntax tree and line-break rule were already correct for the remaining
+`RuleOfSigns`-style examples: an induction alternative exposed its protected
+proof body directly, and the shared elimination rule assigned that body two
+indentation levels. The stale indentation came from renderer candidate
+selection instead. When moving an original-layout body made one of its
+unbreakable lines exceed width 100, the source-break candidate was rejected.
+The following flat probe could not actually remove the body's physical source
+break, but it was still accepted and emitted that break at its old source
+column.
+
+The renderer now handles that general inconsistency in the existing
+`useExistingBreaks` path. If a source-break candidate fails its fit check and
+the segment contains a multiline original-layout emission, it applies the
+rule layout rather than accepting a flat probe that cannot flatten the child.
+This adds no syntax or token knowledge to the renderer, no new rule API, and no
+specialized elimination rule. Focused coverage checks formatting, code
+preservation, and idempotency when required alternative-body indentation turns
+an otherwise fitting protected line into an accepted overlong line.
+
+The complete local release gate passed: `lake build`, `lake test`, `make lint`,
+fixture regeneration and dry checking, self-formatting, preservation,
+actionable-overflow, missing-rule, fallback, idempotency, and `git diff --check`
+were all clean. The formatter and test sources required no generated formatting
+changes.
+
+Fresh GraphQL and quantum validation used the automatic worker count and passed
+without exceptions, idempotency failures, build failures, or formatting diffs.
+GraphQL's clean build took 93 seconds, its formatter batches took 17, 9, and 7
+seconds, and its up-to-date post-format build took less than one second. Quantum
+restored its cache in 14 seconds, built in 48 seconds, formatted in 17 seconds,
+and rebuilt in 3 seconds. The combined run took 289 seconds. These timings are
+within ordinary run-to-run variance of the preceding checkpoint and show no
+performance trend.
+
+The exact Mathlib `v4.32.0` commit
+`81a5d257c8e410db227a6665ed08f64fea08e997` was validated at width 100 using the
+existing Lake cache, only the 8,264 tracked Lean files under `Mathlib`, and no
+`--jobs` override. All 83 formatter batches passed code preservation,
+actionable-overflow, missing-rule, fallback, and idempotency checks. The
+formatter phase and script overhead took approximately 3,545 seconds, with
+most batches between 33 and 60 seconds, one isolated 74-second batch, and no
+increasing timing or memory-pressure trend. The full post-format build passed
+all 8,654 targets in 3,880 seconds; the complete validation took 7,425 seconds.
+The formatted tree changes 7,553 files by 333,747 insertions and 293,170
+deletions, has SHA-256 diff digest
+`cd35eb89b1436be0989ae7b8de6bdfe6023f5f503d9f99435d18f0353d8c7d13`, and
+passes `git diff --check`. Relative to the preceding documented output, the
+file count is unchanged and both insertions and deletions increase by 2,578,
+consistent with moving protected source lines to their structural columns.
+
+The full build emitted only accepted Mathlib long-line and long-file warnings.
+In particular, the corrected protected bodies in
+`Algebra/Polynomial/RuleOfSigns.lean` and
+`Algebra/Homology/DerivedCategory/Ext/MapBijective.lean` build cleanly even
+where required indentation makes an indivisible line longer than 100 columns.
+
+Five independent reviews covered disjoint Mathlib domains plus a global pattern
+scan. They found no checkpoint-specific regression: direct alternative bodies
+now consistently use the required four-column offset, including newly overlong
+lines in `Algebra/BigOperators/Fin.lean` and
+`FieldTheory/AbelRuffini.lean`, and no structural suffix detached as a result of
+this renderer change. Every reported anomaly belongs to an already-known
+family:
+
+- nested or protected alternatives can still retain one-level body indentation,
+  with representatives in `Computability/AkraBazzi/GrowsPolynomially.lean`,
+  `Logic/Relation.lean`, `Tactic/GRewrite/Elab.lean`, and
+  `Analysis/InnerProductSpace/Reproducing.lean`;
+- standalone or continued line comments can fall to column zero or add a body
+  level, including `CategoryTheory/Limits/HasLimits.lean`,
+  `Geometry/RingedSpace/Stalks.lean`, and the tactic-linter examples;
+- trailing declaration `where`, comment-forced low-priority `<|`, peer
+  application staircases, and token-relative record or declaration
+  continuations retain the previously documented shapes.
+
+The next promising checkpoint is the first family only. Start with focused
+coverage for the direct parser-owned alternative bodies in
+`Logic/Relation.lean`, `Tactic/GRewrite/Elab.lean`, and
+`Computability/AkraBazzi/GrowsPolynomially.lean`, then determine why an outer
+protected proof owner hides their existing alternative-body boundary. A clean
+fix should generalize syntax ownership or regrouping and reuse the shared
+elimination rule; it should not add a line-break rule, renderer syntax check, or
+rule API. Stop for review if exposing that boundary would require opening an
+arbitrary original-layout proof island. Detached comments, `where`, `<|`, and
+stale continuation columns remain separate checkpoints.
+
 ### Tactic-sequence, identifier-clause, and renderer consistency checkpoint
 
 The current working tree was validated against exact Mathlib `v4.32.0` commit

@@ -1332,7 +1332,9 @@ Equation-style declaration arms follow the same alternative layout.
 Tactic alternatives that own a body after `=>` use the same two-level body
 indentation. An arrowless tactic alternative owns only its pattern; subsequent
 tactics remain peers in the surrounding tactic sequence because indenting them
-under the alternative changes Lean's parse.
+under the alternative changes Lean's parse. The owned indentation remains
+structural when a protected, unbreakable proof line becomes longer than the
+configured width after moving to that column.
 
 `cases` and `induction` keep `with` on the complete header. Their alternatives
 align with the tactic, and a multiline alternative body is indented two levels
